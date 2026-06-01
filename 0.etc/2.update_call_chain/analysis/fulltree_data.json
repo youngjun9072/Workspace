@@ -1,0 +1,23 @@
+{
+  "total_samples": 126337,
+  "comm_total": {
+    "vacuum-master": 1123,
+    "dwb-file-sync": 861,
+    "deadlock-detect": 376,
+    "dwb-flush-block": 5195,
+    "pgbuf-maintain": 376,
+    "pgbuf-flush-con": 424,
+    "log-flush": 2137,
+    "log-clock": 273,
+    "connections": 15489,
+    "transaction": 92816,
+    "coordinator": 2414,
+    "pgbuf-page-flus": 121,
+    "pl-monitor": 104,
+    "ha-delay-check": 186,
+    "cub_server": 55,
+    "session-control": 9,
+    "vacuum": 4378
+  },
+  "n_funcs": 1615
+}
