@@ -1,0 +1,590 @@
+# 병렬 applylogdb PoC 아키텍처 분석서
+
+이 문서는 `2047f720807da962bf0a863e2ef115b2f0d6d8a2` 커밋부터
+현재 `72099e6af` 커밋까지의 변경을 기준으로, parallel `applylogdb`
+PoC의 현재 구조와 문제점을 정리한다.
+
+핵심 변화는 기존의 리더 중심 직렬 적용 흐름을 트랜잭션 단위 병렬
+적용 구조로 바꾼 것이다. 리더는 WAL을 읽고 트랜잭션별 복제 항목을
+모은 뒤 커밋 로그 레코드를 만나면 워커에게 작업을 넘긴다. 워커는
+자기 client session과 transaction context에서 적용, flush, commit을
+수행하고, 리더는 워커 결과를 다시 모아 원래 디스패치 순서대로 retire
+한다.
+
+## 분석 범위
+
+- 시작 커밋: `2047f7208 Add transaction-level worker queue skeleton for applylogdb parallel PoC`
+- 최신 커밋: `72099e6af add upate case`
+- 중심 파일: `src/transaction/log_applier.c`
+- 함께 변경된 영역:
+- 클라이언트/서버 연결 및 RPC 진단 로그
+- 클라이언트 transaction 전역 상태
+  - workspace, trigger, schema, locator client-side cache
+  - HA applier state notification
+  - CCI submodule pointer
+
+## 전체 구조
+
+현재 구조는 리더 1개와 적용 워커 여러 개로 나뉜다. 리더는 WAL
+record를 순차적으로 읽고, replication data/statement record는
+`la_Info.repl_lists`에 트랜잭션별로 적재한다. 커밋 로그 레코드를 만나면
+`LA_APPLY_TASK`를 만들고 워커 queue에 넣는다.
+
+워커는 작업을 받아 실제 복제 적용, flush, 클라이언트 측 commit을
+수행한다. 완료 결과는 워커 result queue에 넣고, 리더가 이를 회수한다.
+단, 결과 회수 순서가 아니라 리더가 디스패치한 순서대로만 global progress를
+retire한다.
+
+```text
+                 active/archive WAL
+                        |
+                        v
+              +--------------------+
+              | applylogdb reader  |
+              | la_apply_log_record|
+              +--------------------+
+                        |
+          LOG_REPLICATION_DATA / STATEMENT
+                        |
+                        v
+              +--------------------+
+              | la_Info.repl_lists |
+              | 트랜잭션별 item    |
+              +--------------------+
+                        |
+                    LOG_COMMIT
+                        |
+                        v
+              +--------------------+
+              | LA_APPLY_TASK      |
+              | tranid, commit_lsa |
+              | repl_list pointer  |
+              +--------------------+
+                        |
+                        v
+        worker_idx = tranid % LA_APPLY_WORKER_COUNT
+                        |
+                        v
+       +--------------------------------------------+
+       | la_Dispatch_order FIFO                    |
+       | seq -> worker_idx, tranid, commit_lsa     |
+       | reader 전용 retire 순서 구조              |
+       +--------------------------------------------+
+                        |
+                        v
+       +----------------+----------------+----------+
+       |                |                |          |
+       v                v                v          v
+ +------------+   +------------+   +------------+   ...
+ | worker[0]  |   | worker[1]  |   | worker[2]  |
+ | task queue |   | task queue |   | task queue |
+ +------------+   +------------+   +------------+
+       |                |                |
+       v                v                v
+ +------------+   +------------+   +------------+
+ | apply log  |   | apply log  |   | apply log  |
+ | flush      |   | flush      |   | flush      |
+ | commit     |   | commit     |   | commit     |
+ +------------+   +------------+   +------------+
+       |                |                |
+       v                v                v
+ +------------+   +------------+   +------------+
+ | result q   |   | result q   |   | result q   |
+ +------------+   +------------+   +------------+
+       |                |                |
+       +----------------+----------------+
+                        |
+                        v
+              +--------------------+
+              | reader collect     |
+              | worker 결과 회수   |
+              +--------------------+
+                        |
+                        v
+              +--------------------+
+              | dispatch FIFO 순서 |
+              | retire            |
+              +--------------------+
+```
+
+## 주요 실행 흐름
+
+### 리더 역할
+
+리더는 WAL을 순차적으로 읽는 단일 흐름이다. `LOG_REPLICATION_DATA`와
+`LOG_REPLICATION_STATEMENT`를 만나면 `la_set_repl_log()`를 통해 해당
+transaction의 apply list에 item을 붙인다.
+
+`LOG_COMMIT`을 만나면 다음 작업을 한다.
+
+1. 커밋 LSA가 이미 처리된 LSA보다 큰지 확인한다.
+2. 커밋 list에 commit node를 추가한다.
+3. `LA_APPLY_TASK`를 만든다.
+4. 리더가 찾은 `LA_APPLY *`를 작업에 직접 넣는다.
+5. `tranid % LA_APPLY_WORKER_COUNT`로 워커를 고른다.
+6. 디스패치 순서 FIFO에 먼저 entry를 넣고 `seq`를 받는다.
+7. 같은 `seq`를 작업에 넣어 워커 queue에 enqueue한다.
+
+여기서 중요한 점은 워커가 다시 `la_find_apply_list()`를 호출하지 않는다는
+것이다. 리더가 이미 찾은 `LA_APPLY *`를 작업으로 넘긴다. 이는
+`la_Info.repl_lists` slot 재사용과 워커 조회가 겹치는 race를 줄이기 위한
+구조다.
+
+### 워커 선택
+
+워커 선택은 현재 고정식이다.
+
+```text
+worker_idx = tranid % LA_APPLY_WORKER_COUNT
+```
+
+이 방식은 같은 transaction이 항상 같은 워커로 가게 만든다. 워커마다
+자기 client session, transaction state, workspace state를 가지므로
+transaction 단위 affinity는 필요하다.
+
+현재 상수는 다음과 같다.
+
+- `LA_APPLY_WORKER_COUNT = 10`
+- `LA_APPLY_WORKER_QUEUE_CAPACITY = 1024`
+- `LA_DISPATCH_ORDER_CAPACITY = LA_APPLY_WORKER_COUNT * LA_APPLY_WORKER_QUEUE_CAPACITY + 1`
+- `LA_APPLY_WORKER_REPL_ACTIVE_COUNT = 10`
+
+`LA_APPLY_WORKER_REPL_ACTIVE_COUNT`는 주석상 test-only 성격이다.
+
+### 워커 큐
+
+각 워커는 입력 task queue와 출력 result queue를 가진다.
+
+워커 구조는 대략 다음 상태를 가진다.
+
+- pthread thread id
+- mutex
+- condition variable
+- idle condition variable
+- initialized/started/shutdown/busy flag
+- task queue
+- result queue
+
+리더는 워커 input queue가 꽉 차면 `idle_cond`를 기다린다. 워커는
+task를 dequeue하면 busy 상태가 되고, result queue에 결과를 넣으면 busy를
+false로 바꾼 뒤 `idle_cond`를 broadcast한다.
+
+### 디스패치 순서 FIFO
+
+`la_Dispatch_order`는 병렬 워커 결과를 다시 직렬 retire 순서로 맞추는
+핵심 구조다. 리더 전용 구조이므로 별도 lock이 없다.
+
+동작 순서는 다음과 같다.
+
+1. 리더가 커밋 로그 레코드를 본다.
+2. 리더가 `la_dispatch_order_push()`로 FIFO entry를 만든다.
+3. FIFO entry에는 `seq`, `worker_idx`, `tranid`, `rectype`, `LA_APPLY *`가 들어간다.
+4. 리더가 같은 `seq`를 task에 넣어 워커에게 넘긴다.
+5. 워커가 완료 후 `LA_APPLY_RESULT.seq`에 같은 값을 담아 result queue에 넣는다.
+6. 리더가 result queue를 drain하며 `seq`로 dispatch entry를 찾는다.
+7. entry를 `result_ready = true`로 표시한다.
+8. retire는 FIFO head부터만 진행한다.
+
+즉 워커 완료 순서는 자유롭지만, `committed_lsa`와 apply info progress는
+디스패치 순서대로만 전진한다.
+
+### 정리 단계
+
+`la_collect_apply_results()`는 두 단계로 나뉜다.
+
+1. `la_collect_worker_results()`
+   - 모든 워커 result queue를 순회한다.
+   - 도착한 result를 꺼낸다.
+   - result의 `seq`로 dispatch entry를 찾는다.
+   - 해당 entry에 result를 저장하고 `result_ready`를 true로 바꾼다.
+
+2. `la_retire_ready_results()`
+   - dispatch FIFO head를 확인한다.
+   - head result가 아직 준비되지 않았으면 즉시 멈춘다.
+   - 워커 error가 있으면 error를 반환한다.
+   - commit node를 정리한다.
+   - `LA_APPLY` slot을 retire 시점에 반환한다.
+   - `la_Info.committed_lsa`와 `committed_rep_lsa`를 갱신한다.
+   - insert/update/delete/schema/fail counter를 누적한다.
+   - reader-side transaction을 commit한다.
+
+`LA_APPLY` slot을 워커 완료 시점이 아니라 retire 시점에 반환하는 것이
+중요하다. 워커가 먼저 끝났다고 slot을 즉시 반환하면 리더가 그 slot을
+다른 transaction에 재사용할 수 있고, 아직 앞선 dispatch entry가 retire되지
+않은 상태와 충돌할 수 있다.
+
+## 워커별 상태 격리
+
+parallel apply에서 가장 어려운 부분은 queue가 아니라 기존 client-side
+전역 상태를 워커별로 분리하는 일이다. 기존 serial apply는 process-global
+상태를 전제로 한 코드가 많다.
+
+### 클라이언트 transaction 상태
+
+`transaction_cl.c`의 주요 client transaction 상태가 thread-local로 바뀌었다.
+
+예:
+
+- `tm_Tran_index`
+- `tm_Tran_isolation`
+- `tm_Tran_wait_msecs`
+- `tm_Tran_ID`
+- `tm_Tran_invalidate_snapshot`
+- query begin/timeout 정보
+- savepoint list
+
+워커마다 독립 client transaction처럼 동작해야 하므로 이 분리는 필수다.
+
+### 작업 공간과 객체 상태
+
+`work_space.c`, `trigger_manager.c`, schema manager 주변 상태도 워커별로
+분리되었다.
+
+대표적인 thread-local 대상:
+
+- MOP table
+- resident class cache
+- workspace statistics
+- dirty MOP 상태
+- trigger recursion depth
+- deferred trigger context
+- trigger schema/object map
+
+이 분리가 없으면 한 워커의 client object workspace 변경이 다른 워커의
+apply 흐름을 오염시킬 수 있다.
+
+### locator keep 캐시
+
+`locator_Keep`과 packed request area buffer는 thread-local로 바뀌었다.
+
+locator keep cache는 copy area, lockset, lockhint, packed area 같은 재사용
+buffer를 가진다. 여러 워커가 이를 공유하면 RPC payload 구성이나 object
+fetch/flush 과정에서 buffer가 덮어써질 수 있다.
+
+워커 종료 시점에는 `locator_free_areas()`를 호출해 해당 워커의
+thread-local locator cache를 정리한다.
+
+### 워커 임시 context
+
+워커마다 `LA_APPLY_WORKER_CONTEXT`를 가진다.
+
+포함 항목:
+
+- `worker_idx`
+- record type scratch buffer
+- undo unzip buffer
+- redo unzip buffer
+- reusable recdes pool
+
+이 context는 apply 중 필요한 임시 buffer를 worker별로 분리한다.
+
+## 워커 세션 모델
+
+워커 thread 시작 흐름은 다음과 같다.
+
+```text
+worker thread 시작
+  -> error context 등록
+  -> la_apply_worker_start_session()
+       -> worker client 등록
+       -> client context 시작
+  -> la_apply_worker_context_init()
+  -> task 처리 loop
+  -> la_apply_worker_context_final()
+  -> la_apply_worker_end_session()
+  -> locator_free_areas()
+  -> error context 해제
+```
+
+워커 session 시작은 `la_worker_init_mutex`로 직렬화된다. 주석을 보면
+`net_client_sub_init`, system parameter cache, client target state 등 아직
+동시 초기화가 안전하지 않은 shared client global이 남아 있음을 전제로 한다.
+
+## HA 상태 통지 처리
+
+워커 session은 HA applier state notification을 보내지 않도록 막혀 있다.
+HA applier의 global state는 리더가 대표로 관리해야 한다. 워커 session이
+각자 `WORKING`, `DONE`, `RECOVERING` 같은 상태를 통지하면 master/server가
+잘못된 상태 전이를 볼 수 있다.
+
+## 진단 로그와 계측 구조
+
+이 브랜치는 debug build에서 병목을 찾기 위한 계측을 대량 추가했다.
+
+주요 계측 항목:
+
+- reader WAL record type histogram
+- reader IO 시간
+- replication item 생성 시간
+- commit record 처리 시간
+- dispatch-order push 시간
+- worker enqueue 대기 시간
+- worker queue depth
+- worker result queue depth
+- result queue dwell time
+- worker apply 시간
+- mid flush/final flush 시간
+- db commit 시간
+- post commit cleanup 시간
+- empty commit/non-empty commit 구분
+- cache buffer worker별 access/contention/wait
+- RPC call별 timing
+- client connection fd 및 server core mapping
+- dispatch head blocker stage
+- 첫 insert부터 마지막 commit retire까지의 window
+
+이 계측의 목적은 다음 질문에 답하는 것이다.
+
+```text
+병목이 reader WAL scan/dispatch에 있는가,
+worker apply에 있는가,
+flush에 있는가,
+server RPC 처리에 있는가,
+cache buffer contention에 있는가,
+ordered retire에 있는가?
+```
+
+## 설계 의도
+
+현재 구조는 item 단위 병렬화가 아니라 transaction 단위 병렬화다.
+
+기존 apply 경로는 client transaction, workspace, locator, trigger 상태를
+전제로 한다. 하나의 transaction 내부 item들을 병렬화하려면 visibility,
+object state, flush ordering, unique index 처리까지 더 깊게 바꿔야 한다.
+
+따라서 transaction 전체를 하나의 worker에 맡기는 방식은 PoC로는 보수적이고
+현실적인 선택이다. 대신 global progress는 dispatch 순서대로만 전진하므로
+느린 선행 transaction이 전체 retire를 막을 수 있다.
+
+## 문제점과 위험 요소
+
+### 1. 정리 단계의 선두 대기 문제
+
+retire는 dispatch FIFO head부터만 진행한다. 어떤 worker가 오래 걸리는
+transaction을 처리 중이면, 다른 worker가 뒤의 transaction을 모두 끝내도
+그 결과들은 retire되지 못한다.
+
+영향:
+
+- 병렬 apply는 끝났는데 `committed_lsa`가 전진하지 않을 수 있다.
+- result queue와 dispatch FIFO 뒤에 완료 결과가 쌓일 수 있다.
+- HA apply progress가 실제 worker 처리량보다 느리게 보일 수 있다.
+
+현재 계측으로 head blocker stage, result queue dwell time,
+`reader_dispatch_while_head_blocked_total`을 확인할 수 있다.
+
+### 2. `tranid % worker_count` 기반 정적 분산
+
+worker 선택이 transaction 크기나 queue depth를 보지 않고 transaction id만
+본다.
+
+영향:
+
+- 특정 modulo 값에 큰 transaction이 몰리면 worker skew가 생긴다.
+- 일부 worker는 idle인데 특정 worker queue만 길어질 수 있다.
+- worker 수를 늘려도 throughput이 선형으로 늘지 않을 수 있다.
+
+개선 방향:
+
+- transaction이 처음 등장할 때 queue depth가 낮은 worker를 고른다.
+- 선택된 worker id를 transaction apply state에 저장한다.
+- 이후 같은 transaction은 저장된 worker로 보낸다.
+
+### 3. 워커 시작이 아직 공유 클라이언트 전역 상태에 의존
+
+`la_worker_init_mutex`가 worker client context 초기화를 직렬화한다. 이는
+아직 동시 초기화가 안전하지 않은 client global이 남아 있다는 뜻이다.
+
+영향:
+
+- startup 단계는 mutex 덕분에 안전하지만 구조적으로 완전한 격리는 아니다.
+- 나중에 worker 재시작이나 dynamic scaling이 들어오면 race가 재발할 수 있다.
+- shared client target/system parameter cache 경로를 더 확인해야 한다.
+
+### 4. `LA_APPLY *` 수명 규칙이 섬세하다
+
+task는 reader가 찾은 `LA_APPLY *`를 직접 들고 worker로 간다. 이 포인터가
+안전하려면 apply slot이 worker 완료 시점이 아니라 ordered retire 시점까지
+재사용되지 않아야 한다.
+
+영향:
+
+- 수명 규칙이 코드 여러 위치에 흩어져 있다.
+- 나중에 cleanup 코드를 고치다가 slot reuse race를 다시 만들 수 있다.
+- raw pointer만으로는 slot이 여전히 같은 transaction 소유인지 검증하기 어렵다.
+
+개선 방향:
+
+- apply slot에 generation counter를 둔다.
+- task에는 raw pointer 대신 `{slot_index, generation}`을 담는다.
+- worker 시작과 retire 시점에 tranid/generation assert를 추가한다.
+
+### 5. `la_Info`의 소유권이 섞여 있다
+
+`la_Info`는 reader-owned field, shared input, worker task가 참조하는
+포인터의 원천을 모두 담고 있다.
+
+영향:
+
+- 어떤 field를 누가 수정할 수 있는지 명확하지 않다.
+- 작은 변경으로 worker가 reader-owned 상태를 건드릴 위험이 있다.
+- thread-safety를 확인하려면 `log_applier.c` 전체 흐름을 따라가야 한다.
+
+개선 방향:
+
+- reader global state, immutable task payload, worker-local apply context를
+  구조적으로 분리한다.
+- shared field마다 owner와 접근 가능 phase를 문서화한다.
+
+### 6. 워커 결과 큐 초과가 종료로 이어진다
+
+`la_enqueue_apply_result()`는 result queue가 꽉 차면 기다리지 않고 실패를
+반환한다. 이 경우 `la_applier_need_shutdown`으로 이어질 수 있다.
+
+영향:
+
+- reader collect/retire가 느린 상황에서 일시적 적체가 applier 종료로 바뀐다.
+- head-of-line blocking이 발생하면 result queue overflow 가능성이 커진다.
+
+개선 방향:
+
+- result enqueue도 condition variable로 대기 가능하게 만든다.
+- reader가 dispatch 전에 collect를 더 적극적으로 수행한다.
+- 전체 in-flight dispatch 수를 retire progress 기준으로 제한한다.
+
+### 7. 역압이 워커별 큐에만 걸린다
+
+reader는 선택된 worker input queue가 꽉 찼을 때만 기다린다. dispatch FIFO
+크기, retire lag, result queue dwell time을 기준으로 한 global throttle은 없다.
+
+영향:
+
+- retire가 막혀도 reader는 계속 dispatch할 수 있다.
+- 완료됐지만 retire되지 않은 결과가 길게 쌓일 수 있다.
+- memory pressure와 latency가 커진다.
+
+### 8. 디버그 계측 코드가 지나치게 크다
+
+현재 `log_applier.c`에는 기능 코드와 debug 계측 코드가 강하게 섞여 있다.
+counter, timestamp, stage log가 많아져 실제 동작을 리뷰하기 어려워졌다.
+
+영향:
+
+- 기능 변경과 계측 변경이 같은 파일에서 계속 충돌할 수 있다.
+- release/debug build 차이를 추적하기 어렵다.
+- 일부 direct `er_log_debug()` 호출이 `LA_DEBUG_LOG` convention과 다를 수 있다.
+
+개선 방향:
+
+- parallel apply 계측 구조를 별도 helper 영역으로 분리한다.
+- debug macro 사용 원칙을 통일한다.
+- release build에서 남는 비용과 로그 호출을 점검한다.
+
+### 9. PoC/test-only 제어값이 일반 실행 경로에 남아 있다
+
+`LA_APPLY_WORKER_REPL_ACTIVE_COUNT`는 주석상 test-only다. worker index가 이
+값보다 크면 add/flush를 skip하는 실험용 코드가 존재한다.
+
+영향:
+
+- 값이 바뀌면 실제 apply 결과가 달라질 수 있다.
+- 성능 실험과 correctness 동작이 섞인다.
+- production 반영 전에는 제거하거나 명확한 test hook으로 분리해야 한다.
+
+### 10. 리더 측 apply info commit이 임시 변경 상태다
+
+retire 단계에서 `la_reader_commit_apply_info()` 호출이 주석 처리되고
+`db_commit_transaction()`으로 대체되어 있다. 주석에도 PoC 병목 확인용이라고
+되어 있다.
+
+영향:
+
+- `_db_ha_apply_info` update semantics가 기존 serial path와 다를 수 있다.
+- crash/restart 후 재시작 LSA 계산이 달라질 수 있다.
+- 현재 성능 수치에는 실제 apply info update 비용이 빠져 있을 수 있다.
+
+이 부분은 production 전 correctness gap으로 봐야 한다.
+
+### 11. memory/VSZ 증가 문제가 구조적으로 해결되지 않았다
+
+worker 수 증가로 thread-local cache, unzip buffer, recdes pool, glibc arena가
+늘어난다. history에는 VSZ 증가를 완화하기 위해 `max_mem_size` floor를 올린
+커밋이 있다.
+
+영향:
+
+- worker 수에 따라 가상 메모리 사용량이 크게 증가할 수 있다.
+- throughput만 보고 worker 수를 늘리면 memory limit에 걸릴 수 있다.
+- 실제 RSS와 VSZ를 나눠 측정해야 한다.
+
+### 12. 서버 측 병렬성은 간접적이다
+
+apply worker는 client RPC를 통해 server에 요청한다. 실제 server-side 병렬성은
+server worker pool의 connection/core mapping에 좌우된다. 그래서 connection
+fd, server core mapping, RPC timing 로그가 추가되었다.
+
+영향:
+
+- client worker 수가 곧 server 병렬 실행 수를 의미하지 않는다.
+- connection mapping이 한쪽으로 쏠리면 server에서 병렬성이 줄어들 수 있다.
+- RPC timing과 server worker diagnostics를 함께 봐야 한다.
+
+### 13. error 전파와 shutdown 경계가 거칠다
+
+worker에서 오류가 나면 result에 error를 담고, reader retire 단계에서 이를
+반환한다. queue enqueue 실패나 worker 초기화 실패는 `la_applier_need_shutdown`
+으로 이어진다.
+
+영향:
+
+- 어느 transaction이 실패했고 어디까지 retire됐는지 복구 판단이 복잡하다.
+- result는 준비됐지만 앞선 head가 막혀 error 전파가 늦어질 수 있다.
+- shutdown 중 queue에 남은 task/result 처리 정책이 더 명확해야 한다.
+
+### 14. schema/sysop/abort 경로 검증이 더 필요하다
+
+일반 DML commit 외에도 `LOG_SYSOP_END`, schema replication, abort 경로가
+parallel dispatch/retire 구조와 섞인다.
+
+영향:
+
+- DML 중심 workload에서는 정상으로 보여도 schema 변경이 섞이면 ordering
+  문제가 드러날 수 있다.
+- sysop end 처리를 commit dispatch로 미룬 변경은 crash/recovery 및 HA
+  apply progress와 함께 검증해야 한다.
+
+## 검증 체크리스트
+
+production 수준으로 올리기 전에 최소한 다음 항목을 검증해야 한다.
+
+- out-of-order worker completion 상황에서 `committed_lsa`가 단조 증가하는지
+- `_db_ha_apply_info` 기반 crash/restart가 기존 serial path와 같은지
+- long transaction 하나 뒤에 short transaction 다수가 붙는 workload
+- transaction id skew workload
+- worker input queue full 상황
+- worker result queue full 상황
+- insert/update/delete 혼합 workload
+- unique index가 있는 table apply
+- trigger가 있는 table apply
+- schema replication과 DML이 섞인 workload
+- `LOG_SYSOP_END` ordering
+- abort transaction cleanup
+- HA state transition과 worker session 동시 접속
+- worker count별 RSS/VSZ 변화
+- release build에서 debug log/counter 비용 제거 여부
+
+## 요약
+
+이 브랜치는 transaction 단위 parallel apply pipeline을 만들고, dispatch FIFO로
+global commit progress 순서를 보존한다. 구조 방향은 PoC로 타당하다. 기존
+serial apply path를 크게 갈아엎지 않고, 비싼 apply/flush/commit 구간을
+worker로 분산시키기 때문이다.
+
+다만 아직 production 구조라고 보기는 어렵다. 핵심 위험은 ordered retire의
+head-of-line blocking, 정적 worker 분산, hidden shared client global,
+`LA_APPLY *` slot 수명 규칙, `_db_ha_apply_info` commit semantics 변경,
+result queue backpressure 부재다.
+
+현재 계측은 병목을 찾기에는 충분히 풍부하다. 다음 단계는 계측 결과를 바탕으로
+정말 병목이 worker apply인지, server RPC인지, flush인지, ordered retire인지
+분리하고, correctness gap부터 닫는 것이다.
