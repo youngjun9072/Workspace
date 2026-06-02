@@ -18,17 +18,18 @@
 > 호출 지점에 나타나면 그 전역 inclusive %가 매 위치마다 동일하게 찍힌다(master REPORT 와 동일 규칙).
 > 그래서 자식 %가 부모 %보다 커 보일 수 있음(예: `log_append_undoredo_crumbs` 27.75%).
 
-## 그림 (analysis/)
+## 설정
 
-| 그림 | 파일 | 설명 |
-|---|---|---|
-| 전체 flamegraph | `analysis/flame_full.svg` | 전 스레드·전 함수 on-CPU (브라우저에서 클릭 zoom) |
-| write-path flamegraph | `analysis/flame_locator_insert_force.svg` | `locator_insert_force` 포함 stack 만 |
-| 콜그래프(노드-엣지) | `analysis/callgraph.svg` / `analysis/callgraph.png` | root subtree, 노드 ≥0.5% root, 엣지 ≥30 |
-
-![call graph](analysis/callgraph.png)
-
-> SVG(flamegraph)는 인터랙티브라 브라우저로 열어야 zoom/search 가 됩니다.
+| 항목 | 값 |
+|---|---|
+| `double_write_buffer_size` | `0` |
+| `data_buffer_size` | `5G` |
+| `log_buffer_size` | `5G` |
+| `log_volume_size` | `1G` |
+| `checkpoint_interval` | `30min` |
+| `csql>` | `checkpoint` 수행 |
+| `addvoldb` | `100G` |
+| `addvoldb` | `temp` |
 
 ## 상위 inclusive 함수 (top 25 / 529)
 
