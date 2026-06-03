@@ -1,0 +1,508 @@
+# slocator_repl_force 콜체인 (ROOT 포함 sample 만, ROOT=100%)
+# root_samples = 22464  (total = 126337, 17.78% of total)
+# 노드컷 0.3% of root, MIN_EDGE 20
+
+[100.00%] slocator_repl_force
+    ├─ [ 84.77%] xlocator_repl_force
+    │   ├─ [ 48.76%] xbtree_find_unique
+    │   │   ├─ [ 22.63%] btree_key_find_and_lock_unique
+    │   │   │   └─ [ 22.53%] btree_key_find_and_lock_unique_of_unique
+    │   │   │       ├─ [ 21.52%] btree_key_lock_object
+    │   │   │       │   └─ [ 24.01%] lock_object
+    │   │   │       │       ├─ [ 21.26%] lock_internal_perform_lock_object
+    │   │   │       │       │   ├─ [ 15.00%] cubthread::lockfree_hashmap<lk_res_key, lk_res>::find_or_insert
+    │   │   │       │       │   │   └─ [ 16.60%] lf_hash_insert_internal
+    │   │   │       │       │   │       ├─ [ 14.35%] lf_list_insert_internal
+    │   │   │       │       │   │       │   ├─ [  8.93%] lock_res_key_compare
+    │   │   │       │       │   │       │   ├─ [  5.16%] lf_freelist_claim
+    │   │   │       │       │   │       │   │   ├─ [  1.96%] lf_stack_pop
+    │   │   │       │       │   │       │   │   │   └─ [  0.48%] ATOMIC_CAS_ADDR<void>
+    │   │   │       │       │   │       │   │   ├─ [  1.44%] lf_freelist_alloc_block
+    │   │   │       │       │   │       │   │   │   ├─ [  0.77%] lock_alloc_resource
+    │   │   │       │       │   │       │   │   │   │   └─ [  1.34%] cub_alloc
+    │   │   │       │       │   │       │   │   │   │       └─ [  2.76%] __GI___libc_malloc
+    │   │   │       │       │   │       │   │   │   │           └─ [  2.03%] _int_malloc
+    │   │   │       │       │   │       │   │   │   │               ├─ [  0.47%] unlink_chunk.isra.2
+    │   │   │       │       │   │       │   │   │   │               └─ [  1.04%] malloc_consolidate
+    │   │   │       │       │   │       │   │   │   │                   └─ [  0.47%] unlink_chunk.isra.2
+    │   │   │       │       │   │       │   │   │   └─ [  2.76%] __GI___libc_malloc
+    │   │   │       │       │   │       │   │   │       └─ [  2.03%] _int_malloc
+    │   │   │       │       │   │       │   │   │           ├─ [  0.47%] unlink_chunk.isra.2
+    │   │   │       │       │   │       │   │   │           └─ [  1.04%] malloc_consolidate
+    │   │   │       │       │   │       │   │   │               └─ [  0.47%] unlink_chunk.isra.2
+    │   │   │       │       │   │       │   │   └─ [  0.45%] ATOMIC_INC_32<int, int>
+    │   │   │       │       │   │       │   ├─ [  0.41%] lf_tran_start
+    │   │   │       │       │   │       │   ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │       │       │   │       │   └─ [  0.48%] ATOMIC_CAS_ADDR<void>
+    │   │   │       │       │   │       ├─ [  0.55%] heap_hfid_table_entry_key_hash
+    │   │   │       │       │   │       └─ [  0.35%] lock_res_key_hash
+    │   │   │       │       │   ├─ [  5.16%] lf_freelist_claim
+    │   │   │       │       │   │   ├─ [  1.96%] lf_stack_pop
+    │   │   │       │       │   │   │   └─ [  0.48%] ATOMIC_CAS_ADDR<void>
+    │   │   │       │       │   │   ├─ [  1.44%] lf_freelist_alloc_block
+    │   │   │       │       │   │   │   ├─ [  0.77%] lock_alloc_resource
+    │   │   │       │       │   │   │   │   └─ [  1.34%] cub_alloc
+    │   │   │       │       │   │   │   │       └─ [  2.76%] __GI___libc_malloc
+    │   │   │       │       │   │   │   │           └─ [  2.03%] _int_malloc
+    │   │   │       │       │   │   │   │               ├─ [  0.47%] unlink_chunk.isra.2
+    │   │   │       │       │   │   │   │               └─ [  1.04%] malloc_consolidate
+    │   │   │       │       │   │   │   │                   └─ [  0.47%] unlink_chunk.isra.2
+    │   │   │       │       │   │   │   └─ [  2.76%] __GI___libc_malloc
+    │   │   │       │       │   │   │       └─ [  2.03%] _int_malloc
+    │   │   │       │       │   │   │           ├─ [  0.47%] unlink_chunk.isra.2
+    │   │   │       │       │   │   │           └─ [  1.04%] malloc_consolidate
+    │   │   │       │       │   │   │               └─ [  0.47%] unlink_chunk.isra.2
+    │   │   │       │       │   │   └─ [  0.45%] ATOMIC_INC_32<int, int>
+    │   │   │       │       │   ├─ [  0.68%] lock_insert_into_tran_hold_list
+    │   │   │       │       │   │   └─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │       │       │   ├─ [  0.51%] lock_event_set_xasl_id_to_entry
+    │   │   │       │       │   │   └─ [  1.37%] LOG_FIND_TDES
+    │   │   │       │       │   ├─ [  0.97%] lock_find_class_entry
+    │   │   │       │       │   │   ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │       │       │   │   └─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   │       │       │   ├─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   │       │       │   └─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │       │       ├─ [  1.19%] lock_get_class_lock
+    │   │   │       │       │   ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │       │       │   └─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   │       │       └─ [  0.97%] lock_find_class_entry
+    │   │   │       │           ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │       │           └─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   │       └─ [  0.35%] btree_leaf_get_first_object
+    │   │   ├─ [ 21.31%] btree_search_key_and_apply_functions
+    │   │   │   ├─ [  8.08%] btree_advance_and_find_key
+    │   │   │   │   └─ [  5.56%] pgbuf_fix_release
+    │   │   │   │       ├─ [  0.85%] pgbuf_latch_bcb_upon_fix
+    │   │   │   │       ├─ [  0.75%] pgbuf_lockfree_fix_ro
+    │   │   │   │       │   └─ [  0.35%] pgbuf_hash_func_mirror
+    │   │   │   │       ├─ [  0.63%] pgbuf_search_hash_chain
+    │   │   │   │       │   └─ [  1.09%] __GI___pthread_mutex_trylock
+    │   │   │   │       ├─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   │   │       └─ [  0.35%] pgbuf_hash_func_mirror
+    │   │   │   ├─ [  3.99%] btree_get_root_with_key
+    │   │   │   │   ├─ [  5.56%] pgbuf_fix_release
+    │   │   │   │   │   ├─ [  0.85%] pgbuf_latch_bcb_upon_fix
+    │   │   │   │   │   ├─ [  0.75%] pgbuf_lockfree_fix_ro
+    │   │   │   │   │   │   └─ [  0.35%] pgbuf_hash_func_mirror
+    │   │   │   │   │   ├─ [  0.63%] pgbuf_search_hash_chain
+    │   │   │   │   │   │   └─ [  1.09%] __GI___pthread_mutex_trylock
+    │   │   │   │   │   ├─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   │   │   │   └─ [  0.35%] pgbuf_hash_func_mirror
+    │   │   │   │   └─ [  1.07%] btree_fix_root_with_info
+    │   │   │   │       ├─ [  0.55%] btree_glean_root_header_info
+    │   │   │   │       │   └─ [  0.97%] or_get_domain
+    │   │   │   │       │       └─ [  0.30%] unpack_domain
+    │   │   │   │       └─ [  0.40%] btree_get_root_header
+    │   │   │   │           └─ [  2.20%] spage_get_record
+    │   │   │   │               └─ [  1.44%] spage_find_slot
+    │   │   │   │                   └─ [  0.42%] spage_is_unknown_slot
+    │   │   │   └─ [  6.60%] pgbuf_unfix
+    │   │   │       ├─ [  3.36%] pgbuf_unlatch_bcb_upon_unfix
+    │   │   │       │   ├─ [  0.57%] pgbuf_wakeup_reader_writer
+    │   │   │       │   │   └─ [  0.56%] set_waiter_exists
+    │   │   │       │   └─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   │       ├─ [  1.43%] pgbuf_lru_move_from_private_to_shared
+    │   │   │       │   ├─ [  0.75%] pgbuf_lru_remove_bcb
+    │   │   │       │   └─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │       ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │       └─ [  0.45%] pgbuf_unlatch_thrd_holder
+    │   │   ├─ [  5.86%] btree_search_leaf_page
+    │   │   │   ├─ [  3.51%] btree_read_record_without_decompression
+    │   │   │   │   ├─ [  1.14%] mr_index_readval_int
+    │   │   │   │   │   └─ [  2.67%] __memmove_evex_unaligned_erms
+    │   │   │   │   ├─ [  0.48%] btree_read_fixed_portion_of_non_leaf_record_from_orbuf
+    │   │   │   │   │   └─ [  0.36%] or_get_int
+    │   │   │   │   │       └─ [  5.52%] btree_search_nonleaf_page
+    │   │   │   │   │           ├─ [  2.18%] btree_compare_key
+    │   │   │   │   │           │   └─ [  0.50%] mr_cmpval_int
+    │   │   │   │   │           ├─ [  2.20%] spage_get_record
+    │   │   │   │   │           │   └─ [  1.44%] spage_find_slot
+    │   │   │   │   │           │       └─ [  0.42%] spage_is_unknown_slot
+    │   │   │   │   │           └─ [  0.93%] spage_get_record_data
+    │   │   │   │   └─ [  0.39%] btree_clear_key_value
+    │   │   │   ├─ [  2.18%] btree_compare_key
+    │   │   │   │   └─ [  0.50%] mr_cmpval_int
+    │   │   │   ├─ [  2.20%] spage_get_record
+    │   │   │   │   └─ [  1.44%] spage_find_slot
+    │   │   │   │       └─ [  0.42%] spage_is_unknown_slot
+    │   │   │   ├─ [  0.93%] spage_get_record_data
+    │   │   │   ├─ [  0.50%] mr_cmpval_int
+    │   │   │   └─ [  0.39%] btree_clear_key_value
+    │   │   ├─ [  5.52%] btree_search_nonleaf_page
+    │   │   │   ├─ [  3.51%] btree_read_record_without_decompression
+    │   │   │   │   ├─ [  1.14%] mr_index_readval_int
+    │   │   │   │   │   └─ [  2.67%] __memmove_evex_unaligned_erms
+    │   │   │   │   ├─ [  5.86%] btree_search_leaf_page
+    │   │   │   │   │   ├─ [  2.18%] btree_compare_key
+    │   │   │   │   │   │   └─ [  0.50%] mr_cmpval_int
+    │   │   │   │   │   ├─ [  2.20%] spage_get_record
+    │   │   │   │   │   │   └─ [  1.44%] spage_find_slot
+    │   │   │   │   │   │       └─ [  0.42%] spage_is_unknown_slot
+    │   │   │   │   │   ├─ [  0.93%] spage_get_record_data
+    │   │   │   │   │   ├─ [  0.50%] mr_cmpval_int
+    │   │   │   │   │   └─ [  0.39%] btree_clear_key_value
+    │   │   │   │   ├─ [  0.48%] btree_read_fixed_portion_of_non_leaf_record_from_orbuf
+    │   │   │   │   │   └─ [  0.36%] or_get_int
+    │   │   │   │   └─ [  0.39%] btree_clear_key_value
+    │   │   │   ├─ [  2.18%] btree_compare_key
+    │   │   │   │   └─ [  0.50%] mr_cmpval_int
+    │   │   │   ├─ [  2.20%] spage_get_record
+    │   │   │   │   └─ [  1.44%] spage_find_slot
+    │   │   │   │       └─ [  0.42%] spage_is_unknown_slot
+    │   │   │   └─ [  0.93%] spage_get_record_data
+    │   │   ├─ [ 24.01%] lock_object
+    │   │   │   ├─ [ 21.26%] lock_internal_perform_lock_object
+    │   │   │   │   ├─ [ 15.00%] cubthread::lockfree_hashmap<lk_res_key, lk_res>::find_or_insert
+    │   │   │   │   │   └─ [ 16.60%] lf_hash_insert_internal
+    │   │   │   │   │       ├─ [ 14.35%] lf_list_insert_internal
+    │   │   │   │   │       │   ├─ [  8.93%] lock_res_key_compare
+    │   │   │   │   │       │   ├─ [  5.16%] lf_freelist_claim
+    │   │   │   │   │       │   │   ├─ [  1.96%] lf_stack_pop
+    │   │   │   │   │       │   │   │   └─ [  0.48%] ATOMIC_CAS_ADDR<void>
+    │   │   │   │   │       │   │   ├─ [  1.44%] lf_freelist_alloc_block
+    │   │   │   │   │       │   │   │   ├─ [  0.77%] lock_alloc_resource
+    │   │   │   │   │       │   │   │   │   └─ [  1.34%] cub_alloc
+    │   │   │   │   │       │   │   │   │       └─ [  2.76%] __GI___libc_malloc
+    │   │   │   │   │       │   │   │   │           └─ [  2.03%] _int_malloc
+    │   │   │   │   │       │   │   │   │               ├─ [  0.47%] unlink_chunk.isra.2
+    │   │   │   │   │       │   │   │   │               └─ [  1.04%] malloc_consolidate
+    │   │   │   │   │       │   │   │   │                   └─ [  0.47%] unlink_chunk.isra.2
+    │   │   │   │   │       │   │   │   └─ [  2.76%] __GI___libc_malloc
+    │   │   │   │   │       │   │   │       └─ [  2.03%] _int_malloc
+    │   │   │   │   │       │   │   │           ├─ [  0.47%] unlink_chunk.isra.2
+    │   │   │   │   │       │   │   │           └─ [  1.04%] malloc_consolidate
+    │   │   │   │   │       │   │   │               └─ [  0.47%] unlink_chunk.isra.2
+    │   │   │   │   │       │   │   └─ [  0.45%] ATOMIC_INC_32<int, int>
+    │   │   │   │   │       │   ├─ [  0.41%] lf_tran_start
+    │   │   │   │   │       │   ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │   │   │       │   └─ [  0.48%] ATOMIC_CAS_ADDR<void>
+    │   │   │   │   │       ├─ [  0.55%] heap_hfid_table_entry_key_hash
+    │   │   │   │   │       └─ [  0.35%] lock_res_key_hash
+    │   │   │   │   ├─ [  5.16%] lf_freelist_claim
+    │   │   │   │   │   ├─ [  1.96%] lf_stack_pop
+    │   │   │   │   │   │   └─ [  0.48%] ATOMIC_CAS_ADDR<void>
+    │   │   │   │   │   ├─ [  1.44%] lf_freelist_alloc_block
+    │   │   │   │   │   │   ├─ [  0.77%] lock_alloc_resource
+    │   │   │   │   │   │   │   └─ [  1.34%] cub_alloc
+    │   │   │   │   │   │   │       └─ [  2.76%] __GI___libc_malloc
+    │   │   │   │   │   │   │           └─ [  2.03%] _int_malloc
+    │   │   │   │   │   │   │               ├─ [  0.47%] unlink_chunk.isra.2
+    │   │   │   │   │   │   │               └─ [  1.04%] malloc_consolidate
+    │   │   │   │   │   │   │                   └─ [  0.47%] unlink_chunk.isra.2
+    │   │   │   │   │   │   └─ [  2.76%] __GI___libc_malloc
+    │   │   │   │   │   │       └─ [  2.03%] _int_malloc
+    │   │   │   │   │   │           ├─ [  0.47%] unlink_chunk.isra.2
+    │   │   │   │   │   │           └─ [  1.04%] malloc_consolidate
+    │   │   │   │   │   │               └─ [  0.47%] unlink_chunk.isra.2
+    │   │   │   │   │   └─ [  0.45%] ATOMIC_INC_32<int, int>
+    │   │   │   │   ├─ [  0.68%] lock_insert_into_tran_hold_list
+    │   │   │   │   │   └─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │   │   ├─ [  0.51%] lock_event_set_xasl_id_to_entry
+    │   │   │   │   │   └─ [  1.37%] LOG_FIND_TDES
+    │   │   │   │   ├─ [  0.97%] lock_find_class_entry
+    │   │   │   │   │   ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │   │   │   └─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   │   │   ├─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   │   │   └─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │   ├─ [  1.19%] lock_get_class_lock
+    │   │   │   │   ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │   │   └─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   │   └─ [  0.97%] lock_find_class_entry
+    │   │   │       ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │       └─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   └─ [  0.51%] oid_check_cached_class_oid
+    │   ├─ [ 16.19%] locator_repl_prepare_force
+    │   │   ├─ [  8.68%] heap_get_visible_version
+    │   │   │   ├─ [  4.97%] heap_get_visible_version_internal
+    │   │   │   │   ├─ [  4.47%] heap_prepare_get_context
+    │   │   │   │   └─ [  0.33%] heap_get_record_data_when_all_ready
+    │   │   │   └─ [  3.35%] heap_clean_get_context
+    │   │   │       └─ [  6.60%] pgbuf_unfix
+    │   │   │           ├─ [  3.36%] pgbuf_unlatch_bcb_upon_unfix
+    │   │   │           │   ├─ [  0.57%] pgbuf_wakeup_reader_writer
+    │   │   │           │   │   └─ [  0.56%] set_waiter_exists
+    │   │   │           │   └─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   │           ├─ [  1.43%] pgbuf_lru_move_from_private_to_shared
+    │   │   │           │   ├─ [  0.75%] pgbuf_lru_remove_bcb
+    │   │   │           │   └─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │           ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │           └─ [  0.45%] pgbuf_unlatch_thrd_holder
+    │   │   ├─ [  5.10%] heap_get_class_repr_id
+    │   │   │   ├─ [  3.93%] heap_classrepr_get
+    │   │   │   │   ├─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   │   │   ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │   │   └─ [  1.09%] __GI___pthread_mutex_trylock
+    │   │   │   └─ [  2.54%] heap_classrepr_free
+    │   │   │       ├─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   │       └─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   └─ [  1.67%] btree_get_pkey_btid
+    │   │       ├─ [  3.93%] heap_classrepr_get
+    │   │       │   ├─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │       │   ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │       │   └─ [  1.09%] __GI___pthread_mutex_trylock
+    │   │       └─ [  2.54%] heap_classrepr_free
+    │   │           ├─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │           └─ [  5.78%] __GI___pthread_mutex_lock
+    │   ├─ [  7.61%] xtran_server_end_topop
+    │   │   ├─ [  3.33%] log_sysop_attach_to_outer
+    │   │   │   ├─ [  2.12%] log_tdes::unlock_topop
+    │   │   │   │   ├─ [  1.99%] cubpl::get_session
+    │   │   │   │   │   ├─ [  1.44%] session_get_pl_session
+    │   │   │   │   │   │   ├─ [  0.88%] cubpl::session::is_sp_running
+    │   │   │   │   │   │   │   ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │   │   │   │   │   └─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   │   │   │   │   └─ [  0.32%] session_get_session_state
+    │   │   │   │   │   └─ [  0.87%] thread_get_thread_entry_info
+    │   │   │   │   │       └─ [  0.53%] cubthread::get_entry
+    │   │   │   │   │           └─ [  0.65%] __tls_get_addr
+    │   │   │   │   └─ [  0.75%] cubpl::session::is_thread_involved
+    │   │   │   │       ├─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   │   │       └─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │   ├─ [  0.48%] log_sysop_end_final
+    │   │   │   └─ [  0.92%] rmutex_unlock
+    │   │   │       ├─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   │       └─ [  0.87%] thread_get_thread_entry_info
+    │   │   │           └─ [  0.53%] cubthread::get_entry
+    │   │   │               └─ [  0.65%] __tls_get_addr
+    │   │   ├─ [  1.87%] cuberr::context::pop_error_stack_and_destroy
+    │   │   │   ├─ [  1.03%] cuberr::context::pop_error_stack
+    │   │   │   │   ├─ [  0.55%] cuberr::er_message::swap
+    │   │   │   │   └─ [  0.53%] operator delete
+    │   │   │   │       └─ [  0.57%] cub_free
+    │   │   │   │           └─ [  1.25%] _int_free
+    │   │   │   │               └─ [  1.04%] malloc_consolidate
+    │   │   │   │                   └─ [  0.47%] unlink_chunk.isra.2
+    │   │   │   ├─ [  0.38%] cuberr::er_message::~er_message
+    │   │   │   └─ [  0.78%] cuberr::er_message::er_message
+    │   │   ├─ [  1.28%] cuberr::context::push_error_stack
+    │   │   │   ├─ [  1.30%] operator new
+    │   │   │   │   ├─ [  2.76%] __GI___libc_malloc
+    │   │   │   │   │   └─ [  2.03%] _int_malloc
+    │   │   │   │   │       ├─ [  0.47%] unlink_chunk.isra.2
+    │   │   │   │   │       └─ [  1.04%] malloc_consolidate
+    │   │   │   │   │           └─ [  0.47%] unlink_chunk.isra.2
+    │   │   │   │   └─ [  1.34%] cub_alloc
+    │   │   │   │       └─ [  2.76%] __GI___libc_malloc
+    │   │   │   │           └─ [  2.03%] _int_malloc
+    │   │   │   │               ├─ [  0.47%] unlink_chunk.isra.2
+    │   │   │   │               └─ [  1.04%] malloc_consolidate
+    │   │   │   │                   └─ [  0.47%] unlink_chunk.isra.2
+    │   │   │   └─ [  0.78%] cuberr::er_message::er_message
+    │   │   └─ [  0.46%] er_stack_push
+    │   │       └─ [  0.55%] cuberr::context::get_thread_local_context
+    │   │           └─ [  0.65%] __tls_get_addr
+    │   ├─ [  3.20%] xtran_server_start_topop
+    │   │   └─ [  2.52%] log_sysop_start
+    │   │       ├─ [  1.15%] log_tdes::lock_topop
+    │   │       │   ├─ [  1.99%] cubpl::get_session
+    │   │       │   │   ├─ [  1.44%] session_get_pl_session
+    │   │       │   │   │   ├─ [  0.88%] cubpl::session::is_sp_running
+    │   │       │   │   │   │   ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │       │   │   │   │   └─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │       │   │   │   └─ [  0.32%] session_get_session_state
+    │   │       │   │   └─ [  0.87%] thread_get_thread_entry_info
+    │   │       │   │       └─ [  0.53%] cubthread::get_entry
+    │   │       │   │           └─ [  0.65%] __tls_get_addr
+    │   │       │   └─ [  0.75%] cubpl::session::is_thread_involved
+    │   │       │       ├─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │       │       └─ [  5.78%] __GI___pthread_mutex_lock
+    │   │       ├─ [  2.23%] rmutex_lock
+    │   │       │   ├─ [  0.68%] tsc_getticks
+    │   │       │   │   └─ [  0.46%] __clock_gettime_2
+    │   │       │   ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │       │   └─ [  0.87%] thread_get_thread_entry_info
+    │   │       │       └─ [  0.53%] cubthread::get_entry
+    │   │       │           └─ [  0.65%] __tls_get_addr
+    │   │       └─ [  1.37%] LOG_FIND_TDES
+    │   ├─ [  2.84%] heap_get_class_info
+    │   │   └─ [  2.80%] heap_hfid_cache_get
+    │   │       └─ [ 16.60%] lf_hash_insert_internal
+    │   │           ├─ [ 14.35%] lf_list_insert_internal
+    │   │           │   ├─ [  8.93%] lock_res_key_compare
+    │   │           │   ├─ [  5.16%] lf_freelist_claim
+    │   │           │   │   ├─ [  1.96%] lf_stack_pop
+    │   │           │   │   │   └─ [  0.48%] ATOMIC_CAS_ADDR<void>
+    │   │           │   │   ├─ [  1.44%] lf_freelist_alloc_block
+    │   │           │   │   │   ├─ [  0.77%] lock_alloc_resource
+    │   │           │   │   │   │   └─ [  1.34%] cub_alloc
+    │   │           │   │   │   │       └─ [  2.76%] __GI___libc_malloc
+    │   │           │   │   │   │           └─ [  2.03%] _int_malloc
+    │   │           │   │   │   │               ├─ [  0.47%] unlink_chunk.isra.2
+    │   │           │   │   │   │               └─ [  1.04%] malloc_consolidate
+    │   │           │   │   │   │                   └─ [  0.47%] unlink_chunk.isra.2
+    │   │           │   │   │   └─ [  2.76%] __GI___libc_malloc
+    │   │           │   │   │       └─ [  2.03%] _int_malloc
+    │   │           │   │   │           ├─ [  0.47%] unlink_chunk.isra.2
+    │   │           │   │   │           └─ [  1.04%] malloc_consolidate
+    │   │           │   │   │               └─ [  0.47%] unlink_chunk.isra.2
+    │   │           │   │   └─ [  0.45%] ATOMIC_INC_32<int, int>
+    │   │           │   ├─ [  0.41%] lf_tran_start
+    │   │           │   ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │           │   └─ [  0.48%] ATOMIC_CAS_ADDR<void>
+    │   │           ├─ [  0.55%] heap_hfid_table_entry_key_hash
+    │   │           └─ [  0.35%] lock_res_key_hash
+    │   ├─ [  1.87%] heap_scancache_start_modify
+    │   │   ├─ [  1.23%] file_get_type
+    │   │   │   ├─ [  5.56%] pgbuf_fix_release
+    │   │   │   │   ├─ [  0.85%] pgbuf_latch_bcb_upon_fix
+    │   │   │   │   ├─ [  0.75%] pgbuf_lockfree_fix_ro
+    │   │   │   │   │   └─ [  0.35%] pgbuf_hash_func_mirror
+    │   │   │   │   ├─ [  0.63%] pgbuf_search_hash_chain
+    │   │   │   │   │   └─ [  1.09%] __GI___pthread_mutex_trylock
+    │   │   │   │   ├─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   │   │   └─ [  0.35%] pgbuf_hash_func_mirror
+    │   │   │   └─ [  6.60%] pgbuf_unfix
+    │   │   │       ├─ [  3.36%] pgbuf_unlatch_bcb_upon_unfix
+    │   │   │       │   ├─ [  0.57%] pgbuf_wakeup_reader_writer
+    │   │   │       │   │   └─ [  0.56%] set_waiter_exists
+    │   │   │       │   └─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   │       ├─ [  1.43%] pgbuf_lru_move_from_private_to_shared
+    │   │   │       │   ├─ [  0.75%] pgbuf_lru_remove_bcb
+    │   │   │       │   └─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │       ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │       └─ [  0.45%] pgbuf_unlatch_thrd_holder
+    │   │   └─ [  0.40%] heap_scancache_reset_modify
+    │   │       └─ [  2.84%] heap_get_class_info
+    │   │           └─ [  2.80%] heap_hfid_cache_get
+    │   │               └─ [ 16.60%] lf_hash_insert_internal
+    │   │                   ├─ [ 14.35%] lf_list_insert_internal
+    │   │                   │   ├─ [  8.93%] lock_res_key_compare
+    │   │                   │   ├─ [  5.16%] lf_freelist_claim
+    │   │                   │   │   ├─ [  1.96%] lf_stack_pop
+    │   │                   │   │   │   └─ [  0.48%] ATOMIC_CAS_ADDR<void>
+    │   │                   │   │   ├─ [  1.44%] lf_freelist_alloc_block
+    │   │                   │   │   │   ├─ [  0.77%] lock_alloc_resource
+    │   │                   │   │   │   │   └─ [  1.34%] cub_alloc
+    │   │                   │   │   │   │       └─ [  2.76%] __GI___libc_malloc
+    │   │                   │   │   │   │           └─ [  2.03%] _int_malloc
+    │   │                   │   │   │   │               ├─ [  0.47%] unlink_chunk.isra.2
+    │   │                   │   │   │   │               └─ [  1.04%] malloc_consolidate
+    │   │                   │   │   │   │                   └─ [  0.47%] unlink_chunk.isra.2
+    │   │                   │   │   │   └─ [  2.76%] __GI___libc_malloc
+    │   │                   │   │   │       └─ [  2.03%] _int_malloc
+    │   │                   │   │   │           ├─ [  0.47%] unlink_chunk.isra.2
+    │   │                   │   │   │           └─ [  1.04%] malloc_consolidate
+    │   │                   │   │   │               └─ [  0.47%] unlink_chunk.isra.2
+    │   │                   │   │   └─ [  0.45%] ATOMIC_INC_32<int, int>
+    │   │                   │   ├─ [  0.41%] lf_tran_start
+    │   │                   │   ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │                   │   └─ [  0.48%] ATOMIC_CAS_ADDR<void>
+    │   │                   ├─ [  0.55%] heap_hfid_table_entry_key_hash
+    │   │                   └─ [  0.35%] lock_res_key_hash
+    │   ├─ [  1.30%] or_unpack_mem_value
+    │   │   ├─ [  0.97%] or_get_domain
+    │   │   │   └─ [  0.30%] unpack_domain
+    │   │   └─ [  0.31%] mr_initval_int
+    │   ├─ [  0.61%] heap_scancache_quick_end
+    │   │   └─ [  0.57%] heap_scancache::end_area
+    │   │       └─ [  0.51%] cubmem::single_block_allocator::~single_block_allocator
+    │   └─ [  0.36%] er_clear
+    │       └─ [  0.55%] cuberr::context::get_thread_local_context
+    │           └─ [  0.65%] __tls_get_addr
+    ├─ [  6.49%] css_send_reply_and_2_data_to_client
+    │   ├─ [  4.57%] css_enqueue_and_notify
+    │   │   ├─ [  4.25%] cubconn::connection::worker::enqueue_and_notify
+    │   │   │   ├─ [  3.11%] cubconn::connection::worker::notify
+    │   │   │   │   └─ [  3.07%] __libc_write
+    │   │   │   └─ [  2.90%] cubconn::connection::worker::enqueue
+    │   │   │       └─ [  1.86%] tbb::detail::d2::micro_queue<cubconn::connection::worker::message, tbb::detail::d1::cache_aligned_allocator<cubconn::connection::worker::message> >::prepare_page(unsigned long, tbb::detail::d2::concurrent_queue_rep<cubconn::connection::worker::message, tbb::detail::d1::cache_aligned_allocator<cubconn::connection::worker::message> >&, tbb::detail::d1::cache_aligned_allocator<tbb::detail::d2::micro_queue<cubconn::connection::worker::message, tbb::detail::d1::cache_aligned_allocator<cubconn::connection::worker::message> >::padded_page>, tbb::detail::d2::micro_queue<cubconn::connection::worker::message, tbb::detail::d1::cache_aligned_allocator<cubconn::connection::worker::message> >::padded_page*&)::{lambda()#1}::operator()
+    │   │   │           └─ [  1.85%] tbb::detail::r1::cache_aligned_allocate
+    │   │   │               └─ [  1.79%] _mid_memalign
+    │   │   │                   └─ [  1.58%] _int_memalign
+    │   │   │                       ├─ [  1.25%] _int_free
+    │   │   │                       │   └─ [  1.04%] malloc_consolidate
+    │   │   │                       │       └─ [  0.47%] unlink_chunk.isra.2
+    │   │   │                       └─ [  2.03%] _int_malloc
+    │   │   │                           ├─ [  0.47%] unlink_chunk.isra.2
+    │   │   │                           └─ [  1.04%] malloc_consolidate
+    │   │   │                               └─ [  0.47%] unlink_chunk.isra.2
+    │   │   └─ [  2.23%] rmutex_lock
+    │   │       ├─ [  0.68%] tsc_getticks
+    │   │       │   └─ [  0.46%] __clock_gettime_2
+    │   │       ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │       └─ [  0.87%] thread_get_thread_entry_info
+    │   │           └─ [  0.53%] cubthread::get_entry
+    │   │               └─ [  0.65%] __tls_get_addr
+    │   ├─ [  2.23%] rmutex_lock
+    │   │   ├─ [  0.68%] tsc_getticks
+    │   │   │   └─ [  0.46%] __clock_gettime_2
+    │   │   ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   └─ [  0.87%] thread_get_thread_entry_info
+    │   │       └─ [  0.53%] cubthread::get_entry
+    │   │           └─ [  0.65%] __tls_get_addr
+    │   ├─ [  1.30%] operator new
+    │   │   ├─ [  2.76%] __GI___libc_malloc
+    │   │   │   └─ [  2.03%] _int_malloc
+    │   │   │       ├─ [  0.47%] unlink_chunk.isra.2
+    │   │   │       └─ [  1.04%] malloc_consolidate
+    │   │   │           └─ [  0.47%] unlink_chunk.isra.2
+    │   │   └─ [  1.34%] cub_alloc
+    │   │       └─ [  2.76%] __GI___libc_malloc
+    │   │           └─ [  2.03%] _int_malloc
+    │   │               ├─ [  0.47%] unlink_chunk.isra.2
+    │   │               └─ [  1.04%] malloc_consolidate
+    │   │                   └─ [  0.47%] unlink_chunk.isra.2
+    │   └─ [  0.92%] rmutex_unlock
+    │       ├─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │       └─ [  0.87%] thread_get_thread_entry_info
+    │           └─ [  0.53%] cubthread::get_entry
+    │               └─ [  0.65%] __tls_get_addr
+    ├─ [  2.59%] css_request_release_packet
+    │   ├─ [  2.90%] cubconn::connection::worker::enqueue
+    │   │   └─ [  1.86%] tbb::detail::d2::micro_queue<cubconn::connection::worker::message, tbb::detail::d1::cache_aligned_allocator<cubconn::connection::worker::message> >::prepare_page(unsigned long, tbb::detail::d2::concurrent_queue_rep<cubconn::connection::worker::message, tbb::detail::d1::cache_aligned_allocator<cubconn::connection::worker::message> >&, tbb::detail::d1::cache_aligned_allocator<tbb::detail::d2::micro_queue<cubconn::connection::worker::message, tbb::detail::d1::cache_aligned_allocator<cubconn::connection::worker::message> >::padded_page>, tbb::detail::d2::micro_queue<cubconn::connection::worker::message, tbb::detail::d1::cache_aligned_allocator<cubconn::connection::worker::message> >::padded_page*&)::{lambda()#1}::operator()
+    │   │       └─ [  1.85%] tbb::detail::r1::cache_aligned_allocate
+    │   │           └─ [  1.79%] _mid_memalign
+    │   │               └─ [  1.58%] _int_memalign
+    │   │                   ├─ [  1.25%] _int_free
+    │   │                   │   └─ [  1.04%] malloc_consolidate
+    │   │                   │       └─ [  0.47%] unlink_chunk.isra.2
+    │   │                   └─ [  2.03%] _int_malloc
+    │   │                       ├─ [  0.47%] unlink_chunk.isra.2
+    │   │                       └─ [  1.04%] malloc_consolidate
+    │   │                           └─ [  0.47%] unlink_chunk.isra.2
+    │   └─ [  2.23%] rmutex_lock
+    │       ├─ [  0.68%] tsc_getticks
+    │       │   └─ [  0.46%] __clock_gettime_2
+    │       ├─ [  5.78%] __GI___pthread_mutex_lock
+    │       └─ [  0.87%] thread_get_thread_entry_info
+    │           └─ [  0.53%] cubthread::get_entry
+    │               └─ [  0.65%] __tls_get_addr
+    ├─ [  2.67%] __memmove_evex_unaligned_erms
+    ├─ [  1.71%] css_receive_data_from_client_with_timeout
+    │   ├─ [  1.25%] css_receive_data
+    │   │   ├─ [  1.14%] css_return_queued_data_timeout
+    │   │   │   ├─ [  0.92%] rmutex_unlock
+    │   │   │   │   ├─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │   │   │   │   └─ [  0.87%] thread_get_thread_entry_info
+    │   │   │   │       └─ [  0.53%] cubthread::get_entry
+    │   │   │   │           └─ [  0.65%] __tls_get_addr
+    │   │   │   └─ [  2.23%] rmutex_lock
+    │   │   │       ├─ [  0.68%] tsc_getticks
+    │   │   │       │   └─ [  0.46%] __clock_gettime_2
+    │   │   │       ├─ [  5.78%] __GI___pthread_mutex_lock
+    │   │   │       └─ [  0.87%] thread_get_thread_entry_info
+    │   │   │           └─ [  0.53%] cubthread::get_entry
+    │   │   │               └─ [  0.65%] __tls_get_addr
+    │   │   └─ [  0.40%] css_traverse_list
+    │   └─ [  0.42%] css_return_queued_error
+    │       ├─ [  2.23%] rmutex_lock
+    │       │   ├─ [  0.68%] tsc_getticks
+    │       │   │   └─ [  0.46%] __clock_gettime_2
+    │       │   ├─ [  5.78%] __GI___pthread_mutex_lock
+    │       │   └─ [  0.87%] thread_get_thread_entry_info
+    │       │       └─ [  0.53%] cubthread::get_entry
+    │       │           └─ [  0.65%] __tls_get_addr
+    │       └─ [  0.92%] rmutex_unlock
+    │           ├─ [  5.19%] __pthread_mutex_unlock_usercnt
+    │           └─ [  0.87%] thread_get_thread_entry_info
+    │               └─ [  0.53%] cubthread::get_entry
+    │                   └─ [  0.65%] __tls_get_addr
+    ├─ [  0.59%] locator_unpack_copy_area_descriptor
+    └─ [  0.46%] locator_recv_allocate_copyarea
+        └─ [  0.44%] locator_allocate_copy_area_by_length
+            └─ [  1.34%] cub_alloc
+                └─ [  2.76%] __GI___libc_malloc
+                    └─ [  2.03%] _int_malloc
+                        ├─ [  0.47%] unlink_chunk.isra.2
+                        └─ [  1.04%] malloc_consolidate
+                            └─ [  0.47%] unlink_chunk.isra.2

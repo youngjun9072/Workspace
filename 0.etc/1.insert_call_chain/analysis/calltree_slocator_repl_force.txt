@@ -1,0 +1,303 @@
+# slocator_repl_force 콜체인 (ROOT 포함 sample 만, ROOT=100%)
+# root_samples = 9442  (total = 147236, 6.41% of total)
+# 노드컷 0.3% of root, MIN_EDGE 20
+
+[100.00%] slocator_repl_force
+    ├─ [ 59.04%] xlocator_repl_force
+    │   ├─ [ 20.21%] xtran_server_end_topop
+    │   │   ├─ [  9.10%] log_sysop_attach_to_outer
+    │   │   │   ├─ [  4.76%] log_tdes::unlock_topop
+    │   │   │   │   ├─ [  3.99%] cubpl::get_session
+    │   │   │   │   │   ├─ [  2.67%] session_get_pl_session
+    │   │   │   │   │   │   ├─ [  1.71%] cubpl::session::is_sp_running
+    │   │   │   │   │   │   │   ├─ [  4.47%] __GI___pthread_mutex_lock
+    │   │   │   │   │   │   │   │   └─ [  0.44%] __lll_lock_wait
+    │   │   │   │   │   │   │   └─ [  5.45%] __pthread_mutex_unlock_usercnt
+    │   │   │   │   │   │   │       └─ [  0.37%] __lll_unlock_wake
+    │   │   │   │   │   │   └─ [  0.42%] session_get_session_state
+    │   │   │   │   │   └─ [  1.79%] thread_get_thread_entry_info
+    │   │   │   │   │       ├─ [  0.93%] cubthread::get_entry
+    │   │   │   │   │       │   └─ [  1.55%] __tls_get_addr
+    │   │   │   │   │       └─ [  0.55%] cubthread::get_entry@plt
+    │   │   │   │   └─ [  1.80%] cubpl::session::is_thread_involved
+    │   │   │   │       ├─ [  5.45%] __pthread_mutex_unlock_usercnt
+    │   │   │   │       │   └─ [  0.37%] __lll_unlock_wake
+    │   │   │   │       └─ [  4.47%] __GI___pthread_mutex_lock
+    │   │   │   │           └─ [  0.44%] __lll_lock_wait
+    │   │   │   ├─ [  1.78%] log_sysop_end_final
+    │   │   │   │   └─ [  0.52%] log_tdes::on_sysop_end
+    │   │   │   │       └─ [  0.32%] log_tdes::is_system_worker_transaction@plt
+    │   │   │   ├─ [  2.19%] rmutex_unlock
+    │   │   │   │   ├─ [  5.45%] __pthread_mutex_unlock_usercnt
+    │   │   │   │   │   └─ [  0.37%] __lll_unlock_wake
+    │   │   │   │   ├─ [  0.52%] cubthread::is_single_thread@plt
+    │   │   │   │   └─ [  1.79%] thread_get_thread_entry_info
+    │   │   │   │       ├─ [  0.93%] cubthread::get_entry
+    │   │   │   │       │   └─ [  1.55%] __tls_get_addr
+    │   │   │   │       └─ [  0.55%] cubthread::get_entry@plt
+    │   │   │   ├─ [  0.58%] log_sysop_end_begin
+    │   │   │   │   └─ [  0.56%] log_sysop_get_tran_index_and_tdes
+    │   │   │   │       └─ [  5.26%] LOG_FIND_TDES
+    │   │   │   ├─ [  0.37%] LSA_ISNULL
+    │   │   │   └─ [  0.35%] rmutex_unlock@plt
+    │   │   ├─ [  4.19%] cuberr::context::pop_error_stack_and_destroy
+    │   │   │   ├─ [  2.15%] cuberr::context::pop_error_stack
+    │   │   │   │   ├─ [  1.26%] cuberr::er_message::swap
+    │   │   │   │   └─ [  0.67%] operator delete
+    │   │   │   │       └─ [  0.80%] cub_free
+    │   │   │   │           ├─ [  0.33%] __GI___libc_free
+    │   │   │   │           └─ [  0.74%] _int_free
+    │   │   │   ├─ [  0.98%] cuberr::er_message::~er_message
+    │   │   │   └─ [  1.48%] cuberr::er_message::er_message
+    │   │   ├─ [  2.77%] cuberr::context::push_error_stack
+    │   │   │   ├─ [  3.80%] operator new
+    │   │   │   │   ├─ [  3.78%] __GI___libc_malloc
+    │   │   │   │   │   └─ [  7.56%] _int_malloc
+    │   │   │   │   │       └─ [  5.55%] sysmalloc
+    │   │   │   │   │           └─ [  4.38%] __GI___mprotect
+    │   │   │   │   ├─ [  1.35%] cub_alloc
+    │   │   │   │   │   └─ [  3.78%] __GI___libc_malloc
+    │   │   │   │   │       └─ [  7.56%] _int_malloc
+    │   │   │   │   │           └─ [  5.55%] sysmalloc
+    │   │   │   │   │               └─ [  4.38%] __GI___mprotect
+    │   │   │   │   └─ [  0.54%] malloc@plt
+    │   │   │   └─ [  1.48%] cuberr::er_message::er_message
+    │   │   ├─ [  1.76%] LOG_FIND_CURRENT_TDES
+    │   │   │   └─ [  5.26%] LOG_FIND_TDES
+    │   │   └─ [  1.24%] er_stack_push
+    │   │       └─ [  1.51%] cuberr::context::get_thread_local_context
+    │   │           └─ [  1.55%] __tls_get_addr
+    │   ├─ [  9.84%] xtran_server_start_topop
+    │   │   ├─ [  7.52%] log_sysop_start
+    │   │   │   ├─ [  2.46%] log_tdes::lock_topop
+    │   │   │   │   ├─ [  3.99%] cubpl::get_session
+    │   │   │   │   │   ├─ [  2.67%] session_get_pl_session
+    │   │   │   │   │   │   ├─ [  1.71%] cubpl::session::is_sp_running
+    │   │   │   │   │   │   │   ├─ [  4.47%] __GI___pthread_mutex_lock
+    │   │   │   │   │   │   │   │   └─ [  0.44%] __lll_lock_wait
+    │   │   │   │   │   │   │   └─ [  5.45%] __pthread_mutex_unlock_usercnt
+    │   │   │   │   │   │   │       └─ [  0.37%] __lll_unlock_wake
+    │   │   │   │   │   │   └─ [  0.42%] session_get_session_state
+    │   │   │   │   │   └─ [  1.79%] thread_get_thread_entry_info
+    │   │   │   │   │       ├─ [  0.93%] cubthread::get_entry
+    │   │   │   │   │       │   └─ [  1.55%] __tls_get_addr
+    │   │   │   │   │       └─ [  0.55%] cubthread::get_entry@plt
+    │   │   │   │   └─ [  1.80%] cubpl::session::is_thread_involved
+    │   │   │   │       ├─ [  5.45%] __pthread_mutex_unlock_usercnt
+    │   │   │   │       │   └─ [  0.37%] __lll_unlock_wake
+    │   │   │   │       └─ [  4.47%] __GI___pthread_mutex_lock
+    │   │   │   │           └─ [  0.44%] __lll_lock_wait
+    │   │   │   ├─ [  6.27%] rmutex_lock
+    │   │   │   │   ├─ [  1.78%] tsc_getticks
+    │   │   │   │   │   └─ [  1.17%] __clock_gettime_2
+    │   │   │   │   ├─ [  4.47%] __GI___pthread_mutex_lock
+    │   │   │   │   │   └─ [  0.44%] __lll_lock_wait
+    │   │   │   │   ├─ [  1.79%] thread_get_thread_entry_info
+    │   │   │   │   │   ├─ [  0.93%] cubthread::get_entry
+    │   │   │   │   │   │   └─ [  1.55%] __tls_get_addr
+    │   │   │   │   │   └─ [  0.55%] cubthread::get_entry@plt
+    │   │   │   │   ├─ [  0.31%] cubthread::entry::get_id@plt
+    │   │   │   │   └─ [  0.33%] cubthread::entry::get_id
+    │   │   │   ├─ [  5.26%] LOG_FIND_TDES
+    │   │   │   ├─ [  0.47%] log_tdes::on_sysop_start
+    │   │   │   │   └─ [  0.46%] log_tdes::is_system_worker_transaction
+    │   │   │   └─ [  0.41%] rmutex_lock@plt
+    │   │   ├─ [  1.23%] log_get_parent_lsa_system_op
+    │   │   │   └─ [  5.26%] LOG_FIND_TDES
+    │   │   └─ [  0.47%] locator_savepoint_transient_class_name_entries
+    │   ├─ [  9.46%] heap_get_class_repr_id
+    │   │   ├─ [  4.89%] heap_classrepr_get
+    │   │   │   ├─ [  5.45%] __pthread_mutex_unlock_usercnt
+    │   │   │   │   └─ [  0.37%] __lll_unlock_wake
+    │   │   │   ├─ [  4.47%] __GI___pthread_mutex_lock
+    │   │   │   │   └─ [  0.44%] __lll_lock_wait
+    │   │   │   └─ [  0.68%] __GI___pthread_mutex_trylock
+    │   │   └─ [  4.25%] heap_classrepr_free
+    │   │       ├─ [  5.45%] __pthread_mutex_unlock_usercnt
+    │   │       │   └─ [  0.37%] __lll_unlock_wake
+    │   │       └─ [  4.47%] __GI___pthread_mutex_lock
+    │   │           └─ [  0.44%] __lll_lock_wait
+    │   ├─ [  6.37%] heap_get_class_info
+    │   │   └─ [  6.33%] heap_hfid_cache_get
+    │   │       └─ [  3.98%] lf_hash_insert_internal
+    │   │           ├─ [  1.69%] lf_list_insert_internal
+    │   │           │   └─ [  0.41%] heap_hfid_table_entry_key_compare
+    │   │           ├─ [  0.67%] lf_tran_start
+    │   │           └─ [  0.48%] heap_hfid_table_entry_key_hash
+    │   ├─ [  4.53%] heap_scancache_start_modify
+    │   │   ├─ [  3.19%] file_get_type
+    │   │   │   ├─ [  1.92%] pgbuf_fix_release
+    │   │   │   │   └─ [  0.32%] pgbuf_search_hash_chain
+    │   │   │   └─ [  1.17%] pgbuf_unfix
+    │   │   │       └─ [  0.85%] pgbuf_unlatch_bcb_upon_unfix
+    │   │   ├─ [  0.82%] heap_scancache_reset_modify
+    │   │   │   ├─ [  6.37%] heap_get_class_info
+    │   │   │   │   └─ [  6.33%] heap_hfid_cache_get
+    │   │   │   │       └─ [  3.98%] lf_hash_insert_internal
+    │   │   │   │           ├─ [  1.69%] lf_list_insert_internal
+    │   │   │   │           │   └─ [  0.41%] heap_hfid_table_entry_key_compare
+    │   │   │   │           ├─ [  0.67%] lf_tran_start
+    │   │   │   │           └─ [  0.48%] heap_hfid_table_entry_key_hash
+    │   │   │   └─ [  0.42%] mvcc_is_mvcc_disabled_class
+    │   │   └─ [  0.37%] heap_scancache_start_internal
+    │   ├─ [  2.23%] or_unpack_mem_value
+    │   │   ├─ [  1.10%] or_get_domain
+    │   │   │   └─ [  0.53%] unpack_domain
+    │   │   └─ [  0.32%] mr_initval_int
+    │   ├─ [  0.90%] er_clear
+    │   │   ├─ [  0.42%] er_is_initialized@plt
+    │   │   └─ [  1.51%] cuberr::context::get_thread_local_context
+    │   │       └─ [  1.55%] __tls_get_addr
+    │   ├─ [  0.35%] cuberr::context::clear_current_error_level
+    │   ├─ [  0.71%] perfmon_inc_stat
+    │   │   └─ [  0.71%] perfmon_add_stat
+    │   │       └─ [  0.43%] perfmon_is_perf_tracking
+    │   └─ [  0.31%] heap_get_class_info@plt
+    ├─ [ 17.92%] css_send_reply_and_2_data_to_client
+    │   ├─ [ 12.11%] css_enqueue_and_notify
+    │   │   ├─ [ 11.15%] cubconn::connection::worker::enqueue_and_notify
+    │   │   │   ├─ [  7.35%] cubconn::connection::worker::notify
+    │   │   │   │   └─ [  7.27%] __libc_write
+    │   │   │   └─ [  9.73%] cubconn::connection::worker::enqueue
+    │   │   │       └─ [  7.10%] tbb::detail::d2::micro_queue<cubconn::connection::worker::message, tbb::detail::d1::cache_aligned_allocator<cubconn::connection::worker::message> >::prepare_page(unsigned long, tbb::detail::d2::concurrent_queue_rep<cubconn::connection::worker::message, tbb::detail::d1::cache_aligned_allocator<cubconn::connection::worker::message> >&, tbb::detail::d1::cache_aligned_allocator<tbb::detail::d2::micro_queue<cubconn::connection::worker::message, tbb::detail::d1::cache_aligned_allocator<cubconn::connection::worker::message> >::padded_page>, tbb::detail::d2::micro_queue<cubconn::connection::worker::message, tbb::detail::d1::cache_aligned_allocator<cubconn::connection::worker::message> >::padded_page*&)::{lambda()#1}::operator()
+    │   │   │           └─ [  7.07%] tbb::detail::r1::cache_aligned_allocate
+    │   │   │               └─ [  6.91%] _mid_memalign
+    │   │   │                   └─ [  6.38%] _int_memalign
+    │   │   │                       ├─ [  7.56%] _int_malloc
+    │   │   │                       │   └─ [  5.55%] sysmalloc
+    │   │   │                       │       └─ [  4.38%] __GI___mprotect
+    │   │   │                       └─ [  0.74%] _int_free
+    │   │   └─ [  6.27%] rmutex_lock
+    │   │       ├─ [  1.78%] tsc_getticks
+    │   │       │   └─ [  1.17%] __clock_gettime_2
+    │   │       ├─ [  4.47%] __GI___pthread_mutex_lock
+    │   │       │   └─ [  0.44%] __lll_lock_wait
+    │   │       ├─ [  1.79%] thread_get_thread_entry_info
+    │   │       │   ├─ [  0.93%] cubthread::get_entry
+    │   │       │   │   └─ [  1.55%] __tls_get_addr
+    │   │       │   └─ [  0.55%] cubthread::get_entry@plt
+    │   │       ├─ [  0.31%] cubthread::entry::get_id@plt
+    │   │       └─ [  0.33%] cubthread::entry::get_id
+    │   ├─ [  6.27%] rmutex_lock
+    │   │   ├─ [  1.78%] tsc_getticks
+    │   │   │   └─ [  1.17%] __clock_gettime_2
+    │   │   ├─ [  4.47%] __GI___pthread_mutex_lock
+    │   │   │   └─ [  0.44%] __lll_lock_wait
+    │   │   ├─ [  1.79%] thread_get_thread_entry_info
+    │   │   │   ├─ [  0.93%] cubthread::get_entry
+    │   │   │   │   └─ [  1.55%] __tls_get_addr
+    │   │   │   └─ [  0.55%] cubthread::get_entry@plt
+    │   │   ├─ [  0.31%] cubthread::entry::get_id@plt
+    │   │   └─ [  0.33%] cubthread::entry::get_id
+    │   ├─ [  3.80%] operator new
+    │   │   ├─ [  3.78%] __GI___libc_malloc
+    │   │   │   └─ [  7.56%] _int_malloc
+    │   │   │       └─ [  5.55%] sysmalloc
+    │   │   │           └─ [  4.38%] __GI___mprotect
+    │   │   ├─ [  1.35%] cub_alloc
+    │   │   │   └─ [  3.78%] __GI___libc_malloc
+    │   │   │       └─ [  7.56%] _int_malloc
+    │   │   │           └─ [  5.55%] sysmalloc
+    │   │   │               └─ [  4.38%] __GI___mprotect
+    │   │   └─ [  0.54%] malloc@plt
+    │   ├─ [  0.70%] std::vector<cubbase::span<std::byte>, std::allocator<cubbase::span<std::byte> > >::_M_realloc_insert<std::byte*&, unsigned long>
+    │   │   └─ [  3.80%] operator new
+    │   │       ├─ [  3.78%] __GI___libc_malloc
+    │   │       │   └─ [  7.56%] _int_malloc
+    │   │       │       └─ [  5.55%] sysmalloc
+    │   │       │           └─ [  4.38%] __GI___mprotect
+    │   │       ├─ [  1.35%] cub_alloc
+    │   │       │   └─ [  3.78%] __GI___libc_malloc
+    │   │       │       └─ [  7.56%] _int_malloc
+    │   │       │           └─ [  5.55%] sysmalloc
+    │   │       │               └─ [  4.38%] __GI___mprotect
+    │   │       └─ [  0.54%] malloc@plt
+    │   ├─ [  0.47%] operator new[]
+    │   │   └─ [  1.35%] cub_alloc
+    │   │       └─ [  3.78%] __GI___libc_malloc
+    │   │           └─ [  7.56%] _int_malloc
+    │   │               └─ [  5.55%] sysmalloc
+    │   │                   └─ [  4.38%] __GI___mprotect
+    │   └─ [  2.19%] rmutex_unlock
+    │       ├─ [  5.45%] __pthread_mutex_unlock_usercnt
+    │       │   └─ [  0.37%] __lll_unlock_wake
+    │       ├─ [  0.52%] cubthread::is_single_thread@plt
+    │       └─ [  1.79%] thread_get_thread_entry_info
+    │           ├─ [  0.93%] cubthread::get_entry
+    │           │   └─ [  1.55%] __tls_get_addr
+    │           └─ [  0.55%] cubthread::get_entry@plt
+    ├─ [  8.29%] css_request_release_packet
+    │   ├─ [  9.73%] cubconn::connection::worker::enqueue
+    │   │   └─ [  7.10%] tbb::detail::d2::micro_queue<cubconn::connection::worker::message, tbb::detail::d1::cache_aligned_allocator<cubconn::connection::worker::message> >::prepare_page(unsigned long, tbb::detail::d2::concurrent_queue_rep<cubconn::connection::worker::message, tbb::detail::d1::cache_aligned_allocator<cubconn::connection::worker::message> >&, tbb::detail::d1::cache_aligned_allocator<tbb::detail::d2::micro_queue<cubconn::connection::worker::message, tbb::detail::d1::cache_aligned_allocator<cubconn::connection::worker::message> >::padded_page>, tbb::detail::d2::micro_queue<cubconn::connection::worker::message, tbb::detail::d1::cache_aligned_allocator<cubconn::connection::worker::message> >::padded_page*&)::{lambda()#1}::operator()
+    │   │       └─ [  7.07%] tbb::detail::r1::cache_aligned_allocate
+    │   │           └─ [  6.91%] _mid_memalign
+    │   │               └─ [  6.38%] _int_memalign
+    │   │                   ├─ [  7.56%] _int_malloc
+    │   │                   │   └─ [  5.55%] sysmalloc
+    │   │                   │       └─ [  4.38%] __GI___mprotect
+    │   │                   └─ [  0.74%] _int_free
+    │   ├─ [  6.27%] rmutex_lock
+    │   │   ├─ [  1.78%] tsc_getticks
+    │   │   │   └─ [  1.17%] __clock_gettime_2
+    │   │   ├─ [  4.47%] __GI___pthread_mutex_lock
+    │   │   │   └─ [  0.44%] __lll_lock_wait
+    │   │   ├─ [  1.79%] thread_get_thread_entry_info
+    │   │   │   ├─ [  0.93%] cubthread::get_entry
+    │   │   │   │   └─ [  1.55%] __tls_get_addr
+    │   │   │   └─ [  0.55%] cubthread::get_entry@plt
+    │   │   ├─ [  0.31%] cubthread::entry::get_id@plt
+    │   │   └─ [  0.33%] cubthread::entry::get_id
+    │   └─ [  0.49%] std::vector<cubbase::span<std::byte>, std::allocator<cubbase::span<std::byte> > >::_M_realloc_insert<std::byte*, int>
+    │       └─ [  3.80%] operator new
+    │           ├─ [  3.78%] __GI___libc_malloc
+    │           │   └─ [  7.56%] _int_malloc
+    │           │       └─ [  5.55%] sysmalloc
+    │           │           └─ [  4.38%] __GI___mprotect
+    │           ├─ [  1.35%] cub_alloc
+    │           │   └─ [  3.78%] __GI___libc_malloc
+    │           │       └─ [  7.56%] _int_malloc
+    │           │           └─ [  5.55%] sysmalloc
+    │           │               └─ [  4.38%] __GI___mprotect
+    │           └─ [  0.54%] malloc@plt
+    ├─ [  6.55%] __memmove_evex_unaligned_erms
+    ├─ [  3.73%] css_receive_data_from_client_with_timeout
+    │   ├─ [  3.00%] css_receive_data
+    │   │   ├─ [  2.66%] css_return_queued_data_timeout
+    │   │   │   ├─ [  6.27%] rmutex_lock
+    │   │   │   │   ├─ [  1.78%] tsc_getticks
+    │   │   │   │   │   └─ [  1.17%] __clock_gettime_2
+    │   │   │   │   ├─ [  4.47%] __GI___pthread_mutex_lock
+    │   │   │   │   │   └─ [  0.44%] __lll_lock_wait
+    │   │   │   │   ├─ [  1.79%] thread_get_thread_entry_info
+    │   │   │   │   │   ├─ [  0.93%] cubthread::get_entry
+    │   │   │   │   │   │   └─ [  1.55%] __tls_get_addr
+    │   │   │   │   │   └─ [  0.55%] cubthread::get_entry@plt
+    │   │   │   │   ├─ [  0.31%] cubthread::entry::get_id@plt
+    │   │   │   │   └─ [  0.33%] cubthread::entry::get_id
+    │   │   │   └─ [  2.19%] rmutex_unlock
+    │   │   │       ├─ [  5.45%] __pthread_mutex_unlock_usercnt
+    │   │   │       │   └─ [  0.37%] __lll_unlock_wake
+    │   │   │       ├─ [  0.52%] cubthread::is_single_thread@plt
+    │   │   │       └─ [  1.79%] thread_get_thread_entry_info
+    │   │   │           ├─ [  0.93%] cubthread::get_entry
+    │   │   │           │   └─ [  1.55%] __tls_get_addr
+    │   │   │           └─ [  0.55%] cubthread::get_entry@plt
+    │   │   └─ [  1.13%] css_traverse_list
+    │   │       └─ [  0.58%] css_find_queue_entry_by_key
+    │   └─ [  0.66%] css_return_queued_error
+    │       └─ [  6.27%] rmutex_lock
+    │           ├─ [  1.78%] tsc_getticks
+    │           │   └─ [  1.17%] __clock_gettime_2
+    │           ├─ [  4.47%] __GI___pthread_mutex_lock
+    │           │   └─ [  0.44%] __lll_lock_wait
+    │           ├─ [  1.79%] thread_get_thread_entry_info
+    │           │   ├─ [  0.93%] cubthread::get_entry
+    │           │   │   └─ [  1.55%] __tls_get_addr
+    │           │   └─ [  0.55%] cubthread::get_entry@plt
+    │           ├─ [  0.31%] cubthread::entry::get_id@plt
+    │           └─ [  0.33%] cubthread::entry::get_id
+    ├─ [  1.28%] locator_unpack_copy_area_descriptor
+    │   └─ [  0.48%] or_unpack_int
+    ├─ [  0.59%] locator_recv_allocate_copyarea
+    │   └─ [  0.57%] locator_allocate_copy_area_by_length
+    └─ [  0.48%] or_unpack_int

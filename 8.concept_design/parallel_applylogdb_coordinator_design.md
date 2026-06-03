@@ -130,8 +130,10 @@ PostgreSQL에서 병렬성이 나타나는 지점은 주로 두 곳이다.
     "Stream Start and Stream Stop messages" [14]
   - 번역/해석: `streaming` 옵션은 진행 중인 transaction을 commit 전에 subscriber로
     보낼지 결정한다. `streaming = parallel`이면 incoming change를 사용 가능한
-    parallel apply worker가 직접 처리할 수 있다. 관련 worker 수는
-    `max_parallel_apply_workers_per_subscription`으로 제어한다. 프로토콜 관점에서는
+    parallel apply worker가 직접 처리할 수 있다. 이 `streaming = parallel`(large
+    transaction 병렬 apply) 기능 자체는 PostgreSQL 16에서 도입되었으며, 관련 worker
+    수는 `max_parallel_apply_workers_per_subscription`으로 제어한다(기본값 2)
+    [10][15]. 프로토콜 관점에서는
     large in-progress transaction의 변경이 `Stream Start`와 `Stream Stop` 사이에
     전달되고, 마지막 stream에는 `Stream Commit` 또는 `Stream Abort`가 포함된다
     [9][10][14].
@@ -786,3 +788,6 @@ https://dev.mysql.com/worklog/task/?id=5569
 
 [14] PostgreSQL 17 Documentation, "Logical Streaming Replication Protocol",
 https://www.postgresql.org/docs/17/protocol-logical-replication.html
+
+[15] PostgreSQL 16 Release Notes (large transaction에 대한 parallel apply,
+`streaming = parallel` 도입), https://www.postgresql.org/docs/release/16.0/
