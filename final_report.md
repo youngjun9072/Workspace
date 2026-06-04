@@ -60,21 +60,82 @@
 
 ### 2. 설계 (AS-IS → TO-BE)
 
-**AS-IS** — 단일 `ApplyLog Main`이 로그 읽기 → 디코드 → item 빌드 → flush → commit → apply info 갱신을 한 흐름으로 순차 수행.
+**AS-IS**
 
-**TO-BE** — 역할 분리:
-
+```bash
++----------------------+
+| ApplyLog Main        |
++----------------------+
+| data                 |
+| - LA_ITEM            |
+| - LA_APPLY           |
+| - final_lsa          |
+| - committed_lsa      |
+| - workspace          |
+| function             |
+| - read active/arv log|
+| - decode log record  |
+| - build LA_ITEM      |
+| - build LA_APPLY     |
+| - process repl items |
+| - flush row items    |
+| - execute stmt       |
+|   directly           |
+| - commit             |
+| - update             |
+|   _db_ha_apply_info  |
++----------+-----------+
+           |
+           v
+    Slave DB / Server
 ```
-        LogReader  (로그 읽기 / LA_ITEM·LA_APPLY 빌드 / long tx 감지 /
-                    committed tx enqueue / 결과 수집 / apply info 갱신 / reclaim)
-              │  enqueue committed tx
-              ▼
-   Worker 0      Worker 1     ...   Worker N
-   (queue·session·workspace / process items / flush / commit / report completed lsa)
-              │            │              │
-              └────────────┴──────────────┘
-                           ▼
-                   Slave DB / Server
+
+**TO-BE**
+
+```bash
+     +----------------------------+
+     |         LogReader          |
+     +----------------------------+
+     | data                       |
+     | - LA_ITEM                  |
+     | - LA_APPLY                 |
+     | - final_lsa                |
+     | - committed_lsa            |
+     | function                   |
+     | - read active/arv log      |
+     | - build LA_ITEM            |
+     | - build LA_APPLY           |
+     | - detect long trans        |
+     | - enqueue committed tx     |
+     | - collect results          |
+     | - update apply info        |
+     | - reclaim items            |
+     +-------------+--------------+
+                   |
+                   | enqueue committed tx
+                   v
+
+  +----------------------+  +----------------------+       +----------------------+
+  |       Worker 0       |  |       Worker 1       |  ...  |       Worker N       |
+  +----------------------+  +----------------------+       +----------------------+
+  | data                 |  | data                 |       | data                 |
+  | - queue              |  | - queue              |       | - queue              |
+  | - session            |  | - session            |       | - session            |
+  | - workspace          |  | - workspace          |       | - workspace          |
+  | function             |  | function             |       | function             |
+  | - process repl items |  | - process repl items |       | - process repl items |
+  | - flush row items    |  | - flush row items    |       | - flush row items    |
+  | - execute stmt       |  | - execute stmt       |       | - execute stmt       |
+  |   directly           |  |   directly           |       |   directly           |
+  | - commit             |  | - commit             |       | - commit             |
+  | - report completed   |  | - report completed   |       | - report completed   |
+  |   lsa                |  |   lsa                |       |   lsa                |
+  +----------+-----------+  +----------+-----------+       +----------+-----------+
+             |                         |                                |
+             +-------------------------+--------------------------------+
+                                       |
+                                       v
+                              Slave DB / Server
 ```
 
 핵심 원칙:
