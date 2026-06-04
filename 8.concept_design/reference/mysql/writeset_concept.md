@@ -1,0 +1,232 @@
+# MySQL write set 완전 정리 — 정의부터 복제 활용까지
+
+> 조사 + 코드 분석 보고서 · 2026-06-04
+> 출처: MySQL 8.0.46 로컬 소스(직접 확인) + 공식 매뉴얼·엔지니어링 블로그·WorkLog
+> 한 줄: write set은 "트랜잭션이 바꾼 행들의 키 해시 집합"으로, **원본 서버가 실행 중 수집**해 **커밋 시** 병렬 복제 의존성(`last_committed`) 계산과 Group Replication 충돌 검출(certification)에 쓰인다.
+
+## TL;DR
+- **무엇**: 한 트랜잭션이 변경한 모든 행의 **PK·unique 키 해시 집합**. 두 트랜잭션의 집합이 겹치면 같은 행을 건드린 것 = 충돌/의존.
+- **어디서·언제 생성**: 원본 서버 **서버(복제) 계층**에서, **트랜잭션 실행 중 행이 binlog에 로깅될 때마다** 점진 수집(엔진 redo log와 다른 층).
+- **무엇에 쓰나(소비, 커밋 시)**: ① **병렬 복제** — 의존성 판단(`last_committed` 계산)만, ② **Group Replication** — certification(충돌 검출 → commit/abort). 원래 용도는 ②, 병렬 복제는 ②의 메커니즘을 재사용한 것.
+- **전제**: PK 또는 unique key 필요(없으면 못 만들고 fallback).
+- **중요**: write set 자체는 binlog에 안 들어간다 — 그것으로 계산한 **결과(`last_committed`)만** binlog GTID 이벤트에 실린다.
+
+## 1. 배경 — 왜 필요한가
+
+복제 replica가 트랜잭션을 **병렬로** 적용하려면 "어떤 트랜잭션끼리 독립인가(동시에 적용해도 안전한가)"를 알아야 한다. 가장 단순한 기준인 **commit 순서(COMMIT_ORDER)** 는 "원본에서 같이 commit된 것만 병렬 가능"으로 보아 병렬 폭이 좁다. write set은 **실제로 건드린 행**을 비교해 "서로 다른 행을 바꾼 트랜잭션은 독립"이라 판단 → 훨씬 넓은 병렬성을 얻는다 [3].
+
+## 2. write set이란 (정의)
+
+**write set = 한 트랜잭션이 변경한 모든 행의 "식별자 해시" 집합**이다 [3][5].
+- 식별자 = 행의 **PK + 각 unique key** 값(인덱스 이름·DB·테이블로 prefix), 이를 해시(`uint64`)한 집합.
+- 행 데이터 전체가 아니라 **키를 해시로 압축**한 표현. 두 트랜잭션의 write set이 **겹치면 같은 행**을 건드린 것.
+- 소스 주석: "primary key equivalent of the rows that are changing" + unique key를 인덱스 이름으로 prefix (`rpl_write_set_handler.cc:790–805`).
+
+## 3. 어떻게·언제 만들어지나 (생성)
+
+| 항목 | 내용 |
+|---|---|
+| **생성 모듈** | `sql/rpl_write_set_handler.cc` — `add_pke()`(:787)가 행에서 PKE(Primary Key Equivalent)를 뽑고 `generate_hash_pke()`(:700)가 `transaction_write_set_extraction`(예: **XXHASH64**)로 해시 |
+| **저장 위치** | THD에 붙은 `Rpl_transaction_write_set_ctx`(트랜잭션별 컨테이너, 메모리). 소비처는 `get_write_set()`로 `vector<uint64>` 읽음 |
+| **생성 시점** | **실행(execute) 중, 행이 바뀌어 binlog에 로깅될 때마다** 점진 누적. `sql/handler.cc:7896`이 행 로깅 경로에서 `add_pke()` 호출(NDB는 `rpl_injector.cc`) |
+| **조건/전제** | `transaction_write_set_extraction != OFF`(8.0 기본 XXHASH64). **PK/unique key 필요** — 없으면 `has_missing_keys` 표시 후 사용 불가 |
+
+## 4. 전체 처리 흐름 속 위치
+
+```text
+클라이언트 SQL (write 트랜잭션)
+  ├─ 1) parse / optimize
+  ├─ 2) 실행(execute) — 행 INSERT/UPDATE/DELETE
+  │     ├─ InnoDB(엔진): 데이터 페이지 변경 + redo log(물리, crash recovery)   ← write set 무관
+  │     └─ 서버 계층: 변경 행을 binlog 캐시에 기록 + add_pke()로 write set 수집
+  │          ★ write set 생성 (실행 중, 행마다, THD 메모리)
+  └─ 3) COMMIT
+        ├─ 2PC / binlog group commit
+        ├─ ★ 소비①(병렬복제): 의존성 추적기가 last_committed 계산 → binlog GTID 이벤트에 기록
+        ├─ ★ 소비②(GR): write set broadcast → certification(충돌 검출 → commit/abort)
+        ├─ binlog flush (행 이벤트 + GTID 이벤트)
+        └─ 종료 → write set ctx clear (binlog tracker는 최근 write set history만 유지)
+```
+- **계층**: write set은 **서버(복제) 계층 메타데이터** — 엔진의 **redo log(물리·crash recovery)와 다른 층**.
+- **생성=실행 / 소비=커밋**, 메모리·일시적. write set 자체는 binlog에 안 실리고, **결과(`last_committed`)만** GTID 이벤트에 들어간다.
+
+## 5. 어떻게 쓰이나 — 두 용도
+
+같은 write set(`get_write_set()`)을 읽는 곳이 둘이고 하는 일이 다르다.
+
+| | (원래) Group Replication certification | (재사용) 병렬 복제 의존성 추적 |
+|---|---|---|
+| 모듈 | group_replication 플러그인 | `sql/rpl_trx_tracking.cc` `Writeset_trx_dependency_tracker::get_dependency()`(:227) |
+| 하는 일 | 충돌 검출 → **commit/abort 결정** | `last_committed`(commit_parent) **계산만** |
+| 충돌 시 | 트랜잭션 **abort/rollback** | abort 안 함, **순서 직렬화** |
+| 도입 | write set의 **원래 목적** | WL#9556이 같은 write set을 재사용 |
+
+### 5.1 병렬 복제 의존성 추적 (`last_committed` 계산) — 알고리즘 상세
+
+`last_committed`(commit_parent) 산출은 **2단 합성**이다 (`sql/rpl_trx_tracking.cc`). §6 예시 3·6이 이 알고리즘의 실행 사례다.
+
+**(1) 1단계 — COMMIT_ORDER가 baseline을 먼저 만든다** (`Commit_order_trx_dependency_tracker::get_dependency()` :149)
+- commit 순서·logical clock 기반으로 `commit_parent`를 **미리 채운다**(:166–174).
+- **barrier 처리**: `ANALYZE/REPAIR/OPTIMIZE/CREATE_DB/ALTER_DB/DROP_DB`, `ALTER TABLE ... ADMIN_PARTITION` 같은 **병렬에 안전하지 않은 문장**(`is_trx_unsafe_for_parallel_slave` :119)이나 명시적 barrier면 `m_last_blocking_transaction`을 현재 seq로 올려, **이후 트랜잭션이 이걸 넘어 병렬화되지 못하게** 막는다(:176–177).
+
+**(2) 2단계 — WRITESET이 baseline을 "더 낮춘다"** (`Writeset_trx_dependency_tracker::get_dependency()` :227)
+- 핵심: writeset은 commit_parent를 **`std::min(writeset_parent, commit_order_parent)`** 로만 바꾼다(:309). 즉 **commit-order보다 더 느슨하게(병렬 폭 넓게)만** 만들고, **절대 더 위험하게(높게)는 못 만든다** → 안전성은 commit-order가 보장, writeset은 병렬성만 확장.
+- **history 맵 비교 루프**(:282–296): `m_writeset_history`는 `해시 → 그 행을 마지막으로 건드린 sequence_number` 맵.
+  ```text
+  last_parent = m_writeset_history_start          // 하한(floor)
+  for each 해시 h in writeset:
+      if h in history:
+          if history[h] > last_parent and history[h] < seq:
+              last_parent = history[h]            // 같은 행을 건드린 "가장 최근 선행" seq로 끌어올림
+          history[h] = seq                        // 이제 이 행의 소유자 = 현재 트랜잭션
+      else (and 용량 여유 있으면):
+          history.insert(h → seq)
+  commit_parent = min(last_parent, commit_parent) // (missing key 아니면)
+  ```
+  → 즉 "내가 건드린 행들을 **직전에 누가 건드렸나**" 중 가장 최근 seq가 내 의존(last_committed). 아무도 안 건드렸으면 `history_start`(하한)에 머물러 **넓게 병렬**.
+
+**(3) `m_writeset_history_start` (하한)**
+- history가 비거나 잘린 뒤의 **기준점**. 모든 `last_parent`가 최소 이 값 이상 → clear 직후 트랜잭션들은 보수적으로 묶인다.
+
+**(4) history 용량 초과 → clear → 보수화** (:313–316)
+- `m_writeset_history.size() + writeset.size() > binlog_transaction_dependency_history_size`면, **이번 트랜잭션엔 history를 쓴 뒤 clear**하고 `m_writeset_history_start = seq`로 올린다.
+- 효과: history가 작으면 자주 clear → `history_start`가 자주 올라가 **병렬 폭이 좁아진다**. → 이 변수가 병렬성 튜닝 포인트.
+
+**(5) WRITESET을 못 써 COMMIT_ORDER로 fallback** (`can_use_writesets` :246–266)
+- 다음 중 하나면 writeset 적용을 포기하고 **commit_parent를 commit-order 값 그대로** 두며 **history도 clear**(보수화):
+  - 빈 writeset(DDL 등), `CREATE TABLE ... AS SELECT`(DDL+DML), 세션과 글로벌의 `transaction_write_set_extraction`(해시 알고리즘) 불일치, **FK 관련 테이블**(`get_has_related_foreign_keys`), write set 한도 초과.
+- **missing key**(PK/unique 없는 테이블 포함): history는 갱신하되 **commit_parent는 낮추지 않는다**(:303) → 보수적.
+
+**(6) WRITESET_SESSION 변형**
+- WRITESET 위에 "**같은 세션의 트랜잭션은 절대 병렬 안 함**"을 추가한 트래커. 세션 내부 순서가 원본과 달라 보이는 것을 막고 싶을 때.
+
+→ 산출된 `last_committed`/`sequence_number`가 binlog GTID 이벤트에 기록되고, replica는 이를 읽어 LOGICAL_CLOCK 병렬 적용(→ `mts_coordinator_dispatch.md`).
+
+### 5.2 Group Replication certification (원래 용도)
+- read-write 트랜잭션이 커밋 준비되면 originating 서버가 **변경값(행) + write set(행 식별자)** 을 그룹에 **atomic broadcast** [5].
+- 멤버들이 **row-level 충돌 검출**: 다른 서버의 동시 트랜잭션이 같은 행을 바꿨으면 충돌 → 해당 트랜잭션 **abort**. `transaction_write_set_extraction=XXHASH64`는 GR **필수** [5].
+
+### 5.3 의존성 계산 방식을 고르는 파라미터 — `binlog_transaction_dependency_tracking`
+
+위 5.1의 "무엇을 기준으로 `last_committed`를 계산하나"는 **하나의 source 측 파라미터 `binlog_transaction_dependency_tracking`** 의 세 값으로 정한다.
+
+| 값 | 의존성 기준 | 병렬 폭 | PK 필요 | 원본 동시성 종속 |
+|---|---|---|---|---|
+| **COMMIT_ORDER** (8.0.46 소스 기본) | group commit 시점 겹침(원본에서 동시 실행된 트랜잭션) | 좁음 | ❌ | **예** |
+| **WRITESET** | 실제 충돌 행(write set 해시) | **넓음** | ✅ | 아니오 |
+| **WRITESET_SESSION** | 충돌 행 + 같은 세션은 직렬 | 중간 | ✅ | 아니오 |
+
+- **COMMIT_ORDER**: 원본에서 prepare~commit 구간이 겹친(동시 실행된) 트랜잭션을 병렬 가능으로 표시. write set 계산 불필요, PK 불필요. 단 병렬성이 **원본 동시성에 비례**.
+- **WRITESET**: 충돌 행 기준이라 원본이 단일 스레드여도 병렬화. PK/unique 필요. (5.1대로 commit-order baseline을 `min`으로 낮춤.)
+- **WRITESET_SESSION**: WRITESET + 같은 세션 트랜잭션은 병렬 금지(세션 순서 보존).
+
+**중요 — COMMIT_ORDER도 병렬한다**: COMMIT_ORDER는 "병렬 끄기"가 아니라 **"원본이 동시 실행한 만큼만 병렬"** 이다. 원본이 저동시성(순차 commit)이면 결과적으로 직렬에 가깝고, 고동시성이면 충분히 병렬. dependency_tracking은 병렬 on/off 스위치가 아니라 **"얼마나 넓게" 병렬할지**를 정할 뿐이다.
+
+**COMMIT_ORDER 병렬이 생기는 시나리오 (group commit만이 아님)** — 진짜 기준은 "원본에서 **서로 락을 동시에 쥐고 있던(= 서로를 막지 않은)** 트랜잭션"이다 (WL#7165). `last_committed` = 이 트랜잭션이 commit(prepare)에 들어갈 때 이미 commit돼 있던 마지막 트랜잭션 → **prepare~commit(락 보유) 구간이 겹친** 트랜잭션이 병렬 후보.
+1. **group commit 배칭**: 여러 트랜잭션의 binlog sync가 함께 묶여 commit window가 겹침 (가장 흔한 경로).
+2. **락 구간 겹침(WL#7165)**: group commit 경계를 정확히 안 넘어도, 실행 중 서로 충돌 락을 안 잡아 안 막은 트랜잭션은 병렬. group commit 경계의 직렬화 지점을 완화한 interval(구간) 기반 개선.
+3. **`binlog_group_commit_sync_delay`로 창 넓히기(튜닝)**: sync를 일부러 지연해 더 많은 트랜잭션을 한 그룹으로 묶음 → replica 병렬↑(commit 지연 약간 대가).
+4. **앱 동시성↑** → 자연히 겹침 창↑ → 병렬↑.
+- (MySQL 8.4의 logical clock v2 + writeset은 group commit 크기와 병렬도를 아예 분리한다.)
+
+**두 파라미터 관계 (헷갈림 정리)** — dependency_tracking(source)과 parallel_type(replica)은 짝이지만 **다른 파라미터**다:
+```text
+[source]  binlog_transaction_dependency_tracking = COMMIT_ORDER | WRITESET | WRITESET_SESSION
+              → 이 방식으로 last_committed 계산해 binlog에 기록
+[replica] replica_parallel_type = LOGICAL_CLOCK  (+ replica_parallel_workers>0)
+              → binlog의 last_committed를 읽어 병렬 적용 (DATABASE는 구식, deprecated)
+```
+→ WRITESET이 효과를 보려면 replica가 LOGICAL_CLOCK이어야 한다. 병렬 자체의 조건은 `replica_parallel_workers>0` + `LOGICAL_CLOCK`이고, dependency_tracking은 그 병렬의 폭을 정한다.
+
+> 8.0.46 소스 확인: enum {COMMIT_ORDER, WRITESET, WRITESET_SESSION}, `DEFAULT(DEPENDENCY_TRACKING_COMMIT_ORDER)`, deprecated (`sys_vars.cc:4257–4272`).
+
+## 6. 예시
+
+**스키마**: `accounts(id PK, bal)`, `orders(id PK, uid, amt)`, `logs(msg)`  ← logs는 PK/unique 없음.
+
+**예시 1 — 한 트랜잭션의 write set 내용**
+```sql
+BEGIN;
+  UPDATE accounts SET bal = bal-100 WHERE id = 5;
+  INSERT INTO orders VALUES (1001, 5, 100);
+COMMIT;
+```
+→ write set = { `h(accounts,PRIMARY,id=5)`, `h(orders,PRIMARY,id=1001)` }
+
+**예시 2 — 겹치면 직렬, 안 겹치면 병렬**
+```text
+T1: UPDATE accounts id=5   → WS1={acc:5}
+T2: UPDATE accounts id=99  → WS2={acc:99}   WS1∩WS2=∅ → 독립 → 병렬 OK
+T3: UPDATE accounts id=5   → WS3={acc:5}    WS3∩WS1≠∅ → T1 의존 → T1 뒤 직렬
+```
+
+**예시 3 — last_committed 산출 → replica 병렬 그룹**
+| seq | tx | write set | 겹치는 선행 | last_committed |
+|---|---|---|---|---|
+| 1 | T1 | {acc:5} | (없음) | 0 |
+| 2 | T2 | {acc:99} | (없음) | 0 |
+| 3 | T3 | {ord:7} | (없음) | 0 |
+| 4 | T4 | {acc:5} | T1(seq1) | 1 |
+| 5 | T5 | {acc:99} | T2(seq2) | 2 |
+| 6 | T6 | {cust:3} | (없음) | 0 |
+```text
+replica(LOGICAL_CLOCK): last_committed ≤ LWM이면 병렬
+  1차 병렬 그룹: T1 ∥ T2 ∥ T3 (lc=0)
+  T4(lc=1): T1 커밋 후   /   T5(lc=2): T2 커밋 후
+  T6(lc=0): 의존 없음 → 아무것도 안 기다림 → T5와도 병렬 적용 가능(서로 독립)
+```
+- **T6 주의**: 겹치는 행이 없으면 last_committed는 항상 0이 아니라 **현재 `m_writeset_history_start`(하한)** 값이다. 이 예시는 history clear가 없어 floor=0이라 T6=0이 된 것. (history가 잘렸다면 floor가 올라가 T6도 그만큼 의존이 생긴다.)
+- 적용은 병렬이어도 **commit 순서는 `replica_preserve_commit_order`로 보존**(…T5→T6).
+
+**예시 4 — PK/unique 없으면 fallback**
+```sql
+BEGIN; INSERT INTO logs VALUES ('x'); COMMIT;   -- logs엔 PK/unique 없음
+```
+→ 행 식별 불가 → `has_missing_keys` → write set 사용 불가 → COMMIT_ORDER로 fallback(보수적 직렬화) [3].
+
+**예시 5 — WRITESET vs COMMIT_ORDER (같은 워크로드)**
+T1{acc:5}, T2{acc:99}, T3{ord:7} 가 원본에서 순차 commit(group commit 안 겹침)된 경우:
+- COMMIT_ORDER: commit 안 겹침 → 의존으로 보고 replica에서 **직렬**.
+- WRITESET: 셋 다 다른 행 → 독립 → replica에서 **병렬**. ← write set의 핵심 이점 [3].
+
+**예시 6 — 커밋 파이프라인 값 대입(T4)**
+```text
+실행 : UPDATE accounts id=5 → 행 binlog 캐시 + write set {acc:5} 수집
+commit: {acc:5} 를 history와 비교 → T1(seq1) 겹침 → last_committed=1
+        → GTID 이벤트에 (sequence_number=4, last_committed=1) + 행 이벤트 flush
+replica: GTID의 last_committed=1 읽음 → LWM이 1 이상(T1 커밋)될 때까지 대기 → 적용
+```
+
+## 7. 성능 · 안전성 · 한계
+
+- **성능** [3]: COMMIT_ORDER는 원본 동시성이 높아야 이득. **WRITESET은 원본이 단일 client여도 replica applier 최대 처리량 도달**, WRITESET_SESSION은 4 clients에서 2배 이상. (전통 5단계 → WRITESET 3단계 예시)
+- **안전성/순서** [3]: WRITESET은 **세션 간 트랜잭션을 재정렬**할 수 있다 → 순서 보존하려면 `replica_preserve_commit_order` 또는 `WRITESET_SESSION` 사용.
+- **한계(write set 못 쓰는 경우)** [3]: PK/unique 없는 테이블, **DDL**, **FK 부모 테이블 접근**, 빈/부분 write set → fallback.
+- **하위호환** [3]: WRITESET은 LOGICAL_CLOCK 스케줄러와 호환 → 5.7 replica가 8.0.1 원본의 병렬성 이득.
+
+## 8. 정리
+
+> write set = **원본 서버가 실행 중 수집하는, 트랜잭션이 바꾼 행들의 키 해시 집합(서버 복제 계층, 일시적)**.
+> 커밋 시 두 곳에 소비: **GR certification**(충돌→commit/abort, 원래 용도)과 **병렬 복제 의존성 추적**(last_committed 계산, abort 없음).
+> binlog에는 write set이 아니라 그 **결과(last_committed)만** 실리고, replica는 이를 읽어 병렬 적용한다. PK/unique가 전제다.
+
+## 남은 질문 / 자료 부족
+- `add_pke` 다중값 인덱스(`generate_mv_hash_pke`:739)·문자셋·prefix 규칙 등 해시 구성 세부.
+- Group Replication certification 측 write set 소비 경로(group_replication 플러그인, 본 트리 밖).
+
+## References
+[1] MySQL Source Code (로컬, 8.0.46). `sql/rpl_write_set_handler.cc` — `add_pke()`:787, `generate_hash_pke()`:700, PKE 주석 :790–805. `sql/handler.cc:7896`(행 변경 시 호출). `sql/rpl_injector.cc` :191/223/257/260.
+
+[2] MySQL Source Code (로컬, 8.0.46). `sql/rpl_trx_tracking.cc` — 2단 합성: `Commit_order_trx_dependency_tracker::get_dependency()`:149(baseline·barrier), `is_trx_unsafe_for_parallel_slave()`:119, `Writeset_trx_dependency_tracker::get_dependency()`:227, `can_use_writesets`/fallback :246–266, history 맵 루프 :282–296, `commit_parent=min(...)` :309, history clear :313–316.
+
+[3] Oracle / MySQL. "Improving the Parallel Applier with Writeset-based Dependency Tracking" (write set 정의·계산·한계·벤치마크·안전성). MySQL Engineering Blog. https://dev.mysql.com/blog-archive/improving-the-parallel-applier-with-writeset-based-dependency-tracking/
+
+[4] Oracle / MySQL. "WL#9556: Writeset-based MTS dependency tracking on master" (GR write set을 MTS 의존성 추적에 재사용). MySQL WorkLog. https://dev.mysql.com/worklog/task/?id=9556
+
+[5] Oracle / MySQL. "20.3.1 Group Replication Requirements" / "Group Replication" (write set = PK 기반 tag, certification·충돌 검출, `transaction_write_set_extraction=XXHASH64` 필수). MySQL 8.0 Reference Manual, 2025. https://dev.mysql.com/doc/refman/8.0/en/group-replication-requirements.html
+
+[6] Jean-François Gagné. "More Write Set in MySQL: Group Replication Certification". J-F Gagné's MySQL Blog(2순위), 2018. https://jfg-mysql.blogspot.com/2018/01/more-write-set-in-mysql-5-7-group-replication-certification.html
+
+[7] Oracle / MySQL. "WL#7165: MTS: Optimizing MTS scheduling by increasing the parallelization window on master" (COMMIT_ORDER 병렬 기준 = 실행 중 서로 막지 않은(락 구간 겹친) 트랜잭션, last_committed/sequence_number). MySQL WorkLog. https://dev.mysql.com/worklog/task/?id=7165
+
+[8] Oracle / MySQL. "Binary Logging Options and Variables" (`binlog_group_commit_sync_delay`: sync 지연으로 group commit 묶음↑ → replica 병렬↑). MySQL 8.0 Reference Manual, 2025. https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html

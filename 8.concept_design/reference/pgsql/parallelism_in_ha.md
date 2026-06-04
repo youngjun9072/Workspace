@@ -128,6 +128,12 @@ PostgreSQL 논리 복제는 publish/subscribe(발행/구독) 모델이며, 병�
 - **walsender → apply worker**: publisher의 walsender 프로세스가 이 stream을 전송하고, subscriber의 apply worker가 받아 로컬 테이블에 적용한다 [9].
 - **replication slot**: subscriber가 어디까지 받았는지를 publisher 측에서 보존해, 끊겼다 재개해도 빠진 변경 없이 이어받게 한다 [9].
 
+> **용어 — 역할(role) vs 객체(object)**
+> `publisher`/`subscriber`는 **객체가 아니라 서버(노드)의 역할**이다. 실제 데이터베이스 객체는 **`PUBLICATION`**(발행 명세, publisher의 `pg_publication`)과 **`SUBSCRIPTION`**(구독 명세+접속 정보, subscriber의 `pg_subscription`)이다.
+> - `CREATE PUBLICATION` 한 서버 = publisher 역할 / `CREATE SUBSCRIPTION` 한 서버 = subscriber 역할.
+> - 한 서버가 둘 다 가지면 publisher이자 subscriber(캐스케이딩/양방향) — 역할은 배타적이지 않다.
+> - **그래서 "테이블별 병렬화 = subscriber를 여러 개"가 아니라, 한 subscriber 노드에 `SUBSCRIPTION` 객체를 여러 개** 두는 것이다(각 구독 = apply worker 1개 → 병렬, 4절 ①). 병렬 단위는 노드가 아니라 **SUBSCRIPTION 객체 수**다.
+
 물리 복제와의 핵심 차이: 물리는 인스턴스(클러스터) 전체를 블록 단위로 복제하지만, 논리는 **테이블 단위로 선택**해 행 단위 변경을 복제한다. 아래의 병렬화도 모두 이 pub-sub worker 구조 위에서 일어난다.
 
 #### 전체 흐름 (연결·스트림·진도)
@@ -383,14 +389,25 @@ commit 순서 보존은 어디서나 당연한 요구이므로, 진짜 질문은
 
 ## References
 [1] PostgreSQL Global Development Group. "19.5. Write Ahead Log" (`recovery_prefetch`, `wal_decode_buffer_size`, `maintenance_io_concurrency`). PostgreSQL 18 Documentation, 2025. https://www.postgresql.org/docs/current/runtime-config-wal.html
+
 [2] PostgreSQL Global Development Group. "29.12. Configuration Settings" (logical replication worker pool, `max_worker_processes` 관계). PostgreSQL 18 Documentation, 2025. https://www.postgresql.org/docs/current/logical-replication-config.html
+
 [3] PostgreSQL Global Development Group. "CREATE SUBSCRIPTION" (`streaming` 옵션 on/off/parallel, 기본값 parallel). PostgreSQL 18 Documentation, 2025. https://www.postgresql.org/docs/current/sql-createsubscription.html
+
 [4] PostgreSQL Global Development Group. "19.6. Replication" (`max_logical_replication_workers` 기본 4, `max_sync_workers_per_subscription`, `max_parallel_apply_workers_per_subscription`). PostgreSQL 18 Documentation, 2025. https://www.postgresql.org/docs/current/runtime-config-replication.html
+
 [5] CYBERTEC. "PostgreSQL Recovery Internals" / "End of the road for PostgreSQL streaming replication?" (WAL 재생이 startup process 단일 스레드, recovery_prefetch는 I/O 프리페치). CYBERTEC Blog, 2023~2024. https://www.cybertec-postgresql.com/en/postgresql-recovery-internals/
+
 [6] PostgreSQL Wiki. "Parallel Recovery" (코어 미반영 설계 제안: transaction worker / block worker). https://wiki.postgresql.org/wiki/Parallel_Recovery
+
 [7] Amit Kapila (PostgreSQL committer). "Parallel Apply of Large Transactions" (commit order 유지 이유: 트랜잭션 의존성·데드락). amitkapila16 blog, 2025-09. http://amitkapila16.blogspot.com/2025/09/parallel-apply-of-large-transactions.html
+
 [8] PostgreSQL Source Code. `src/backend/access/transam/xlogrecovery.c` (`PerformWalRecovery()`: startup process 단일 redo 루프가 WAL 레코드를 순차 적용). PostgreSQL doxygen, 2025. https://doxygen.postgresql.org/xlogrecovery_8c.html
+
 [9] PostgreSQL Global Development Group. "Chapter 29. Logical Replication" (pub/sub 모델, publication/subscription, pgoutput, walsender, apply worker, replication slot). PostgreSQL 18 Documentation, 2025. https://www.postgresql.org/docs/current/logical-replication.html
+
 [10] PostgreSQL Global Development Group. "26.1. Comparison of Different Solutions" / "26.2. Log-Shipping Standby Servers" (WAL shipping = file-based log shipping 또는 streaming replication, 또는 조합). PostgreSQL 18 Documentation, 2025. https://www.postgresql.org/docs/current/warm-standby.html
+
 [11] PostgreSQL Global Development Group. "47.9. Streaming of Large Transactions for Logical Decoding" (streaming 도입 목적: 대형 트랜잭션 메모리·apply lag 감소, `logical_decoding_work_mem` 기본 64MB 트리거). PostgreSQL 18 Documentation, 2025. https://www.postgresql.org/docs/current/logicaldecoding-streaming.html
+
 [12] PostgreSQL Source Code. `src/backend/replication/logical/reorderbuffer.c` (`ReorderBufferCheckMemoryLimit()`: `rb->size ≥ logical_decoding_work_mem`일 때 가장 큰 top-level 트랜잭션을 골라 stream 또는 spill). PostgreSQL doxygen, 2025. https://doxygen.postgresql.org/reorderbuffer_8c_source.html

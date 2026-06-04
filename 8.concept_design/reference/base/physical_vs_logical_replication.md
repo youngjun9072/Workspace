@@ -48,6 +48,26 @@ standby는 이 레코드를 받아 **그대로 자기 17번 블록의 240 위치
 - **물리(블록 재생)**: "17번 페이지 240바이트부터 이 값으로 덮어써" → 디스크 이미지를 복사하듯 똑같이 만든다.
 - **논리(행 적용 / SQL 재실행)**: "테이블 t에 (1,'foo') 한 행 넣어" → 어디에 넣을지는 standby가 알아서 결정한다.
 
+#### 보충: WAL replay(물리) vs WAL decoding(논리)
+
+물리·논리는 **같은 WAL에서 출발**하지만, 그 WAL을 **그대로 재생하느냐 vs 디코딩해 논리 변경으로 바꾸느냐**가 갈린다. (PostgreSQL 기준 서술이나 개념은 일반적이다.)
+
+- **물리 = WAL replay**: WAL 레코드("몇 번 블록의 어디를 이 바이트로")를 **디코딩 없이 블록 단위로 그대로 재생**. source 쪽 추가 처리 없음.
+- **논리 = WAL decoding**: 같은 WAL을 **logical decoding**으로 해석해 "테이블 T에 행 INSERT/UPDATE/DELETE" 같은 **논리 변경 이벤트**로 변환(재조립 버퍼 + 출력 플러그인). subscriber는 그 행 변경을 자기 테이블에 다시 적용.
+
+| 항목 | 물리 (WAL replay) | 논리 (WAL decoding) |
+|---|---|---|
+| 전송 내용 | raw WAL(블록·바이트) | 디코딩된 행 변경 |
+| source 처리 | 없음(그대로 전송) | 디코딩(재조립 + 필터) |
+| 단위 | 클러스터 전체, 블록 | 테이블 선택, 행 |
+| 적용 | 블록 그대로 덮어씀 | 행 변경 재적용(물리 위치 무관) |
+| 버전 | 동일 버전 요구 | 메이저 버전 달라도 가능 |
+
+**가장 중요한 두 차이:**
+
+1. **순서** — WAL은 여러 트랜잭션이 **LSN(쓰여진) 순서로 뒤섞여** 있고 commit 순서가 아니다. 물리는 그 LSN 순서대로 그대로 replay하면 되지만(블록 redo라 맞음), 논리는 소비자가 "완결된 트랜잭션을 commit 순서로" 받아야 하므로 **디코딩이 트랜잭션별로 재조립하고 commit 순서로 재정렬**해 내보낸다.
+2. **정보량** — 물리는 블록을 덮어쓰니 행 식별이 불필요하지만, 논리는 UPDATE/DELETE 시 **"어떤 행인가"(REPLICA IDENTITY = 키, FULL이면 old 행 전체)** 를 WAL에 더 남겨야 디코딩이 가능하다. 이것이 논리 복제용 로그가 더 커지는 이유다. 또 물리 WAL의 vacuum·인덱스 내부 변경·FPI 같은 **물리 전용 레코드는 논리 디코딩이 무시**하고 published 테이블 DML만 추출한다.
+
 ### 2. PostgreSQL: 스트리밍 복제 vs 로지컬 복제
 
 PostgreSQL 공식 문서의 복제 솔루션 비교에 따르면 [1]:
@@ -144,8 +164,13 @@ MySQL의 binlog 기반 복제는 행/문장 수준의 논리적 변경을 전송
 
 ## References
 [1] PostgreSQL Global Development Group. "26.1. Comparison of Different Solutions". PostgreSQL 18 Documentation, 2025. https://www.postgresql.org/docs/current/different-replication-solutions.html
+
 [2] PostgreSQL Global Development Group. "Streaming Replication / Logical Replication". PostgreSQL 18 Documentation, 2025. https://www.postgresql.org/docs/current/protocol-replication.html
+
 [3] Oracle. "Managing Physical and Snapshot Standby Databases" / "Creating a Logical Standby Database" / "Log Apply Services". Oracle Database Data Guard Documentation, 2024. https://docs.oracle.com/en/database/oracle/oracle-database/19/sbydb/managing-oracle-data-guard-physical-standby-databases.html
+
 [4] Oracle / MySQL. "19.2.1 Replication Formats". MySQL 8.0 Reference Manual, 2025. https://dev.mysql.com/doc/refman/8.0/en/replication-formats.html
+
 [5] DBPLUS Better Performance. "The Replication Dichotomy: Logical vs Physical Replication". DBPLUS Blog, 2024-07-18. https://dbplus.tech/en/2024/07/18/the-replication-dichotomy-logical-vs-physical-replication/
+
 [6] Oracle / MySQL. "7.6.7 The Clone Plugin" / "7.6.7.7 Cloning for Replication". MySQL 8.0 Reference Manual, 2025. https://dev.mysql.com/doc/refman/8.0/en/clone-plugin.html

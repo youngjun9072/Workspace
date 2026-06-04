@@ -1,0 +1,125 @@
+# `replica_preserve_commit_order` (SPCO) — 병렬 적용 중 commit 순서 보존
+
+> 조사+코드분석 · 2026-06-04 · 출처: MySQL 8.0.46 로컬 소스 + 공식 문서/WorkLog
+
+**한 줄 요약:** SPCO는 멀티스레드 복제(MTA, LOGICAL_CLOCK)에서 worker들이 트랜잭션을 *병렬로 실행*하더라도 *최종 commit은 source(relay log) 순서대로* 직렬화하도록 강제하는 기능으로, MySQL 8.0.46에서 기본값 ON이며, `Commit_order_manager`가 lock-free 커밋 순서 큐 + MDL wait-for 그래프로 "자기 차례까지 대기 후 commit" 구조를 구현한다.
+
+## 1. SPCO란 무엇이며 왜 필요한가
+
+`replica_preserve_commit_order`(이전 별칭 `slave_preserve_commit_order`, 이하 SPCO)는 복제 replica에서만 동작하는 옵션으로, "적용된 트랜잭션을 source에서 관찰된 것과 동일한 순서로 commit"하는 책임을 진다. 소스 헤더 주석이 이 정의를 그대로 명시한다 — "On a replica and only on a replica, this class is responsible for committing the applied transactions in the same order as was observed on the source" (`sql/rpl_replica_commit_order_manager.h:40-43`).
+
+**8.0.46 기본값(ON).** 시스템 변수 정의는 `DEFAULT(true)`이며 설명 문자열도 "Force replication worker threads to commit in the same order as on the source. Enabled by default"이다 (`sql/sys_vars.cc:4282-4289`). 전역 변수 실체는 `bool opt_replica_preserve_commit_order`(`sql/mysqld.cc:1349`, 선언 `sql/mysqld.h:221`). 공식 매뉴얼 기준으로 8.0.27부터 기본값이 ON이 되었고, 8.0.30부터는 OFF(0)로 설정하는 것이 deprecated이다 [1][2]. 변경 시 복제 스레드가 정지되어 있어야 하므로 `ON_CHECK(check_slave_stopped)`가 걸려 있다 (`sys_vars.cc:4288`). `slave_preserve_commit_order`는 deprecated alias로 유지된다 (`sys_vars.cc:4291-4292`).
+
+**왜 필요한가.** 병렬 적용을 켜면 처리량은 오르지만, 병렬로 실행된 트랜잭션이 임의 순서로 commit될 경우 replica가 *source에 존재한 적 없는 중간 상태*를 외부에 노출할 수 있다. WL#6813(MTS: ordered commits, sequential consistency)이 이 문제를 정조준한다 — read scale-out 시 클라이언트가 replica의 중간 상태에 의존할 수 있으므로 순서 일관성이 필요하다 [3]. SPCO ON이면 트랜잭션은 relay log에 나타난 순서대로 externalize(외부 가시화)되며, 이로써 "gap"(뒤 트랜잭션이 앞 트랜잭션보다 먼저 적용되는 상태)이 방지된다 [4].
+
+## 2. 내부 메커니즘: 커밋 순서 큐 + 자기 차례 대기
+
+SPCO의 핵심은 `Commit_order_manager` 클래스(`sql/rpl_replica_commit_order_manager.cc`, `.h`)와 lock-free `cs::apply::Commit_order_queue`(`sql/changestreams/apply/commit_order_queue.h`)이다.
+
+**(a) 매니저 생성 조건.** SQL 스레드 초기화 시, SPCO가 켜져 있고 worker가 2개 초과일 때만 매니저를 만든다:
+
+```
+if (opt_replica_preserve_commit_order && !rli->is_parallel_exec() &&
+    rli->opt_replica_parallel_workers > 1)
+  commit_order_mngr = new Commit_order_manager(rli->opt_replica_parallel_workers);
+```
+(`sql/rpl_replica.cc:7030-7035`). 즉 worker 1개거나 SPCO OFF면 매니저 자체가 `nullptr`이고, 이후 모든 진입점은 `has_commit_order_manager()`로 가드된다 (`rpl_replica_commit_order_manager.cc:645-648`).
+
+**(b) 등록(register).** Coordinator가 트랜잭션을 worker에 분배하는 시점에 `register_trx()`를 호출해 worker를 큐에 push한다:
+
+```
+if (rli->get_commit_order_manager() != nullptr && worker != nullptr)
+  rli->get_commit_order_manager()->register_trx(worker);
+```
+(`sql/rpl_mta_submode.cc:927-928`). `register_trx()`는 worker 단계를 `FINISHED → REGISTERED`로 전이시키고 `m_workers.push(worker->id)`로 큐 꼬리에 넣는다 (`rpl_replica_commit_order_manager.cc:58-70`). 이 push 순서가 곧 source 순서(relay log 순서)이며, 큐는 head/tail/next 포인터를 atomic으로 관리하는 lock-free FIFO이다 (`commit_order_queue.h:36-58`).
+
+**(c) 자기 차례 대기(wait).** worker가 적용을 마치고 commit 직전에 `Commit_order_manager::wait(THD*)` → 인스턴스 `wait(Slave_worker*)` → `wait_on_graph()` 순으로 진입한다. 단계 전이는 `FINISHED_APPLYING`으로 바꾼 뒤, **자신이 큐의 맨 앞(front)인지** 검사한다:
+
+- 자신이 front이면 곧바로 진행(대기 불필요) — `if (this->m_workers.front() != worker->id)` 분기를 타지 않고 `return false` (`rpl_replica_commit_order_manager.cc:93, 269`).
+- front가 아니면 `REQUESTED_GRANT` 단계로 전이하고, `Commit_order_lock_graph` 티켓을 만들어 MDL wait 컨텍스트(`will_wait_for`)에 등록한 뒤 `m_wait.timed_wait()`로 앞 트랜잭션의 grant를 기다린다 (`rpl_replica_commit_order_manager.cc:100-127`). 대기는 1초 단위로 최대 약 1년(`LONG_TIMEOUT`)까지 반복한다 (`:114-127`).
+- grant를 받으면 `MDL_wait::GRANTED`로 깨어나 `return false`(commit 진행) (`:244-246`).
+
+이 stage 머신은 헤더에 ASCII 다이어그램으로 문서화되어 있다: `REGISTERED → FINISHED APPLYING → (front면 바로 / 아니면 REQUESTED GRANT) → WAITED → RELEASE NEXT → FINISHED` (`rpl_replica_commit_order_manager.h:59-106`). 모든 전이는 lock-free 구조와 atomic 접근으로 처리되어, 단계가 겹치거나 건너뛸 수 있음을 전제로 설계되어 있다 (`:108-113`).
+
+**(d) commit 진입점.** 실제로 binlog `ordered_commit()`의 Stage #0가 SPCO의 대기 지점이다. flush stage 진입 전에 차례를 기다리게 만든다:
+
+```
+/* Stage #0: ensure slave threads commit order ... wait until its turn to commit. */
+if (Commit_order_manager::wait_for_its_turn_before_flush_stage(thd) ||
+    ending_trans(thd, all) ||
+    Commit_order_manager::get_rollback_status(thd)) {
+  if (Commit_order_manager::wait(thd)) return thd->commit_error;
+}
+```
+(`sql/binlog.cc:8882-8896`). 같은 진입점이 일반 엔진 commit 경로(`handler.cc:1908`, `:1914`), XA prepare/commit 2nd phase(`xa/sql_xa_prepare.cc:215,224`, `xa/sql_xa_second_phase.cc:141-164`)에도 존재한다.
+
+**(e) 차례 넘기기(finish / release next).** commit을 마친 worker는 `wait_and_finish()` → `finish()` → `finish_one()`에서 자신을 큐에서 pop/remove하고, 큐의 다음 worker가 `FINISHED_APPLYING` 또는 `REQUESTED_GRANT` 단계이면 그 worker의 MDL wait 상태를 `MDL_wait::GRANTED`로 set 하여 깨운다 (`rpl_replica_commit_order_manager.cc:392-438`). 이때 "commit sequence number freeze" 기법으로 "N번 worker는 N+1번만 깨운다"는 소유권을 보장해 race를 막는다 (`commit_order_queue.h:90-110`, `cc:426-431`).
+
+**(f) binlog OFF일 때의 그룹 flush.** binlog이 꺼진 worker들의 경우, 차례가 오면 엔진에 즉시 flush하지 않고 `HA_IGNORE_DURABILITY` + `tx_commit_pending`로 보류했다가(`cc:309-322`), `flush_engine_and_signal_threads()`에서 leader 한 명이 `COMMIT_ORDER_FLUSH_STAGE` 큐로 그룹을 모아 `ha_flush_logs(true)` + `gtid_state->update_commit_group()`로 한꺼번에 처리하고 대기 중인 스레드를 깨운다 (`cc:330-382`). 이는 WL#7846(binlog/log-slave-updates 비활성 시 SPCO)의 결과물이다 [5].
+
+## 3. LOGICAL_CLOCK 병렬 적용과의 관계 — 병렬 실행 ↔ 직렬 commit 분리
+
+SPCO는 LOGICAL_CLOCK 병렬 모드와 짝을 이룬다. SQL 스레드 초기화에서 submode가 DB_NAME이 아니면 `Mts_submode_logical_clock`을 쓴다 (`rpl_replica.cc:7024-7027`). 그리고 SPCO는 DATABASE 모드와 **양립 불가**로 명시적으로 거부된다:
+
+```
+if (opt_replica_preserve_commit_order && replica_parallel_workers > 0) {
+  if (channel_mts_submode == MTS_PARALLEL_TYPE_DB_NAME) {
+    my_error(ER_DONT_SUPPORT_REPLICA_PRESERVE_COMMIT_ORDER, ...
+             "when replica_parallel_type is DATABASE");
+```
+(`rpl_replica.cc:11133-11139`). Group Replication 채널의 경우도 `LOGICAL_CLOCK` + SPCO ON이 아니면 START REPLICA를 거부한다 (`rpl_replica.cc:11143-11154`).
+
+**역할 분리가 핵심이다.** LOGICAL_CLOCK은 source의 binlog group commit 정보(commit parent / last_committed·sequence_number)를 이용해 "어떤 트랜잭션들이 서로 의존 없이 동시 실행 가능한가"를 판단해 worker들에 분배한다 — 즉 **병렬 *실행*의 스케줄링**을 담당한다 [3]. 반면 SPCO는 그 병렬 실행 결과의 **commit *순서*만** relay log 순서로 직렬화한다. 두 메커니즘은 서로 다른 큐를 쓴다: 실행 분배는 submode 로직이, commit 직렬화는 `Commit_order_manager`의 독립적인 커밋 순서 큐가 담당하며, 후자는 binlog의 별도 stage(Stage #0)로 동작한다고 소스 주석이 못박는다 — "Commit_order_manager maintains its own queue and its own order for the commit" (`binlog.cc:8886-8888`). 따라서 트랜잭션은 동시에 *실행*되지만, commit만큼은 등록(register) 순서대로 한 명씩 진행한다.
+
+## 4. SPCO OFF면 무슨 일이 일어나는가
+
+SPCO OFF(또는 매니저 미생성)이면 worker들은 commit 차례를 기다리지 않고, 각자 적용을 끝내는 대로 commit한다. 결과적으로:
+
+- **commit 순서 역전 / gap 발생.** 뒤 순번 트랜잭션이 앞 순번보다 먼저 commit될 수 있다. 매뉴얼은 이를 "gap"으로 정의하고, SPCO ON이 이 gap을 방지한다고 설명한다 [4]. gap이 생기면 replica는 source에 존재한 적 없는 중간 상태를 노출할 수 있다.
+- **`Exec_master_log_pos`(source binlog position)의 신뢰성 저하.** 이 값이 "low-water mark"가 되어 실제로 적용된 최신 트랜잭션보다 뒤처지며, 어디까지 적용됐는지 단정할 수 없게 된다 [4]. (단 매뉴얼은 SPCO ON이라도 position lag 자체를 완전히 없애지는 못한다고 명시한다 [4].)
+- **GTID 일관성 영향.** out-of-order commit은 `gtid_executed`에 일시적 hole/interval을 만든다. 소스 주석도 "transactions commit out-of-order ... results in temporary gaps in gtid_executed"이며, interval 자료구조 연산이 interval 수에 선형이라 SPCO를 켜면 일부 워크로드의 throughput이 오히려 오를 수 있다고 설명한다 (`rpl_replica_commit_order_manager.cc:222-231`).
+- **읽기 일관성 보장 상실.** read scale-out에서 "source에 실제로 존재했던 상태만 본다"는 보장이 깨진다 (WL#6813의 sequential consistency 목적) [3].
+
+깨지는 보장을 한 줄로 정리하면: **"replica는 source에 존재한 적 있는 commit 순서/상태만 외부에 노출한다"** 는 sequential consistency 보장이 사라진다.
+
+## 5. Deadlock / 대기 처리
+
+SPCO는 *commit 차례 대기*라는 인위적 의존성을 만들기 때문에, 엔진이 인지하지 못하는 종류의 deadlock이 발생할 수 있다. 소스는 두 코너 케이스를 문서화한다 (`rpl_replica_commit_order_manager.h:318-376`):
+
+- **시나리오:** worker1(앞 순번, trx1)이 row lock A를 쥔 채 commit 차례를 기다리는데, worker2(뒤 순번, trx2)가 lock A를 얻으려 trx1을 기다린다. trx1은 SPCO 때문에 trx2의 commit을 기다리고, trx2는 lock 때문에 trx1을 기다리는 순환이 생긴다. 예시로 secondary index의 NULL 처리(Case 1)나 `ANALYZE TABLE` 후 `innodb_table_stats` 읽기(Case 2)가 제시된다 (`.h:330-356`).
+
+**감지·해소 메커니즘:**
+
+1. **MDL wait-for 그래프 통합.** 각 worker는 `Commit_order_lock_graph`라는 MDL 서브그래프 티켓을 만들어, commit 차례 대기를 MDL deadlock 탐지기가 볼 수 있게 한다 (`.h:434-495`). `wait_on_graph()`가 `will_wait_for()` 후 `find_deadlock()`을 호출한다 (`cc:105-106`). `visit_lock_graph()`가 큐를 순회하며 순환 의존을 검사한다 (`cc:596-643`).
+2. **엔진 lock-wait 시 교차 점검.** 엔진이 row lock wait를 보고할 때 `check_and_report_deadlock(thd_self, thd_wait_for)`가 호출되어, 두 worker가 같은 채널이고 wait_for쪽 sequence_number가 더 크면(즉 "뒤 순번이 앞 순번을 lock으로 기다리는" 역전) deadlock으로 판정해 `report_deadlock()`을 호출하고 victim의 MDL wait 상태를 `MDL_wait::VICTIM`으로 set한다 (`cc:474-499`).
+3. **희생자 선정과 자동 재시도.** worker의 deadlock weight는 `DEADLOCK_WEIGHT_CO = 0`으로 가장 낮게 설정되어, 일반 클라이언트 대신 worker가 우선 back-off(롤백) 되도록 한다 — worker는 자동 트랜잭션 재시도 능력이 있기 때문이다 (`cc:687-692`, `mdl.h:955`). victim worker는 `ER_LOCK_DEADLOCK`로 깨어나 `report_commit_order_deadlock()` 후 rollback하고(`cc:261-267`), `wait_and_finish()`에서 `check_and_report_end_of_retries()`로 재시도 한계를 확인해 재시도하거나 최종 실패 시 rollback 상태를 전파한다 (`cc:521-553`).
+4. **앞 트랜잭션 실패 전파.** 앞 worker가 에러로 끝나면 `set_rollback_status()`로 롤백 상태를 세팅하고, 뒤에서 차례를 기다리던 worker는 `wait()`에서 이를 감지해 `ER_REPLICA_WORKER_STOPPED_PREVIOUS_THD_ERROR`로 함께 rollback한다 (`cc:302-308`).
+5. **Group Replication inbound 채널의 view-change 예외.** GR primary의 inbound 채널에서, source 순서와 그룹 delivery 순서가 어긋나고 그 사이에 멤버 join(view change)이 끼면 영구 대기(deadlock)가 될 수 있다. 이를 풀기 위해, MDL wait timeout 주기마다 `is_ticket_on_its_turn_and_back_ticket_incremented()`가 참이면 `WAITED_OVERTAKE` 단계로 전이하여 **순서를 깨고 commit을 허용**하고 `ER_RPL_MTA_ALLOW_COMMIT_OUT_OF_ORDER` 경고를 남긴다 (`cc:129-241`). 이는 의존성 없는 트랜잭션에 한해 안전하며, view change 부근에서 짧게만 발생한다고 주석이 설명한다.
+
+## 정리
+
+- SPCO는 LOGICAL_CLOCK 병렬 적용과 짝을 이뤄 **"병렬 실행, 직렬 commit"** 을 구현한다. 8.0.46 기본값 ON(`sys_vars.cc:4287`).
+- 메커니즘: Coordinator가 분배 시 worker를 lock-free 커밋 순서 큐에 `register_trx`로 등록(=source 순서) → commit 직전 `wait()`에서 큐 front가 될 때까지 MDL wait로 대기 → commit 후 `finish_one()`이 다음 worker를 grant. 진입점은 `binlog.cc`의 ordered_commit Stage #0.
+- DATABASE 병렬 모드와는 양립 불가(명시적 에러), GR 채널은 LOGICAL_CLOCK + ON 필수.
+- OFF면 commit 역전·gap, `Exec_master_log_pos` 신뢰성 저하, `gtid_executed` 일시적 hole, sequential consistency 보장 상실. 8.0.30부터 OFF는 deprecated.
+- commit 순서 대기가 만드는 인위적 deadlock은 MDL wait-for 그래프 + `check_and_report_deadlock`로 감지하고, worker를 최저 weight victim으로 골라 자동 rollback·retry로 해소. GR view-change 상황에선 `WAITED_OVERTAKE`로 순서를 깨 풀기도 한다.
+
+## 미해결 / 자료 부족
+
+- **공식 매뉴얼 변수 페이지 원문 직접 인용 미확보:** `replication-options-replica.html`의 `replica_preserve_commit_order` 항목 전문은 페이지가 truncate되어 완전히 가져오지 못했다. "8.0.27부터 기본 ON", "8.0.30부터 OFF deprecated", "8.0.18 이하에서는 log_bin/log_replica_updates 필요, 8.0.19+에서는 불필요" 등 버전 경계 수치는 원문 재확인이 바람직하다 [1][2][4]. (소스 기본값 ON 자체는 `sys_vars.cc:4287`로 직접 확인됨.)
+- **`is_ticket_on_its_turn_and_back_ticket_incremented` 구현 세부:** 호출부(`cc:233-234`)와 주석만 확인했고, 함수 본문(BGC ticket manager 로직)은 별도 파일이라 미열람.
+- **재시도 횟수 정책:** `check_and_report_end_of_retries()`의 한계값/`replica_transaction_retries` 연동은 호출부(`cc:536-537`)만 확인했고 본문 미열람.
+
+## References
+
+[1] MySQL :: MySQL 8.0 Reference Manual :: 19.1.6.3 Replica Server Options and Variables — https://dev.mysql.com/doc/refman/8.0/en/replication-options-replica.html
+
+[2] MySQL :: MySQL 8.0 Reference Manual :: 19.1.6.1 Replication and Binary Logging Option and Variable Reference — https://dev.mysql.com/doc/refman/8.0/en/replication-options-reference.html
+
+[3] MySQL :: WL#6813: MTS: ordered commits (sequential consistency) — https://dev.mysql.com/worklog/task/?id=6813
+
+[4] MySQL :: MySQL 8.0 Reference Manual :: Replication and Transaction Inconsistencies — https://dev.mysql.com/doc/refman/8.0/en/replication-features-transaction-inconsistencies.html
+
+[5] MySQL :: WL#7846: MTS: slave-preserve-commit-order when log-slave-updates/binlog is disabled — https://dev.mysql.com/worklog/task/?id=7846
+
+[6] MySQL 8.0.46 로컬 소스: `sql/rpl_replica_commit_order_manager.h`, `sql/rpl_replica_commit_order_manager.cc`, `sql/changestreams/apply/commit_order_queue.h`, `sql/sys_vars.cc`, `sql/binlog.cc`, `sql/rpl_replica.cc`, `sql/rpl_mta_submode.cc`, `sql/mdl.h` (인라인 `file:line` 참조)

@@ -102,8 +102,13 @@ tablesync worker가 COPY 중 실패하면, **apply worker가 이를 감지해 ta
 
 ## References
 [1] PostgreSQL Global Development Group. "29.9. Architecture" (tablesync worker, USE_SNAPSHOT COPY, catchup, 핸드오프, 실패 시 재기동, publish 무시). PostgreSQL 18 Documentation, 2025. https://www.postgresql.org/docs/current/logical-replication-architecture.html
+
 [2] PostgreSQL Global Development Group. "19.6. Replication" / "29.12. Configuration Settings" (`max_sync_workers_per_subscription` 기본 2, worker 풀). PostgreSQL 18 Documentation, 2025. https://www.postgresql.org/docs/current/runtime-config-replication.html
+
 [3] PostgreSQL Global Development Group. "pg_subscription_rel" (`srsubstate`, `srsublsn`). PostgreSQL 18 Documentation, 2025. https://www.postgresql.org/docs/current/catalog-pg-subscription-rel.html
+
 [4] Fujitsu (postgresql.fastware). "Logical Replication Tablesync Workers" (상태 머신 SYNCWAIT/CATCHUP, FINISHEDCOPY(PG14), 슬롯·crash recovery). Fastware Blog. https://www.postgresql.fastware.com/blog/logical-replication-tablesync-workers
+
 [5] PostgreSQL Source Code. `src/backend/replication/logical/tablesync.c` (tablesync 상태 머신·catchup 구현). PostgreSQL doxygen, 2025. https://doxygen.postgresql.org/tablesync_8c_source.html
+
 [6] PostgreSQL 마이그레이션 패턴(2순위). 단일 일관 스냅샷 부트스트랩: `pg_create_logical_replication_slot` 스냅샷 export + `pg_dump --snapshot` + `CREATE SUBSCRIPTION ... WITH (copy_data=false)`. (예: pgcopydb 문서, Cloud SQL/마이그레이션 가이드) https://www.postgresql.org/docs/current/sql-createsubscription.html (copy_data 옵션) · https://pgcopydb.readthedocs.io/

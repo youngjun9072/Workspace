@@ -66,6 +66,33 @@ publisher에서는 서로 독립이던 대형 트랜잭션이, subscriber의 **�
 **행 필터(row filter) UPDATE 전환**
 publication에 `WHERE` 행 필터가 있을 때, UPDATE로 행이 필터 경계를 넘으면(old는 매칭/ new는 비매칭 등) PostgreSQL이 그 UPDATE를 **자동으로 INSERT 또는 DELETE로 변환**해 divergence를 막는다 [2]. 즉 이건 깨지는 케이스가 아니라 **막아주는 설계**다. (단, UPDATE/DELETE를 위해 필터가 replica identity 컬럼을 참조해야 하는 제약은 있다 [2].)
 
+## 해결 방안 (다중 구독 cross-subscription, A1 중심)
+
+A1(구독을 가로지르는 트랜잭션) 같은 cross-subscription 깨짐에 대한 해결책. 핵심 전제: **PostgreSQL엔 cross-subscription 일관성을 주는 네이티브 기능이 (아직) 없다** — 단일 구독 안에서만 commit 순서·원자성이 보장된다 [8]. 그래서 해결은 "회피 설계 + 안전한 병렬 경로 사용"으로 나뉜다.
+
+### 지금 가능한 해결책
+
+- **(A) 의존 테이블은 같은 구독에 묶기 (공식 권장)** — 구독 간 publication 객체가 겹치지 않게 하고, **엄격한 순서가 필요한 관련 데이터는 하나의 구독으로 합친다** [8]. 서로 트랜잭션으로 엮이는 테이블(FK·동일 Tx)은 같은 구독에, **완전히 독립적인 도메인/그룹만** 다른 구독으로 분리 → 트랜잭션이 구독 경계를 안 넘어 안전. 트레이드오프: 묶인 그룹은 병렬 안 됨(병렬 범위 = 독립 그룹 수).
+- **(B) 쪼개지 말고 단일 구독 + `streaming=parallel`** — 대형 트랜잭션 병렬이 목적이면 테이블 분할 없이 단일 구독에서 얻는다. 단일 구독이라 **commit 순서·원자성 보존** + 대형 tx는 PA로 병렬. 한계: 대형 트랜잭션만 병렬(소형 OLTP엔 효과 적음), 그러나 **깨짐 위험 없음**.
+- **(C) 소형 OLTP면 단일 구독 유지** — 짧은 트랜잭션이 대량이고 테이블을 넘나들면 다중 구독은 안전하게 병렬화 못 함. 단일 구독 유지 + apply 지연 자체를 줄이는 튜닝(스트리밍, 빠른 디스크/네트워크)이 옳다.
+- **(D) 부득이 분리 시** — cross-subscription 트랜잭션을 배제 못 하면 subscriber에서 cross-subscription FK에 의존하지 말고(어차피 replica role이라 미enforce) 외부 reconcile/모니터링으로 보정 → 강한 일관성은 포기. **권장 아님.**
+
+### 미래 / 제안 중 (아직 출시 안 됨)
+
+- **비스트리밍(소형) 트랜잭션의 parallel apply** 가 커뮤니티에서 제안·논의 중이다 [5]. leader apply worker가 **트랜잭션 간 의존성을 식별**해 독립 트랜잭션을 병렬 적용하고 **commit 순서 유지 옵션**도 검토 — 즉 MySQL식 "단일 스트림 내 자동 의존성 병렬 + 전역 순서 보존". PG18 기준 **제안 단계**라 현재 해결책은 아니다.
+
+### 정리
+
+| 상황 | 해결책 |
+|---|---|
+| 관련 테이블 병렬화 필요 | (A) 같은 구독에 묶기 — 병렬 포기, 정합성 확보 |
+| 대형 트랜잭션 병렬 | (B) 단일 구독 + `streaming=parallel` — 안전 |
+| 소형 OLTP 대량 | (C) 단일 구독 유지 + lag 튜닝 |
+| 진짜 독립 도메인 | 다중 구독 분리 OK (경계 안 넘음) |
+| 자동·전역 병렬 | (미래 제안) 현재 네이티브 없음 |
+
+> PostgreSQL에서 "다중 구독 병렬 + cross-subscription 일관성"을 동시에 주는 방법은 없다. 현실해는 **(A) 경계를 안 넘게 설계** 또는 **(B) 단일 구독 내 `streaming=parallel`**. 진짜 일반해(자동 의존성 병렬 + 순서 보존)는 PostgreSQL이 제안 중이며, 이는 **MySQL/CUBRID 코디네이터가 이미 목표로 하는 것**과 같다.
+
 ## 추론 / 유추
 - 위 케이스 중 **A1(cross-subscription), A2(FULL+중복), C1(데드락)** 는 "병렬/분산 적용에서 식별·순서가 약해질 때 생기는 깨짐"으로, **CUBRID 병렬 applylogdb 코디네이터 설계에서 직접 대응되는 위험**이다 (← [5], [7]). 특히 class-level 코디네이터가 행 식별을 class 단위로만 하면 A2 유형(같은 class 내 동일/모호 행)에 주의가 필요할 수 있다 — CUBRID 코드 확인 대상.
 - A3(시퀀스)·A4(DDL/large object)는 PostgreSQL **논리복제 일반 한계**라 물리복제(전체 블록 복제)에는 없는 문제다. CUBRID 복제가 논리 계열이면 유사 한계 가능성 — 별도 확인 필요 (← [1]).
@@ -77,9 +104,17 @@ publication에 `WHERE` 행 필터가 있을 때, UPDATE로 행이 필터 경계�
 
 ## References
 [1] PostgreSQL Global Development Group. "29.8. Restrictions" (DDL·시퀀스·대형 객체 미복제, publish 연산, 스키마 변경 시 에러). PostgreSQL 18 Documentation, 2025. https://www.postgresql.org/docs/current/logical-replication-restrictions.html
+
 [2] PostgreSQL Global Development Group. "29.4. Row Filters" (UPDATE가 필터 경계 넘을 때 INSERT/DELETE로 변환해 divergence 방지). PostgreSQL 18 Documentation, 2025. https://www.postgresql.org/docs/current/logical-replication-row-filter.html
+
 [3] PostgreSQL Global Development Group. "29.1. Publication" (REPLICA IDENTITY 없는 테이블의 UPDATE/DELETE 제약). PostgreSQL 18 Documentation, 2025. https://www.postgresql.org/docs/current/logical-replication-publication.html
+
 [4] PostgreSQL Global Development Group. "29.7. Conflicts" (제약 위반 시 복제 중단, 멀티 publisher/로컬 쓰기 unique 충돌, ALTER SUBSCRIPTION SKIP, PG17 conflict 로깅). PostgreSQL 18 Documentation, 2025. https://www.postgresql.org/docs/current/logical-replication-conflicts.html
+
 [5] Amit Kapila (PostgreSQL committer). "Parallel Apply of Large Transactions" (스키마 차이로 인한 데드락, out-of-order commit 진도 추적 lowest/highest/list_remote_lsn). amitkapila16 blog, 2025-09. http://amitkapila16.blogspot.com/2025/09/parallel-apply-of-large-transactions.html
+
 [6] pgDash. "PostgreSQL Logical Replication Gotchas". pgDash Blog. https://pgdash.io/blog/postgres-replication-gotchas.html
+
 [7] Amazon Web Services. "Avoiding performance issues with REPLICA IDENTITY FULL in RDS for PostgreSQL" / PostgreSQL pgsql-hackers "concurrent update of partition key creates a duplicate record on standby". AWS Docs / PostgreSQL mailing list, 2023~2024. https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/PostgreSQL.ReplicaIdentityFull.html
+
+[8] PostgreSQL Global Development Group. "29.2. Subscription" (단일 구독 내 트랜잭션 일관성 보장, 다중 구독 시 publication 객체 비중첩 권장). PostgreSQL 18 Documentation, 2025. https://www.postgresql.org/docs/current/logical-replication-subscription.html

@@ -747,47 +747,32 @@ worker에 분배하는 계층이다.
 
 ## 참고문헌
 
-[1] MySQL 8.0 Reference Manual, "Replication Implementation",
-https://dev.mysql.com/doc/refman/8.0/en/replication-implementation.html
+[1] MySQL 8.0 Reference Manual, "Replication Implementation", https://dev.mysql.com/doc/refman/8.0/en/replication-implementation.html
 
-[2] MySQL 8.0 Reference Manual, "Replication Threads",
-https://dev.mysql.com/doc/refman/8.0/en/replication-threads.html
+[2] MySQL 8.0 Reference Manual, "Replication Threads", https://dev.mysql.com/doc/refman/8.0/en/replication-threads.html
 
-[3] MySQL 8.0 Reference Manual, "Binary Logging Options and Variables",
-https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html
+[3] MySQL 8.0 Reference Manual, "Binary Logging Options and Variables", https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html
 
-[4] MySQL 8.0 Reference Manual, "Replica Server Options and Variables",
-https://dev.mysql.com/doc/refman/8.0/en/replication-options-replica.html
+[4] MySQL 8.0 Reference Manual, "Replica Server Options and Variables", https://dev.mysql.com/doc/refman/8.0/en/replication-options-replica.html
 
-[5] MySQL 8.0 Reference Manual, "Replication and Transaction Inconsistencies",
-https://dev.mysql.com/doc/refman/8.0/en/replication-features-transaction-inconsistencies.html
+[5] MySQL 8.0 Reference Manual, "Replication and Transaction Inconsistencies", https://dev.mysql.com/doc/refman/8.0/en/replication-features-transaction-inconsistencies.html
 
-[6] PostgreSQL 17 Documentation, "Logical Replication Architecture",
-https://www.postgresql.org/docs/17/logical-replication-architecture.html
+[6] PostgreSQL 17 Documentation, "Logical Replication Architecture", https://www.postgresql.org/docs/17/logical-replication-architecture.html
 
-[7] PostgreSQL 17 Documentation, "Publication",
-https://www.postgresql.org/docs/17/logical-replication-publication.html
+[7] PostgreSQL 17 Documentation, "Publication", https://www.postgresql.org/docs/17/logical-replication-publication.html
 
-[8] PostgreSQL 17 Documentation, "Subscription",
-https://www.postgresql.org/docs/17/logical-replication-subscription.html
+[8] PostgreSQL 17 Documentation, "Subscription", https://www.postgresql.org/docs/17/logical-replication-subscription.html
 
-[9] PostgreSQL 17 Documentation, "CREATE SUBSCRIPTION",
-https://www.postgresql.org/docs/17/sql-createsubscription.html
+[9] PostgreSQL 17 Documentation, "CREATE SUBSCRIPTION", https://www.postgresql.org/docs/17/sql-createsubscription.html
 
-[10] PostgreSQL 17 Documentation, "Logical Replication Configuration Settings",
-https://www.postgresql.org/docs/17/logical-replication-config.html
+[10] PostgreSQL 17 Documentation, "Logical Replication Configuration Settings", https://www.postgresql.org/docs/17/logical-replication-config.html
 
-[11] PostgreSQL 17 Documentation, "Logical Replication Restrictions",
-https://www.postgresql.org/docs/17/logical-replication-restrictions.html
+[11] PostgreSQL 17 Documentation, "Logical Replication Restrictions", https://www.postgresql.org/docs/17/logical-replication-restrictions.html
 
-[12] PostgreSQL 17 Documentation, "Logical Replication Conflicts",
-https://www.postgresql.org/docs/17/logical-replication-conflicts.html
+[12] PostgreSQL 17 Documentation, "Logical Replication Conflicts", https://www.postgresql.org/docs/17/logical-replication-conflicts.html
 
-[13] MySQL WorkLog WL#5569, "Replication events parallel execution via hashing per database name",
-https://dev.mysql.com/worklog/task/?id=5569
+[13] MySQL WorkLog WL#5569, "Replication events parallel execution via hashing per database name", https://dev.mysql.com/worklog/task/?id=5569
 
-[14] PostgreSQL 17 Documentation, "Logical Streaming Replication Protocol",
-https://www.postgresql.org/docs/17/protocol-logical-replication.html
+[14] PostgreSQL 17 Documentation, "Logical Streaming Replication Protocol", https://www.postgresql.org/docs/17/protocol-logical-replication.html
 
-[15] PostgreSQL 16 Release Notes (large transaction에 대한 parallel apply,
-`streaming = parallel` 도입), https://www.postgresql.org/docs/release/16.0/
+[15] PostgreSQL 16 Release Notes (large transaction에 대한 parallel apply, `streaming = parallel` 도입), https://www.postgresql.org/docs/release/16.0/

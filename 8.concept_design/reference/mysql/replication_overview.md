@@ -1,0 +1,124 @@
+# MySQL 복제 전반 개요 — 개념 · 방식 · 병렬화 지원 · 방법
+
+> 자료조사 문서 · 조사 시점 2026-06-04
+> 출처: MySQL 8.0/8.4 공식 매뉴얼(1순위) + AWS/Percona(2순위)
+> 용도: MySQL 복제 개요 (reference/mysql)
+> 상세 병렬 메커니즘은 [parallel_replication_writeset_logical_clock.md] 참조.
+
+## 요약
+- MySQL 복제는 **source가 변경을 binary log(binlog)에 기록 → replica가 받아 적용**하는 구조이며, 기본은 **비동기(asynchronous)** 다 [1].
+- 동기화 수준은 **비동기(기본) / 반동기(semisynchronous, 플러그인) / Group Replication(certification 기반, virtually synchronous)** 세 가지로 나뉜다 [1][2][6].
+- 복제 좌표 방식은 **binlog 파일·위치(전통) vs GTID(전역 트랜잭션 ID)** 두 가지, binlog 포맷은 **ROW(기본)/STATEMENT/MIXED** [1][3].
+- **병렬화 지원함** — multithreaded replica(MTS). **8.0.27부터 기본 worker 4개로 멀티스레드가 기본** [4][5].
+- 병렬화 방법: source가 의존성(`last_committed`/`sequence_number`)을 binlog에 기록 → replica **coordinator가 relay log를 읽어 worker에 분배**, `replica_parallel_type=LOGICAL_CLOCK` + `binlog_transaction_dependency_tracking`(COMMIT_ORDER/WRITESET) + `replica_preserve_commit_order` [4][5].
+
+## 본문
+
+### 1. 복제 개념 (기본 구조)
+
+MySQL 복제는 **source(원본)** 서버가 데이터 변경을 **binary log**에 기록하고, **replica(복제본)** 서버가 그 로그를 받아 자기 데이터에 적용하는 방식이다 [1]. replica 내부 스레드 흐름:
+
+```text
+source                                  replica
+  변경 → binary log 기록                  I/O (receiver) thread: binlog 받아 relay log에 기록
+  (walsender 아님, dump thread가 전송) ─►  relay log
+                                          SQL thread(또는 coordinator + workers): relay log 적용
+```
+
+- **I/O thread(= receiver thread)**: source의 binlog를 받아 **relay log**에 저장.
+- **SQL thread(applier)**: relay log의 트랜잭션을 적용. 멀티스레드면 **coordinator + worker** 로 분화(3·4절).
+- 전체 경로는 **(source) dump thread → (replica) I/O thread → relay log → SQL/coordinator** 이며, **물리 블록 복제가 아니라 binlog(논리) 적용**이다.
+
+> **주석 — relay log(릴레이 로그)**
+> replica가 source의 binlog 이벤트를 받아 **로컬에 쌓아두는 임시 로그**다(포맷은 binlog와 같은 이벤트 형식). I/O thread가 쓰고 SQL/coordinator thread가 읽어 적용 → **수신과 적용을 분리하는 버퍼** 역할(적용이 느려도 계속 받아둘 수 있음).
+> - 파일: `<host>-relay-bin.NNNNNN` + 인덱스. 적용 끝난 relay log는 자동 정리(`relay_log_purge` 기본 ON).
+> - replica는 **두 진도를 따로 추적**한다: "source binlog 어디까지 받았나"(I/O) vs "relay log 어디까지 적용했나"(SQL).
+> - **binlog와 포맷 동일**: 데이터 이벤트 구조가 같아 **둘 다 `mysqlbinlog`로 읽힌다** [7]. 차이는 relay 전용 위치표시 이벤트(`Rotate_event` 등)와 "임시·로컬"이라는 성격뿐 — 데이터 이벤트 자체는 변환 없이 그대로 기록된다.
+
+### 2. 복제 방식 (종류)
+
+MySQL 복제는 여러 축으로 분류된다.
+
+**(1) 동기화 수준**
+- **비동기(asynchronous) — 기본**: source는 binlog에 쓰고 바로 커밋, replica가 따라온다. replica가 받았는지 보장 안 함 → source 장애 시 미전송분 유실 가능 [1].
+- **반동기(semisynchronous) — 플러그인**: source가 **최소 1개(설정 가능) replica가 이벤트를 받아 기록(ack)** 할 때까지 기다린 뒤 커밋. "받았다"는 보장이지 "적용했다"는 보장은 아님 → source 죽어도 커밋분은 최소 1 replica에 전달됨 [2].
+- **Group Replication — certification 기반(virtually synchronous)**: 그룹 멤버들이 Paxos 기반 통신으로 트랜잭션을 주고받고 **write set 충돌 검사(certification)** 후 커밋. 단일/다중 primary 지원 [6].
+
+> **주석 — Paxos**
+> Paxos는 **분산 합의(consensus) 알고리즘**으로, 일부 노드 장애·메시지 지연이 있어도 **과반(quorum)의 동의로 노드들이 모순 없이 하나의 결정에 합의**하게 한다.
+> - 보장: **안전성**(서로 다른 값에 동의하지 않음, 항상) + **진행성**(과반이 살아 통신되면 진행). f개 장애를 견디려면 **2f+1개** 노드 필요.
+> - MySQL Group Replication은 Paxos 변형(구현명 **XCom**)으로 **트랜잭션 적용 순서(total order)와 멤버십 변경**을 합의한다. 그래서 커밋엔 **그룹 과반의 동의**가 필요하고, **과반이 깨지면(quorum 상실) 쓰기가 멈춘다**.
+> - (참고: Raft도 같은 목적의 더 이해하기 쉬운 합의 알고리즘이나, GR은 Paxos 계열 XCom을 쓴다.)
+
+**(2) 복제 좌표 방식**
+
+복제 좌표(replication coordinate/position)는 **"replica가 복제 스트림에서 어디까지 받아 적용했는지를 가리키는 진도 표시(북마크)"** 다. 끊겼다 재개, 새 replica 구축, failover 시 "어디서부터 이어받을지"를 이 좌표로 정한다.
+
+- **binlog 파일·위치(전통)**: 좌표 = (binlog 파일명, 바이트 오프셋). 예 `mysql-bin.000042:1234567`. source의 물리 파일·오프셋에 묶여 **failover 시 새 source의 위치를 다시 계산해야** 함 [1].
+- **GTID(Global Transaction ID)**: 좌표 = 이미 실행한 트랜잭션들의 **전역 ID 집합**(`gtid_executed`). 예 `3E11FA47-...:1-100`. 트랜잭션마다 서버 무관한 전역 ID → 파일·위치 없이 "무엇을 했나"로 추적 → **failover·source 교체·재구성이 단순** [1].
+
+**(3) binlog 포맷**
+- **ROW(기본)**: 변경된 행의 before/after 이미지를 기록. 가장 안전(비결정적 함수 문제 없음), binlog 큼 [3].
+- **STATEMENT**: 실행한 SQL 문을 기록. binlog 작지만 비결정성 위험 [3].
+- **MIXED**: 상황에 따라 자동 선택 [3].
+
+**(4) 토폴로지**
+- source→replica(1:N), 체인(cascading), **멀티소스(multi-source, 여러 source를 한 replica가)**, **Group Replication(single-primary 기본 / multi-primary)** [6].
+
+**(5) 물리 복제?**
+- MySQL은 **지속 복제로는 binlog 기반(논리)만** 있고, **네이티브 블록 단위 물리복제가 없다**. 물리에 가장 가까운 건 **Clone Plugin(8.0.17+)** 의 InnoDB 물리 스냅샷인데, 이는 **replica 초기 구축(provisioning)용**이고 이후엔 binlog 복제로 이어간다 (base 문서 참조).
+
+### 3. 병렬화 지원 여부 → 지원함 (MTS)
+
+**지원한다.** MySQL replica는 **multithreaded(MTS, multi-threaded slave/applier)** 적용을 지원하며, **8.0.27부터 `replica_parallel_workers` 기본값이 4** 라 **기본적으로 멀티스레드**다(이전엔 기본 0=단일) [4][5].
+
+핵심은 **단일 binlog 스트림 안에서 서로 독립적인 트랜잭션을 의존성 판단으로 병렬 적용**한다는 점이다 — **"자동 의존성 기반 트랜잭션 병렬 + 전역 commit 순서 보존"** 을 제공한다.
+
+### 4. 병렬화 방법
+
+**스레드 모델 (MTS)** [4]:
+```text
+relay log ─► coordinator thread (순차 read, 의존성 확인, 분배)
+               ├─ worker[0]
+               ├─ worker[1]
+               └─ worker[N]   ← 독립 트랜잭션 병렬 적용
+```
+- `replica_parallel_workers = N`이면 **applier worker N개 + coordinator 1개**. coordinator가 relay log를 순차로 읽어 worker에 배정 [4].
+
+**핵심 설정** [5]:
+- `replica_parallel_workers`(기본 4, 8.0.27+) — worker 수, 멀티스레드 on/off.
+- `replica_parallel_type=LOGICAL_CLOCK`(8.0.27+ 기본, 유일하게 남을 방식) — source가 binlog에 남긴 logical timestamp(`last_committed`/`sequence_number`)로 병렬 가능 여부 판단. (`DATABASE` 방식은 8.0.29부터 deprecated.)
+- `binlog_transaction_dependency_tracking`(source측) — 의존성 계산 방식: `COMMIT_ORDER` / `WRITESET` / `WRITESET_SESSION`. **8.0.46 소스 기준 기본값은 `COMMIT_ORDER`**, 그리고 이 변수는 **deprecated**(소스 `DEPRECATED_VAR`). WRITESET은 변경 row/key 집합으로 충돌을 정밀 판단해 병렬성을 넓힘. (※ 일부 외부 자료는 "8.0.35부터 기본 WRITESET"이라 하지만, 8.0.46 소스의 `DEFAULT(DEPENDENCY_TRACKING_COMMIT_ORDER)`와 불일치 — **소스 기준 COMMIT_ORDER**.)
+- `replica_preserve_commit_order`(8.0.46 소스 기준 **기본 ON**, `DEFAULT(true)`) — worker들이 병렬 적용해도 **최종 commit 순서를 source와 동일하게** 보존.
+
+→ 의존성 계산(source) → logical clock 전달(binlog) → coordinator가 LOGICAL_CLOCK으로 병렬 적용(replica) → commit 순서 보존. 상세는 [parallel_replication_writeset_logical_clock.md].
+
+> **[확인 완료 · 코드 / MySQL 8.0.46 로컬 소스 `sql/sys_vars.cc`]**
+> - `replica_parallel_workers` `DEFAULT(4)` (:6439, range 0~MTS_MAX_WORKERS)
+> - `replica_parallel_type` `DEFAULT(MTS_PARALLEL_TYPE_LOGICAL_CLOCK)` (:4224), enum {DATABASE, LOGICAL_CLOCK}, deprecated(:4225)
+> - `binlog_transaction_dependency_tracking` `DEFAULT(DEPENDENCY_TRACKING_COMMIT_ORDER)` (:4269), enum {COMMIT_ORDER, WRITESET, WRITESET_SESSION}, deprecated(:4272) → **기본은 COMMIT_ORDER**
+> - `replica_preserve_commit_order` `DEFAULT(true)` (:4287)
+
+## 추론 / 유추
+- MySQL은 **단일 스트림 내 독립 트랜잭션 자동 병렬 + commit 순서 보존**을 제공하므로, CUBRID 병렬 applylogdb 코디네이터의 **직접 참고 모델**로 가장 적합하다 (← [4], [5]). CUBRID의 class-level 충돌 판단은 MySQL WRITESET을 class 단위로 거칠게 한 것에, 순서 정리 단계는 `replica_preserve_commit_order`에 대응한다.
+- Group Replication(certification 기반)은 CUBRID HA의 현재 비동기/반동기 모델과 결이 달라 직접 참고도는 낮으나, "write set 충돌 검사"라는 아이디어는 병렬 충돌 판단 설계에 시사점이 있을 수 있다 (← [6]) — 별도 검토 대상.
+
+## 미해결 / 자료 부족
+- 각 동기화 수준(비동기/반동기/Group Replication)의 정확한 지연·내구성 트레이드오프 수치는 워크로드 의존이라 단정값 미기재.
+- MySQL의 대형 트랜잭션 처리(binlog group commit과 병렬성의 관계), 초기 구축(Clone/GTID) 세부, GTID gap·멀티소스 충돌 등 "깨짐 케이스"는 본 개요 범위 밖 — 별도 심화 문서로 다룰 대상.
+- `replica_parallel_type`/`binlog_transaction_dependency_tracking` deprecated 이후의 내부화(서버 자동 처리) 정확한 동작은 버전별 재확인 필요.
+
+## References
+[1] Oracle / MySQL. "Chapter 19 Replication" (source/replica, binlog, 비동기 기본, binlog position vs GTID 방식). MySQL 8.0 Reference Manual, 2025. https://dev.mysql.com/doc/refman/8.0/en/replication.html
+
+[2] Oracle / MySQL. "19.4.10 Semisynchronous Replication" (source가 최소 1 replica ack 대기 후 커밋). MySQL 8.0 Reference Manual, 2025. https://dev.mysql.com/doc/refman/8.0/en/replication-semisync.html
+
+[3] Oracle / MySQL. "19.2.1 Replication Formats" (ROW 기본/STATEMENT/MIXED). MySQL 8.0 Reference Manual, 2025. https://dev.mysql.com/doc/refman/8.0/en/replication-formats.html
+
+[4] Oracle / MySQL. "19.2.3 Replication Threads" (I/O thread, SQL thread, MTS coordinator + worker). MySQL 8.0 Reference Manual, 2025. https://dev.mysql.com/doc/refman/8.0/en/replication-threads.html
+
+[5] Oracle / MySQL. "19.1.6.3 Replica Server Options and Variables" (`replica_parallel_workers` 기본 4@8.0.27, `replica_parallel_type=LOGICAL_CLOCK`, `replica_preserve_commit_order`). MySQL 8.0/8.4 Reference Manual, 2025. https://dev.mysql.com/doc/refman/8.4/en/replication-options-replica.html
+
+[6] Oracle / MySQL. "Chapter 20 Group Replication" / "20.1.3 Multi-Primary and Single-Primary Modes" (certification 기반, single/multi-primary). MySQL 8.0 Reference Manual, 2025. https://dev.mysql.com/doc/refman/8.0/en/group-replication.html
+
+[7] Oracle / MySQL. "The Relay Log" (relay log는 binary log와 같은 포맷, `mysqlbinlog`로 읽힘, relay 전용 이벤트·자동 purge). MySQL 8.0 Reference Manual, 2025. https://dev.mysql.com/doc/refman/8.0/en/relay-log.html

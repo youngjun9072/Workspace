@@ -1,0 +1,107 @@
+# MySQL MTS 코디네이터: 트랜잭션 분배 방식 (CUBRID 설계 참고)
+
+> 자료조사 + 코드 검증 문서 · 조사 시점 2026-06-04
+> 출처: MySQL 8.0 공식 매뉴얼·WorkLog(1순위) + MySQL 8.0.46 로컬 소스(직접 확인) + J-F Gagné 블로그(2순위)
+> 용도: MySQL MTS 코디네이터의 트랜잭션 분배 메커니즘 정리 (공식·WorkLog·소스 근거)
+
+## 요약
+- MySQL MTS(multithreaded applier) 코디네이터는 relay log를 순차로 읽어 **① 의존성 판단(언제 보낼 수 있나) → ② worker 선택(누구에게)** 두 단계로 트랜잭션을 분배한다.
+- **① 의존성**: source가 binlog GTID 이벤트에 심은 logical clock `(last_committed, sequence_number)` 를 읽어, `last_committed ≤ LWM(low water mark)` 이면 병렬 가능, 아니면 선행 커밋까지 대기 [WL#6314, WL#7165, 소스].
+- **② worker 선택**: 한 트랜잭션의 모든 이벤트는 같은 worker로(1tx=1worker), 가용하면 연속 worker, 부족하면 **먼저 비는 worker** 에 배정 [소스].
+- **commit 순서**는 분배와 별개로 `replica_preserve_commit_order`(기본 ON)가 보존 [공식].
+- 의존성 계산 방식은 source의 `binlog_transaction_dependency_tracking`(COMMIT_ORDER/WRITESET)이 결정 — 이게 logical clock 값을 만든다 [WL#9556].
+
+## 본문
+
+### 1. 코디네이터 위치
+
+```text
+relay log ─► coordinator thread (순차 read, 의존성 판단, 분배)
+               ├─ worker[0]
+               ├─ worker[1]
+               └─ worker[N]   ← 독립 트랜잭션 병렬 적용
+```
+`replica_parallel_workers = N`이면 applier worker N개 + coordinator 1개. coordinator가 relay log를 순차로 읽어 worker에 배정한다 [공식: Replication Threads].
+
+### 2. 분배 1단계 — 의존성 판단 (언제 보낼 수 있나)
+
+소스 `sql/rpl_mta_submode.cc`의 `Mts_submode_logical_clock::schedule_next_event()`(:574) 기준:
+
+1. 각 트랜잭션의 **GTID 이벤트에서 `(sequence_number, last_committed)` 를 읽는다**(:596–599).
+   - `sequence_number`: 이 트랜잭션의 논리 순번(commit마다 증가).
+   - `last_committed`: 이 트랜잭션이 prepare에 들어갈 때 유효했던 sequence_number = **시작 전 반드시 커밋돼 있어야 하는 선행(commit parent)**.
+2. **LWM(low water mark)** = "여기까지 모든 트랜잭션 커밋 완료" 지점과 비교(:685 `clock_leq(last_committed, lwm_estimate)`).
+   - `last_committed ≤ LWM` → 선행 의존성 충족 → **병렬 가능, worker로 배정**.
+   - `last_committed > LWM` → 아직 선행 미완 → **`wait_for_last_committed_trx()`(:515, :696)로 대기**.
+3. 배정 시 `delegated_jobs++`(:715)로 진행 중 작업 추적.
+
+→ 핵심 규칙: **같은 commit parent(`last_committed`)를 가진 트랜잭션들은 서로 병렬**. (WL#6314: "transactions that have same commit parent can execute in parallel".) WL#7165가 이 parallelization window를 더 넓히는 logical clock(Lamport clock) 최적화로 대체.
+
+### 3. 분배 2단계 — worker 선택 (누구에게)
+
+소스 `Mts_submode_logical_clock::get_least_occupied_worker()`(:848), 주석(:868–877)이 규칙을 명시:
+
+1. **한 트랜잭션 내부 이벤트** → **직전에 배정한 worker** 에 계속 (한 tx = 한 worker, 쪼개지 않음).
+2. 한 병렬 그룹에서 **i번째 트랜잭션, i ≤ 가용 worker 수** → **연속(consecutive) worker** 에 차례 배정.
+3. **i > 가용 worker 수** → **가장 먼저 비는(free) worker** 에 배정(날 때까지 대기).
+
+### 4. commit 순서 보존 (분배와 별개)
+
+- 위 1·2단계는 "병렬 실행" 결정. **최종 commit 순서**는 `replica_preserve_commit_order`(소스 `DEFAULT(true)`, sys_vars.cc:4287)가 따로 보존 — worker가 병렬 적용해도 commit은 source 순서대로 [공식, WL#6813].
+
+### 5. 의존성 정보는 source가 만든다
+
+- replica는 의존성을 *재계산하지 않고* binlog에 적힌 logical clock을 **읽기만** 한다. 그 값을 만드는 건 source의 `binlog_transaction_dependency_tracking`:
+  - `COMMIT_ORDER`(8.0.46 소스 기본): commit 시점 겹침(group commit window) 기반.
+  - `WRITESET`(WL#9556): 변경 row/key 집합 해시로 충돌을 정밀 판단 → 더 넓은 병렬성.
+- 즉 "**source가 의존성 계산·인코딩 → replica coordinator가 읽어 분배**"가 MySQL 모델의 핵심.
+
+### 6. barrier / gap
+
+- DDL·특정 이벤트·write set이 불완전한 경우 등은 더 보수적으로 처리(앞뒤를 끊는 barrier). sequence_number gap이 발견되면 그 경계가 block으로 작용(:637 gap 처리).
+
+## 7. 심화: GAQ · LWM · checkpoint (코디네이터 진도 추적)
+
+코디네이터가 "어디까지 끝났나(LWM)"를 추적하는 자료구조가 **GAQ(Group Assigned Queue = `Slave_committed_queue`)** 다 (소스 `sql/rpl_rli_pdb.h`):
+
+- GAQ = 코디네이터가 worker에 배정한 **트랜잭션 그룹(`Slave_job_group`)들의 원형 버퍼**(배정 순서대로) (`Slave_committed_queue` :351, `circular_buffer_queue` 상속).
+- worker가 그룹을 끝내면 `move_queue_head()`(:383)가 큐 head를 전진시키고, `find_lwm()`(:424)로 **LWM(`lwm` 필드 :361)** = "여기까지는 모든 선행 그룹 완료" 지점을 갱신한다.
+- 스케줄러(2절)는 이 **LWM과 `last_committed`를 비교**해 병렬 가능 여부를 정한다 — GAQ가 그 LWM의 출처.
+
+**checkpoint / low-water mark**: 코디네이터는 주기적으로 checkpoint를 찍어 "이 지점 앞 트랜잭션은 모두 적용됨"을 확정한다. 그래서 `SHOW REPLICA STATUS`의 `Exec_Source_Log_Pos`는 **low-water mark** — 그 앞은 커밋 보장, 뒤는 커밋됐을 수도/아닐 수도 있다(병렬이라 out-of-order 커밋 가능, SPCO off 시) [8].
+
+## 8. 심화: WRITESET 의존성 계산 (source 측)
+
+`last_committed`를 어떻게 "더 정밀하게(병렬 넓게)" 만드나 — 이게 WRITESET의 역할이다 [9, WL#9556]:
+
+- source가 `transaction_write_set_extraction`(예: **XXHASH64**)로 각 트랜잭션이 바꾼 **행 식별자(PK + unique key)의 해시 집합 = write set** 을 계산한다 [9].
+- 최근 트랜잭션들의 write set 이력(`binlog_transaction_dependency_history_size`)과 비교해, **write set이 겹치지 않는(서로 다른 튜플을 건드린) 두 트랜잭션은 병렬 가능**으로 보고 `last_committed`(commit_parent)를 더 낮게(=병렬 폭 넓게) 매긴다 [9].
+- **전제: PK 또는 unique key 필요** — 없는 테이블은 행을 식별 못 해 WRITESET 이득이 없다 [9].
+- 대비: `COMMIT_ORDER`는 "commit 시점 겹침(group commit window)"만 보지만, `WRITESET`은 "실제 충돌 행"을 봐서 훨씬 많은 트랜잭션을 병렬화한다.
+- 즉 **"source가 write set으로 의존성을 정밀 계산 → binlog의 logical clock에 인코딩 → replica는 읽어 분배"**. 정밀 병렬의 비용은 source의 write set 계산·이력 관리다.
+- 주의: WRITESET이 FK 관련 등에서 미묘한 적용 오류를 낸 사례 보고가 있다(bug #109923) — 도입 시 확인 대상.
+
+## 미해결 / 자료 부족
+- LWM 추정(`estimate_lwm_timestamp`)과 checkpoint·GAQ(Group Assigned Queue) 상호작용 등 스케줄러 내부 세부는 본 문서 범위 밖 — 필요 시 `rpl_mta_submode.cc`/`rpl_rli_pdb.cc` 추가 분석.
+- 정확한 worker 배정 규칙은 **공식 매뉴얼엔 거의 없고** WorkLog·블로그·소스에 의존 — 본 문서는 8.0.46 소스를 1차 근거로 삼음.
+
+## References
+[1] Oracle / MySQL. "19.2.3 Replication Threads" (MTS coordinator + worker). MySQL 8.0 Reference Manual, 2025. https://dev.mysql.com/doc/refman/8.0/en/replication-threads.html
+
+[2] Oracle / MySQL. "WL#6314: MTS: intra-schema multi-threaded slave" (같은 commit parent 트랜잭션 병렬, binlog에 logical timestamp 추가). MySQL WorkLog. https://dev.mysql.com/worklog/task/?id=6314
+
+[3] Oracle / MySQL. "WL#7165: MTS: Optimizing MTS scheduling by increasing the parallelization window on master" (logical clock = Lamport clock, WL#6314 대체). MySQL WorkLog. https://dev.mysql.com/worklog/task/?id=7165
+
+[4] Oracle / MySQL. "WL#9556: Writeset-based MTS dependency tracking on master" (WRITESET 의존성). MySQL WorkLog. https://dev.mysql.com/worklog/task/?id=9556
+
+[5] Oracle / MySQL. "WL#6813: MTS: ordered commits (sequential consistency)" (commit 순서 보존). MySQL WorkLog. https://dev.mysql.com/worklog/task/?id=6813
+
+[6] MySQL Source Code (로컬, 8.0.46). `sql/rpl_mta_submode.cc` — `Mts_submode_logical_clock::schedule_next_event()`:574, `(sequence_number,last_committed)` 추출 :596–599, LWM 비교 :685, `wait_for_last_committed_trx()`:515, `get_least_occupied_worker()`:848 및 스케줄 규칙 주석 :868–877. `sql/sys_vars.cc` — `replica_preserve_commit_order` `DEFAULT(true)`:4287.
+
+[7] Jean-François Gagné. "MySQL Parallel Replication: all the 5.7 and 8.0 details (LOGICAL_CLOCK)" (스케줄링·튜닝 상세). 발표 슬라이드/블로그(2순위). https://jfg-mysql.blogspot.com/
+
+[8] Percona. "A Dive Into MySQL Multi-Threaded Replication" (coordinator/worker, checkpoint, Exec_Source_Log_Pos = low-water mark 해설, 2순위). Percona Blog. https://www.percona.com/blog/a-dive-into-mysql-multi-threaded-replication/
+
+[9] Oracle / MySQL. "Improving the Parallel Applier with Writeset-based Dependency Tracking" (WRITESET 계산: 행 식별자 해시·이력 비교로 commit_parent 산출, PK/unique 필요). MySQL Engineering Blog. https://dev.mysql.com/blog-archive/improving-the-parallel-applier-with-writeset-based-dependency-tracking/
+
+[10] MySQL Source Code (로컬, 8.0.46). `sql/rpl_rli_pdb.h` — `Slave_committed_queue`(GAQ) :351, `lwm` 필드 :361, `move_queue_head()` :383, `find_lwm()` :424.

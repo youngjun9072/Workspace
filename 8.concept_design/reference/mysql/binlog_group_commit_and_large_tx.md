@@ -1,0 +1,115 @@
+# binlog group commit과 대형 트랜잭션 처리 (MySQL 8.0.46)
+
+> 조사+코드분석 · 2026-06-04 · 출처: MySQL 8.0.46 로컬 소스 + 공식 문서
+
+binlog group commit은 동시에 commit 중인 여러 트랜잭션의 binlog write·sync·엔진 commit을 flush→sync→commit 3-stage 파이프라인으로 묶어 fsync 횟수를 줄이고, 이때 같은 그룹으로 묶인 트랜잭션은 동일 commit window를 공유해 replica의 LOGICAL_CLOCK 병렬 적용 후보가 된다. 한편 MySQL은 대형 트랜잭션을 binlog cache에 통째로 버퍼링했다가 commit 시점에 한 번에 기록하므로, cache 한계를 넘으면 디스크 spill 또는 에러가 발생하고 복제 지연·메모리 압박의 원인이 된다.
+
+## 1. binlog group commit 3-stage (flush → sync → commit)
+
+각 트랜잭션의 commit은 `MYSQL_BIN_LOG::commit()`을 거쳐 `MYSQL_BIN_LOG::ordered_commit()`로 들어가며, 이 함수가 3개의 stage로 구성된 group commit 경로다. stage 식별자는 `Commit_stage_manager`의 `StageID` enum으로 `BINLOG_FLUSH_STAGE`, `SYNC_STAGE`, `COMMIT_STAGE`가 정의되어 있다 [1] (rpl_commit_stage_manager.h:166-170).
+
+동작 흐름은 다음과 같다.
+
+- **Stage #1 — flush**: 트랜잭션은 `change_stage(thd, BINLOG_FLUSH_STAGE, ...)`로 flush 큐에 enroll한다 [2] (binlog.cc:8907). 큐의 맨 앞에 도착한 스레드가 그 그룹의 **leader**가 되고, 나머지는 follower로 대기한다. leader는 `process_flush_stage_queue()`를 호출해 큐에 모인 모든 스레드의 binlog cache를 순회하며 한꺼번에 binlog 파일 버퍼로 flush한다 — `for (THD *head = first_seen; head; head = head->next_to_commit)` 루프가 각 스레드 cache를 flush하고 누적 바이트를 합산한다 [3] (binlog.cc:8473-8489). 즉 follower들은 자기 트랜잭션을 직접 쓰지 않고, leader 한 명이 그룹 전체를 대표로 기록한다. 이후 `flush_cache_to_file()`로 실제 파일에 쓴다 [4] (binlog.cc:8932-8933).
+
+- **Stage #2 — sync**: `change_stage(thd, SYNC_STAGE, wait_queue, &LOCK_log, &LOCK_sync)`로 sync stage로 넘어간 뒤 [5] (binlog.cc:8975), leader가 `sync_binlog_file()`을 한 번 호출해 그룹 전체를 디스크에 한 번의 fsync로 동기화한다 [6] (binlog.cc:8998-9002). N개 트랜잭션이 fsync 1회를 공유하는 것이 group commit의 핵심 절감 지점이다.
+
+- **Stage #3 — commit**: `opt_binlog_order_commits`가 켜져 있으면 `change_stage(thd, COMMIT_STAGE, ...)` 후 leader가 `process_commit_stage_queue()`를 호출해 큐의 트랜잭션을 순서대로 스토리지 엔진에 commit한다 [7] (binlog.cc:9041-9075). 이 함수 역시 `for (THD *head = first; head; head = head->next_to_commit)` 루프로 그룹 전체를 binlog 기록 순서대로 엔진 commit하고 `gtid_state->update_commit_group(first)`로 GTID를 일괄 갱신한다 [8] (binlog.cc:8517-8566).
+
+**왜 있나**: 트랜잭션마다 개별적으로 binlog write + fsync + 엔진 commit을 하면 동시성이 높을수록 fsync가 병목이 된다. 3-stage로 묶으면 (a) write는 leader가 대표로, (b) fsync는 그룹당 1회로, (c) 엔진 commit은 binlog 순서대로 직렬화하면서도 락 구간을 압축한다. 공식 매뉴얼도 그룹이 커질수록 그룹당 시간 단위가 줄고 binlog로의 `fsync()` 호출 수가 감소한다고 설명한다 [9].
+
+## 2. group commit과 병렬 복제의 관계
+
+**commit window 공유 → 같은 last_committed**: replica의 LOGICAL_CLOCK 병렬 적용은 binlog에 기록된 각 트랜잭션의 `last_committed`/`sequence_number` 메타데이터를 기준으로 동작한다. source 쪽에서 commit window가 겹친(같은 group commit 그룹에 든) 트랜잭션들은 서로 충돌하지 않았다고 보고 동일하거나 더 작은 `last_committed`를 부여받는다. 코드상 dependency tracker는 `sequence_number = trn_ctx->sequence_number - offset`, `commit_parent = max(trn_ctx->last_committed, ...) - offset` 형태로 commit_parent(=replica가 보는 last_committed)를 계산한다 [10] (rpl_trx_tracking.cc:166-174). replica applier는 `last_committed`가 자신이 이미 commit한 지점보다 작거나 같은 트랜잭션들을 병렬로 실행해도 안전하다고 판단한다. 따라서 **source에서 한 그룹에 더 많은 트랜잭션이 묶일수록 replica의 병렬도가 올라간다**.
+
+**의도적 window 확대 튜닝**: 기본적으로 OLTP에서는 commit이 매우 빨라 한 그룹에 트랜잭션이 적게 묶이기 쉽다. 이를 인위적으로 늘리는 변수가 두 가지다.
+
+- `binlog_group_commit_sync_delay`: binlog을 디스크에 sync하기 전 대기할 마이크로초. 기본 0(지연 없음). 지연을 주면 그 시간 동안 더 많은 트랜잭션이 같은 그룹에 합류해 함께 sync된다 [9][11].
+- `binlog_group_commit_sync_no_delay_count`: 위 delay가 끝나기 전이라도 이 개수만큼 트랜잭션이 모이면 delay를 중단하고 즉시 그룹을 확정한다. delay가 non-zero일 때만 작동하며 범위 0–100,000 [9].
+
+코드상 sync stage 진입 직후 leader가 `wait_count_or_timeout(opt_binlog_group_commit_sync_no_delay_count, opt_binlog_group_commit_sync_delay, SYNC_STAGE)`를 호출한다 [12] (binlog.cc:8990-8993). 구현은 `to_wait > 0 && (count == 0 || m_queue[stage].get_size() < count)` 동안 짧은 간격으로 sleep하며 큐 크기를 폴링한다 — 즉 지정 개수가 차거나 타임아웃이 될 때까지 그룹 확정을 미뤄 window를 넓힌다 [13] (rpl_commit_stage_manager.cc:455-463).
+
+매뉴얼은 이 delay 설정이 **source(또는 failover 후 source가 될 서버)에서 동시 commit 트랜잭션 수를 늘려 replica 병렬 실행을 증가**시키며, 효과를 보려면 replica에 `replica_parallel_type=LOGICAL_CLOCK`(과 source의 `binlog_transaction_dependency_tracking=COMMIT_ORDER`)가 필요하다고 명시한다 [9]. 단, delay는 트랜잭션 지연(latency)을 늘리고 고동시성 워크로드에서는 오히려 경합을 키워 throughput을 떨어뜨릴 수 있다는 trade-off가 있다 [9][11].
+
+## 3. 대형 트랜잭션 처리
+
+**streaming 부재 — 전량 버퍼링 후 일괄 기록**: MySQL의 binlog 복제에는 트랜잭션 일부를 commit 전에 흘려보내는 streaming 메커니즘이 없다. 대신 트랜잭션 진행 동안 변경을 세션별 **binlog cache**에 쌓아두었다가 commit 시점(flush stage)에 한꺼번에 binlog에 쓴다. cache는 `trx_cache.open(binlog_cache_size, max_binlog_cache_size)`로 초기화되며 [14] (binlog.cc:1211), commit 시 `write_cache()`→`do_write_cache()` 경로로 이 cache 내용을 binlog 파일로 옮긴다 [15] (binlog.cc:7633-7660).
+
+**메모리 한계와 디스크 spill**:
+
+- `binlog_cache_size`(기본 32768바이트)는 트랜잭션 변경을 담는 **메모리 버퍼** 크기다. 트랜잭션 데이터가 이 메모리 버퍼를 초과하면 초과분은 **임시 파일(temporary file)** 에 저장된다 — 즉 commit 전부터 binlog 데이터가 디스크를 치기 시작한다 [9]. cache 저장소(`IO_CACHE_binlog_cache_storage`)는 임시 파일을 `open(dir, prefix, ...)`로 열며, binlog 암호화가 켜져 있으면 이 임시 파일은 암호화된다(메모리 버퍼는 비암호화) [16] (binlog_ostream.cc:44-51)[9].
+- `max_binlog_cache_size`는 메모리 한계가 아니라 **트랜잭션이 binlog에서 사용할 수 있는 총 바이트(메모리+임시파일) 상한**이다. 트랜잭션이 이 값을 넘으면 임시 파일로도 수용 불가하여 `ER_TRANS_CACHE_FULL` 에러로 트랜잭션이 중단된다 [9] (binlog.cc:5480, 5500). 기동 시 `binlog_cache_size > max_binlog_cache_size`이면 `check_binlog_cache_size()`가 경고 후 `binlog_cache_size`를 max로 강제 하향한다 [17] (binlog.cc:1329-1341).
+- 튜닝 지표: `Binlog_cache_use`(cache 사용 횟수), `Binlog_cache_disk_use`(임시 파일 사용 횟수)를 보고 후자가 크면 `binlog_cache_size`를 키워 디스크 spill을 줄인다 [9].
+
+**복제 지연·메모리 영향**:
+
+- 대형 트랜잭션은 commit 시점에 거대한 binlog 이벤트 덩어리를 한 번에 flush하므로, 그 동안 flush/sync stage의 락(`LOCK_log`, `LOCK_sync`)을 길게 점유해 같은 시점 다른 트랜잭션들의 group commit을 지연시킨다(위 8907·8975의 stage 락 경로).
+- replica에서는 대형 트랜잭션이 단일 워커에서 통째로 적용되어야 하므로 병렬화가 불가능하고, 그 자체가 큰 적용 시간을 만들어 복제 lag을 유발한다(streaming 부재의 직접적 귀결).
+- 메모리 측면에서 `binlog_cache_size`는 binary logging이 켜진 **클라이언트(세션)마다** 할당되므로 [9], 값을 너무 키우면 동시 세션 수 × cache_size 만큼 메모리 압박이 커진다.
+
+## 4. (간단히) redo log/binlog 2PC와 group commit의 연결
+
+MySQL은 InnoDB redo log와 binlog 사이를 XA 2PC로 묶어 crash 시 일관성을 보장하며, binlog이 transaction coordinator(`tc_log`) 역할을 한다 [18] (binlog.cc:1536-1544). 흐름은:
+
+1. **prepare**: `MYSQL_BIN_LOG::prepare()`가 `ha_prepare_low()`로 엔진에 prepare를 건다. 이때 `thd->durability_property = HA_IGNORE_DURABILITY`로 설정해 **엔진의 prepared redo record를 prepare 단계에서 즉시 fsync하지 않게** 만든다. 주석은 그 이유를 "binlog group commit flush stage 직전에 여러 트랜잭션의 prepared record를 엔진 로그에 **그룹으로** flush하기 위함"이라고 명시한다 [19] (binlog.cc:8042-8054).
+2. **commit(=binlog 기록 + 엔진 commit)**: `MYSQL_BIN_LOG::commit()`가 cache를 채워 finalize한 뒤(1단계), `ordered_commit()`의 group commit으로 ordered flush+commit을 수행한다(2단계) — 주석이 commit을 이 3부분으로 나눠 설명한다 [20] (binlog.cc:8073-8084).
+
+즉 2PC의 prepare는 redo를 즉시 sync하지 않고 미뤄두고, group commit의 flush stage에서 **redo prepare flush와 binlog flush를 그룹 단위로 함께** 처리한 뒤, sync stage의 단일 fsync로 내구성을 확보하고, commit stage에서 binlog 순서대로 엔진 commit을 마무리한다. group commit은 본질적으로 이 2PC의 각 단계를 그룹화한 것이다.
+
+## 정리
+
+- group commit은 `ordered_commit()`의 flush→sync→commit 3-stage로, 각 stage마다 leader 1명이 그룹 전체를 대표 처리해 write 중복과 fsync 횟수를 줄인다 [1][2][3][6][7].
+- 같은 그룹으로 묶인 트랜잭션은 commit window를 공유해 동일/유사 `last_committed`(commit_parent)를 받고, 이것이 replica LOGICAL_CLOCK 병렬 적용의 단위가 된다 [10].
+- `binlog_group_commit_sync_delay`+`sync_no_delay_count`로 sync stage에서 그룹 확정을 의도적으로 지연시켜 window를 넓히면 replica 병렬도가 오르지만 latency·경합 trade-off가 있다 [9][12][13].
+- 대형 트랜잭션은 binlog cache에 전량 버퍼링 후 commit 시 일괄 기록되며, `binlog_cache_size` 초과 시 임시 파일 spill, `max_binlog_cache_size` 초과 시 `ER_TRANS_CACHE_FULL`로 중단된다 [9][14][16][17].
+- redo/binlog 2PC는 prepare 단계의 redo fsync를 미루고 group commit flush stage에서 그룹으로 처리하도록 설계되어 있어 group commit과 직접 맞물린다 [19][20].
+
+## 미해결
+
+- `last_committed` 값이 group commit 그룹 경계에서 정확히 어떻게 부여되는지(WRITESET 모드 포함)의 전체 알고리즘은 `rpl_trx_tracking.cc`의 일부 함수만 읽어 확인했고, COMMIT_ORDER vs WRITESET 분기의 세부는 추가 코드 확인 필요. (→ `writeset_concept.md` §5.1 참조)
+- 대형 트랜잭션 적용이 replica 워커 하나에 직렬화된다는 점은 streaming 부재로부터의 합리적 귀결로 기술했으나, replica applier 측 코드(`rpl_rli`, `mts`)를 직접 읽어 검증하지는 않음.
+- `binlog_group_commit_sync_delay`의 throughput 악화 임계점(동시성 수준별)은 매뉴얼의 정성적 서술만 확인했고 수치 근거는 미확보.
+
+## References
+
+[1] MySQL 8.0.46 source — sql/rpl_commit_stage_manager.h:166-170 (StageID enum: BINLOG_FLUSH_STAGE, SYNC_STAGE, COMMIT_STAGE)
+
+[2] MySQL 8.0.46 source — sql/binlog.cc:8907 (Stage #1 change_stage BINLOG_FLUSH_STAGE)
+
+[3] MySQL 8.0.46 source — sql/binlog.cc:8473-8489 (process_flush_stage_queue, per-thd cache flush loop)
+
+[4] MySQL 8.0.46 source — sql/binlog.cc:8932-8933 (flush_cache_to_file)
+
+[5] MySQL 8.0.46 source — sql/binlog.cc:8975 (Stage #2 change_stage SYNC_STAGE)
+
+[6] MySQL 8.0.46 source — sql/binlog.cc:8998-9002 (sync_binlog_file, single fsync for group)
+
+[7] MySQL 8.0.46 source — sql/binlog.cc:9041-9075 (Stage #3 COMMIT_STAGE, process_commit_stage_queue)
+
+[8] MySQL 8.0.46 source — sql/binlog.cc:8517-8566 (process_commit_stage_queue loop + update_commit_group)
+
+[9] MySQL 8.0 Reference Manual, 19.1.6.4 Binary Logging Options and Variables — https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html
+
+[10] MySQL 8.0.46 source — sql/rpl_trx_tracking.cc:166-174 (sequence_number / commit_parent 계산)
+
+[11] Misframe — Faster MySQL replication with group commit and delay — https://misfra.me/2017/01/04/faster-mysql-replication-with-group-commit-and-delay/
+
+[12] MySQL 8.0.46 source — sql/binlog.cc:8990-8993 (wait_count_or_timeout 호출, sync_delay/no_delay_count)
+
+[13] MySQL 8.0.46 source — sql/rpl_commit_stage_manager.cc:455-463 (wait_count_or_timeout 구현: 큐 크기 폴링)
+
+[14] MySQL 8.0.46 source — sql/binlog.cc:1211 (trx_cache.open(binlog_cache_size, max_binlog_cache_size))
+
+[15] MySQL 8.0.46 source — sql/binlog.cc:7633-7660 (write_cache / do_write_cache)
+
+[16] MySQL 8.0.46 source — sql/binlog_ostream.cc:44-51 (IO_CACHE_binlog_cache_storage::open, 임시 파일/암호화)
+
+[17] MySQL 8.0.46 source — sql/binlog.cc:1329-1341 (check_binlog_cache_size)
+
+[18] MySQL 8.0.46 source — sql/binlog.cc:1536-1544 (binlog이 tc_log 역할)
+
+[19] MySQL 8.0.46 source — sql/binlog.cc:8042-8054 (prepare에서 HA_IGNORE_DURABILITY, 그룹 redo flush 주석)
+
+[20] MySQL 8.0.46 source — sql/binlog.cc:8073-8084 (commit 3-part 분해 주석)
+
+[21] MySQL 8.0.46 source — sql/binlog.cc:5480,5500 (ER_TRANS_CACHE_FULL)

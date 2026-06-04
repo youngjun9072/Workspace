@@ -1,0 +1,101 @@
+# MySQL 복제의 원자성·순서·일관성 깨짐(또는 위험) 케이스
+
+> 조사 · 2026-06-04 · 출처: MySQL 8.0 공식 문서 + 버그리포트/블로그
+
+MySQL 복제는 비동기 기반이라, 병렬 적용 시 commit 순서 역전·GTID 충돌·반동기 손실·다중소스 충돌 등으로 source와 replica 간 데이터가 **조용히 갈라지거나(silent divergence)** **적용 에러로 복제가 멈추는(loud failure)** 위험이 상존한다.
+
+## 분류 기준
+
+- **조용한 divergence(위험)**: 에러 없이 source와 replica의 데이터/순서가 달라져 모니터링·failover 없이는 드러나지 않음. 운영상 가장 위험.
+- **에러로 중단(loud)**: applier 스레드가 즉시 에러를 던지고 복제가 멈춤. 데이터 정합성은 보존되나 가용성이 깨지고 수동 개입이 필요함.
+
+대부분의 케이스는 "조용히 시작 → failover나 후속 트랜잭션에서 loud 에러로 폭발"하는 2단계 성격을 가진다.
+
+## 1. `replica_preserve_commit_order` OFF → 병렬 commit 순서 역전
+
+- **깨짐 유형**: 순서·일관성(중간 상태 비일관). 멀티스레드 replica에서 여러 워커가 병렬 적용할 때, relay log 순서상 뒤에 있는 트랜잭션이 앞선 트랜잭션보다 먼저 commit되는 **gap(externalized transaction set의 구멍)** 이 생긴다 [1].
+- **조용함 여부**: **조용한 divergence(위험)**. 에러 없이 진행되며, 특정 시점에 "가장 최근 실행 트랜잭션"을 확인해도 그 이전 트랜잭션이 모두 적용되었다고 보장할 수 없다 [2]. 일관된 스냅샷을 읽는 애플리케이션이 인과관계가 깨진 중간 상태를 관측할 수 있다.
+- **원인**: `replica_preserve_commit_order=OFF`이면 워커들이 commit 순서를 강제하지 않는다. 공식 문서는 "gap은 멀티스레드 replica를 사용할 때만 나타날 수 있다"고 명시한다 [1].
+- **완화책**: `replica_preserve_commit_order=ON`(MySQL 8.0.27부터 기본값 ON), `replica_parallel_type=LOGICAL_CLOCK` 필요(8.0.27부터 기본값). 단 공식 문서는 이 설정이 ON이어도 **source binary log position lag(`Exec_master_log_pos`가 low-water mark로 뒤처지는 현상)은 막지 못한다**고 명시하며, 특정 상황(아래 5번 데드락 등)에서는 순서 보존이 불가능해 여전히 gap이 생길 수 있다고 경고한다 [1]. (SPCO 내부는 `replica_preserve_commit_order.md` 참조.)
+
+## 2. GTID gap / errant transactions
+
+- **깨짐 유형**: 원자성·일관성(토폴로지 전체의 GTID 집합 불일치). replica에서 로컬로(예: source를 거치지 않은 직접 쓰기, 백필, 모니터링 도구) 트랜잭션이 발생하면 해당 GTID가 그 서버에만 존재하는 **errant transaction**이 된다 [3].
+- **조용함 여부**: **평시에는 조용 → failover 시 loud**. 평소엔 아무 문제 없이 잠복하다가, errant GTID를 가진 replica가 새 source로 승격될 때 폭발한다 [3].
+- **원인**: GTID 기반 복제에서 새 source로 승격된 서버가 가진 errant GTID를 다른 replica들이 실행하지 않았음을 인지한다. 그 결과 (a) errant 트랜잭션이 새 source binlog에 남아 있으면 다른 replica로 전파되어 **데이터 손상 또는 에러**를 유발하거나, (b) binlog에 없으면 전송할 수 없어 **복제 에러**가 발생한다 [3]. GTID는 "이미 처리한 식별자의 트랜잭션은 자동 skip"하는 동작 때문에, 충돌하는 GTID가 무시되면서 정합성이 조용히 깨질 수도 있다 [4].
+- **완화책**: errant GTID를 갖지 않은 모든 호스트에 **동일 GTID의 빈 트랜잭션(empty transaction)** 을 주입해 GTID 집합을 일치시킨다. source가 살아있으면 거기서 주입해 체인 아래로 전파하고, 크래시했으면 각 replica에 직접 주입한다 [3]. `GTID_SUBTRACT()`로 errant GTID를 사전 탐지한다. InnoDB ClusterSet은 GTID 집합 불일치 복구 절차를 별도 제공한다 [5]. replica에 `read_only`/`super_read_only`를 걸어 로컬 쓰기 자체를 차단하는 것이 근본 예방책이다.
+
+## 3. 반동기(semisync) 손실 윈도우
+
+- **깨짐 유형**: 원자성·내구성(durability) — commit이 어디까지 안전한지에 대한 착시.
+- **조용함 여부**: **조용한 손실(위험)**. 클라이언트는 commit 성공을 받았지만 데이터가 어느 replica에도 적용되지 않았을 수 있다.
+- **원인 1 — ACK는 "수신" 보장이지 "적용" 보장이 아님**: replica의 ACK는 변경 로그가 **relay log에 기록(persist)** 되었다는 의미일 뿐, 실제 적용은 나중에 일어난다 [6]. 따라서 ACK를 받은 직후 source가 죽고 replica로 failover해도, relay log는 받았지만 아직 applier가 적용하지 않은 트랜잭션은 사용자에게 즉시 보이지 않는다.
+- **원인 2 — wait point에 따른 윈도우**: `rpl_semi_sync_source_wait_point`(구 `rpl_semi_sync_master_wait_point`)가 `AFTER_COMMIT`이면 source가 **먼저 스토리지 엔진에 commit한 뒤** ACK를 기다린다. 이 경우 failover 시 "어느 replica에도 없는데 이미 source에서 commit되어 클라이언트가 읽을 수 있었던" 데이터(phantom read 유사 현상)가 발생한다. 기본값이자 권장값인 `AFTER_SYNC`는 binlog sync 후 ACK를 먼저 받고 그 다음 commit하므로 가장 강한 내구성을 제공한다 [7].
+- **원인 3 — 타임아웃 시 비동기로 silent downgrade**: 설정된 시간 안에 ACK를 못 받으면 source는 **자동으로 비동기 복제로 강등**되어 ACK 없이 commit하고 사용자에게 응답한다 [6]. 이 순간부터 미전송분이 유실될 수 있으며, downgrade 자체가 조용히 일어난다. source와 반동기 replica가 같은 DC에서 함께 네트워크 단절되면 변경 로그가 다른 replica에 전달되지 못해 데이터가 고립된 쌍에만 남고, 이 상태에서 다른 곳에 새 primary가 승격되면 **split-brain**으로 모순된 데이터가 생긴다 [6].
+- **완화책**: `AFTER_SYNC` 유지, `rpl_semi_sync_source_timeout`을 가용성과 내구성의 트레이드오프에 맞춰 신중히 설정, downgrade 발생 모니터링(`Rpl_semi_sync_source_status`), 다수결 합의가 필요한 환경에서는 Group Replication 등 합의 기반 솔루션 고려.
+
+## 4. 멀티소스(multi-source) 충돌
+
+- **깨짐 유형**: 일관성(같은 키에 대한 덮어쓰기·충돌).
+- **조용함 여부**: **조용한 덮어쓰기(위험)** 또는 키 충돌 시 loud 에러 둘 다 가능.
+- **원인**: 멀티소스 복제는 **충돌 탐지를 전혀 구현하지 않으며, 충돌 처리는 필요 시 애플리케이션의 몫**이라고 공식 문서가 명시한다 [8]. 여러 source가 같은 테이블의 같은 키를 갱신하면 마지막에 적용된 값이 조용히 덮어쓰거나, PK 중복 등으로 적용 에러가 난다. GTID 기반에서 같은 트랜잭션이 여러 source(다이아몬드 토폴로지)에서 도착할 수 있으면 모든 채널의 필터 설정을 동일하게 맞춰야 한다 [8].
+- **완화책**: 채널별 복제 필터(channel-specific replication filters)로 같은 DB/테이블을 한 source에서만 받도록 분리, source별로 키 공간(샤딩)을 분리해 충돌 자체를 방지, 충돌 해소 로직은 애플리케이션이 구현. 채널은 replica당 최대 256개이며 각 채널은 서로 다른 source여야 한다 [8].
+
+## 5. 병렬 적용 데드락(및 MySQL의 처리/재시도)
+
+- **깨짐 유형**: 순서 보존과 락 획득 순서의 상호 충돌로 인한 데드락 → 가용성 위협.
+- **조용함 여부**: **loud(제어된 중단)**. 다만 8.0.23 이전에는 hang(조용한 정지)에 가까웠다.
+- **원인**: commit 순서를 보존하는 멀티스레드 replica에서는 워커가 자기보다 relay log상 앞선 모든 트랜잭션이 commit될 때까지 기다려야 한다. 그런데 commit 순서상 **뒤에 있는 워커가, 앞선 트랜잭션이 필요로 하는 행을 락**하고 있으면 데드락이 발생한다 [9].
+- **MySQL의 처리/재시도**: MySQL 8.0.23부터 commit 순서 보존 시 데드락 처리가 강화되어, applier가 데드락을 인지하고 **자동 재시도**한다(hang하지 않음). 데드락 탐지 알고리즘이 대기 중인 스레드에 롤백을 신호한다 [9]. 일시적 에러(데드락 의심 또는 wait timeout 초과)면 워커는 `replica_transaction_retries`(구 `slave_transaction_retries`, 기본 **10회**)만큼 재시도한 뒤 그래도 실패하면 에러로 멈춰 수동 해결을 유도한다 [9]. (이 데드락의 감지·해소 코드 경로는 `replica_preserve_commit_order.md` §5 참조.)
+- **완화책**: 기본 재시도 횟수 유지/조정, 핫스팟 행 경합을 줄이는 스키마/워크로드 설계. 관련 회귀 버그(예: Bug #89247, #87796, #107574)가 존재하므로 마이너 버전을 최신으로 유지.
+
+## 6. WRITESET 관련 함정 (FK·무키 테이블)
+
+- **깨짐 유형**: 병렬 적용 시 의존성 계산 오류 → 적용 에러.
+- **조용함 여부**: **loud(즉시 적용 에러)** — `HA_ERR_NO_REFERENCED_ROW`(에러코드 **1452**, "Cannot add or update a child row: a foreign key constraint fails")로 SQL 스레드가 중단 [10].
+- **원인 (Bug #109923)**: WRITESET 기반 의존성 추적(`binlog_transaction_dependency_tracking=WRITESET`)에서, **PK/UNIQUE가 없고 secondary index만 있는 부모 테이블**을 FK로 참조하는 자식 테이블의 경우, 의존성(`last_committed`)이 잘못 계산된다. FK 플래그가 writeset hash 추가 스코프를 벗어난 뒤에 설정되어, 본래 의존 관계여야 할 트랜잭션이 독립으로 마킹되고, 그 결과 자식 행 INSERT가 부모 행보다 먼저 병렬 적용되며 FK 위반(1452)이 난다. 보고된 영향 버전은 **MySQL 5.7.37, 8.0.30**이며, FK 플래그 설정을 루프 밖으로 빼는 패치가 제안되었다 [10].
+- **관련 함정**: Bug #110071 — 자식 테이블에 PK가 있으면 충돌 검사를 FK가 아닌 PK로 해야 한다는 지적 [10]. **무키(no PK/UNIQUE) 테이블**은 WRITESET 의존성 계산의 해시 키가 부정확해져 병렬화 안전성이 떨어지고, ROW 포맷에서 행 식별을 위한 풀 스캔으로 성능·정합성 위험이 커진다.
+- **완화책**: 모든 테이블에 PK 부여(무키 테이블 제거), FK 참조 대상은 PK/UNIQUE로 설계, 문제 워크로드에서는 일시적으로 `binlog_transaction_dependency_tracking=COMMIT_ORDER`로 회피, 영향 버전을 패치된 마이너 버전으로 업그레이드.
+
+## 7. 통계/비결정 함수로 인한 STATEMENT 포맷 비일관
+
+- **깨짐 유형**: 일관성(source와 replica의 결과값 불일치).
+- **조용함 여부**: **조용한 divergence(위험)**. `binlog_format=STATEMENT`에서 unsafe 문은 경고만 남기고 적용되어, 값이 조용히 달라질 수 있다.
+- **원인**: 비결정적(nondeterministic) 함수는 replica에서 다른 값을 반환할 수 있어 unsafe로 분류된다. 공식 문서가 나열하는 예: `UUID()`, `UUID_SHORT()`, `RAND()`, `SYSDATE()`, `NOW()` 계열, `FOUND_ROWS()`, `GET_LOCK()`, `ROW_COUNT()`, `USER()`/`SESSION_USER()`/`SYSTEM_USER()`, `LOAD_FILE()`, `SLEEP()` 등 [11]. 또한 `ORDER BY` 없는 `LIMIT`을 동반한 UPDATE는 행 검색 순서가 미정이라 unsafe로 본다 [11].
+- **완화책**: `binlog_format=ROW`(권장) 또는 `MIXED` 사용 — MIXED에서는 unsafe 문이 자동으로 row 포맷으로 기록된다 [11]. 스토어드 함수/프로시저/트리거/프리페어드 문에 unsafe 요소가 있으면 전체 문장이 unsafe로 마킹되어 row로 기록된다 [11].
+
+## 정리
+
+- MySQL 복제의 위험은 크게 **(A) 병렬 적용 자체의 순서·의존성 문제**(1·5·6), **(B) 토폴로지/failover 상의 GTID·다중소스 정합성**(2·4), **(C) 내구성·전송 보장의 착시**(3), **(D) 포맷 비결정성**(7)으로 나뉜다.
+- **조용한 divergence**(1·2 잠복·3·4·7)가 운영상 더 위험하다 — 에러가 없어 failover나 후속 충돌 시점까지 드러나지 않기 때문이다. 반면 **loud 중단**(5·6, 2의 failover 폭발)은 정합성을 보존하지만 가용성을 희생한다.
+- 핵심 방어선은 **GTID + `replica_preserve_commit_order=ON` + `binlog_format=ROW` + `super_read_only` + `AFTER_SYNC` 반동기 + 모든 테이블 PK 부여**의 조합이며, 멀티소스 충돌만은 MySQL이 책임지지 않으므로 애플리케이션/샤딩 설계로 막아야 한다.
+
+## 미해결 / 불확실
+
+- **버전 의존**: 기본값(`replica_preserve_commit_order` ON, `LOGICAL_CLOCK`, MTR 기본 활성)과 변수명 전환(`slave_*`→`replica_*`)은 8.0.26/8.0.27 경계, 데드락 자동 재시도는 8.0.23 도입 등 마이너 버전에 강하게 의존한다. 8.0.46에서의 정확한 동작은 본 조사에서 소스 코드로 직접 검증하지 않았다(단 SPCO 데드락 경로는 `replica_preserve_commit_order.md`에서 8.0.46 소스로 확인됨).
+- **Bug #109923 / #110071 수정 상태**: 보고 영향 버전(5.7.37, 8.0.30)과 패치 제안까지는 확인했으나, 어느 마이너 버전에서 수정 머지되었는지(8.0.46 포함 여부)는 공식 changelog로 재확인 필요.
+- **반동기 wait point별 phantom read**: 블로그 기반 해석으로, `AFTER_COMMIT`의 정확한 가시성 윈도우는 공식 문서의 wait point 정의와 교차 검증이 추가로 필요하다.
+
+## References
+
+[1] MySQL 8.0 Reference Manual, 19.5.1.34 Replication and Transaction Inconsistencies. https://dev.mysql.com/doc/refman/8.0/en/replication-features-transaction-inconsistencies.html
+
+[2] MySQL 8.0 Reference Manual, 19.1.6.3 Replica Server Options and Variables (`replica_preserve_commit_order`). https://dev.mysql.com/doc/refman/8.0/en/replication-options-replica.html
+
+[3] Severalnines, "MySQL Replication and GTID-Based Failover - A Deep Dive Into Errant Transactions." https://severalnines.com/blog/mysql-replication-and-gtid-based-failover-deep-dive-errant-transactions/
+
+[4] MySQL 8.0 Reference Manual, 19.1.3 Replication with Global Transaction Identifiers. https://dev.mysql.com/doc/refman/8.0/en/replication-gtids.html
+
+[5] MySQL Shell 8.0, 8.9.2 Inconsistent Transaction Sets (GTID Sets) in InnoDB ClusterSet Clusters. https://dev.mysql.com/doc/mysql-shell/8.0/en/innodb-clusterset-gtid-repair.html
+
+[6] PlanetScale, "MySQL semi-sync replication: durability, consistency and split-brains." https://planetscale.com/blog/mysql-semi-sync-replication-durability-consistency-and-split-brains
+
+[7] MySQL 8.0 Reference Manual, 19.4.10.2 Configuring Semisynchronous Replication (`rpl_semi_sync_source_wait_point`). https://dev.mysql.com/doc/refman/8.0/en/replication-semisync-interface.html
+
+[8] MySQL 8.0 Reference Manual, 19.1.5 MySQL Multi-Source Replication. https://dev.mysql.com/doc/refman/8.0/en/replication-multi-source.html
+
+[9] MySQL 8.0 Reference Manual, 19.5.1.34 Replication and Transaction Inconsistencies (Replication Retries and Timeouts); MySQL Bug #89247. https://dev.mysql.com/doc/refman/8.0/en/replication-features-transaction-inconsistencies.html
+
+[10] MySQL Bugs #109923, "Writeset-based Dependency Tracking will cause error HA_ERR_NO_REFERENCED_ROW"; 관련 #110071. https://bugs.mysql.com/bug.php?id=109923
+
+[11] MySQL 8.0 Reference Manual, 19.2.1.3 Determination of Safe and Unsafe Statements in Binary Logging. https://dev.mysql.com/doc/refman/8.0/en/replication-rbr-safe-unsafe.html

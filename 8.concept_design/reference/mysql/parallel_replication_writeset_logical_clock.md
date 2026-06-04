@@ -47,4 +47,5 @@
 
 ## References
 [1] Oracle / MySQL. "Binary Logging Options and Variables" (`binlog_transaction_dependency_tracking`). MySQL 8.0 Reference Manual, 2025. https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html
+
 [2] Oracle / MySQL. "Replica Server Options and Variables" (`replica_parallel_type`, `replica_parallel_workers`, `replica_preserve_commit_order`). MySQL 8.4 Reference Manual, 2025. https://dev.mysql.com/doc/refman/8.4/en/replication-options-replica.html
