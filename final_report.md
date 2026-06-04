@@ -1,7 +1,7 @@
 # Applylogdb 병렬화 PoC
 
 > 최종 보고서 · 2026-06-04
-> 근거: `2.design/poc_design.md`(설계), `7.final_test/report.md`(실험), `0.etc/{1.insert,2.update}_call_chain/CALLCHAIN.md`(병목 분석)
+> 근거: `2.design/poc_design.md`(설계), `7.final_test/report.md`(실험), 첨부 perf 콜체인/플레임그래프(병목 분석)
 
 ---
 
@@ -161,7 +161,7 @@
 
 ## III. 테스트
 
-### 1. 실험 환경 (7-1)
+### 1. 실험 환경
 
 - **토폴로지**: 마스터 1 + 슬레이브 1 (`cub_server testdb`)
 - **워크로드**: 테이블 10개, 테이블당 10만 건. **`csql`로 부하를 생성**하며, 테이블당 10만 건 연산을 **하나의 트랜잭션으로 발생시킨 long transaction**(테이블당 commit 1회)이다. 10개 테이블이 **서로 다른 테이블**이므로 **트랜잭션 간 종속(dependency)이 없다** → 병렬 적용에 이상적인 조건. Insert / Update 각각 측정.
@@ -181,7 +181,7 @@
 
 > 지표 정의: `Slave/worker = Slave Sum / 10`(테이블당 평균 적용 시간), `Eff. Parallelism = Slave Sum / Slave Elapsed`(동시 활성 워커 수 근사), `Lag = 마스터 마지막 commit → 슬레이브 마지막 apply`.
 
-### 2. 테스트 결과 (7-2)
+### 2. 테스트 결과
 
 **Insert**
 
@@ -208,7 +208,7 @@
 ![Update 테스트 결과](update.png)
 
 **관찰**
-- **병렬화 확인**: develop은 `Eff. Parallelism ≈ 1`(순차, 한 번에 한 테이블), POC는 `5~6`(약 5~6 워커 동시 활성). 슬레이브 전체 반영 시간(Slave Elapsed)이 Insert/Update 모두 **약 3.4× 단축**, 복제 lag은 **약 4~6× 단축**.
+- **병렬화 확인**: develop은 `Eff. Parallelism ≈ 1`(순차 — 한 번에 한 테이블), POC는 약 **5–6 워커**가 동시 활성. 슬레이브 전체 반영 시간(Slave Elapsed)은 Insert·Update 모두 약 **3.4배 단축**, 복제 lag은 약 **4–6배 단축**.
 - **마스터는 무관**: Master Elapsed는 빌드/설정과 무관(±6%) — 모든 성능 차이는 **슬레이브 applier 단계**에서 발생.
 - (참고) 전체 7개 실험에서 `data_buffer_size=5G` + `addvoldb temp` 조합이 워커당 처리 속도·lag 모두 가장 우수했다(상세: `7.final_test/report.md`).
 
@@ -224,14 +224,17 @@
 
 **원인 분석 — 네트워크가 아니라 실제 apply 로직이 병목**
 
-슬레이브 `cub_server`의 on-CPU perf를 측정한 결과, 수행 비중은 **네트워크 전송이 아니라 실질적인 Insert/Update 로직**에 집중되어 있었다. (복제 적용 경로 `slocator_repl_force→xlocator_repl_force→locator_insert_force/locator_update_force`가 on-CPU의 큰 분모를 차지)
+슬레이브 `cub_server`의 on-CPU perf를 측정한 결과, 수행 비중은 **네트워크 전송이 아니라 실질적인 Insert/Update 로직**에 집중되어 있었다. (복제 적용 경로 `slocator_repl_force→xlocator_repl_force→locator_insert_force/locator_update_force`가 on-CPU의 큰 분모를 차지) 측정한 콜체인/플레임그래프는 본 보고서에 **함께 첨부**한다.
 
-콜체인 기준 **병목 예상 지점**(상세: `0.etc/1.insert_call_chain/CALLCHAIN.md`, `0.etc/2.update_call_chain/CALLCHAIN.md`):
+- Insert: `slave_cub_server_insert_callchain.html` (또는 `slave_cub_server_insert_flame_full.svg`)
+- Update: `slave_cub_server_update_callchain.html` (또는 `slave_cub_server_update_flame_full.svg`)
+
+콜체인 기준 **병목 예상 지점**(상세는 위 첨부 파일):
 
 - **Insert** (`locator_insert_force` → `heap_insert_logical` 86%) — 세 갈래:
   1. **free space 탐색/페이지 할당**: `heap_stats_find_best_page`(33.8%) → `heap_vpid_alloc`(23.1%) → `file_alloc`(18.2%)
-  2. **lock 획득**: `lock_object`(20.9%) → `lock_internal_perform_lock_object` → lock-free hashmap(`lf_hash_insert_internal` 등 ~12%)
-  3. **로그 생성**: `log_append_undoredo_crumbs`(27.8%) → `prior_lsa_alloc_and_copy_crumbs`/`prior_lsa_next_record_internal`(~14~15%)
+  2. **lock 획득**: `lock_object`(20.9%) → `lock_internal_perform_lock_object` → lock-free hashmap(`lf_hash_insert_internal` 등 약 12%)
+  3. **로그 생성**: `log_append_undoredo_crumbs`(27.8%) → `prior_lsa_alloc_and_copy_crumbs`/`prior_lsa_next_record_internal`(약 14–15%)
   - 부가: malloc 체인(`cub_alloc→__libc_malloc→_int_malloc→sysmalloc`)이 로그 레코드 복사에 반복 매달림.
 
 - **Update** (`locator_update_force` → `heap_update_logical` 71.6%) — **로그 경로가 지배적**:
