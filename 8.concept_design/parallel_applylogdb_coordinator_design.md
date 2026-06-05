@@ -4,7 +4,42 @@
 컨셉을 정리한다. 상세 자료구조나 API 설계가 아니라, 어떤 책임을 새 모듈로
 분리할지와 transaction 간 충돌/순서를 어떻게 다룰지를 잡는 문서다.
 
-## 배경
+## 사전 지식 / 용어
+
+배경 지식이 서로 다른 팀원을 위해, 이 문서에서 쓰는 핵심 용어부터 정리한다.
+
+- **복제(replication)**: master(원본) DB의 변경을 slave(복제본) DB가 똑같이 따라 적용해 두 DB를 같은 상태로 유지하는 것. CUBRID HA의 핵심 동작이다.
+- **master / slave**: 원본 / 복제본 서버. (MySQL의 source/replica, PostgreSQL의 publisher/subscriber와 같은 개념)
+- **복제 로그(repl log) / 트랜잭션 로그**: master가 "무엇이 어떻게 바뀌었는지"를 순서대로 적어 둔 로그. slave는 이 로그를 읽어 변경을 재현한다. (DB가 변경을 영속화하려고 남기는 로그 = WAL 계열)
+- **LSA (Log Sequence Address)**: 로그 안의 위치를 가리키는 주소(일종의 번호표). "어디까지 처리했는지"를 LSA로 표시한다. (MySQL의 binlog position, PostgreSQL의 LSN에 대응)
+- **class**: CUBRID에서 **테이블**을 부르는 말. → 이 문서 예시의 `TblA`/`Tbl1`은 곧 "class A/class 1"을 뜻한다. (헷갈리기 쉬운 용어)
+- **transaction / commit record**: 한 작업 묶음이 transaction이고, 로그에서 그 transaction이 끝났음(커밋)을 알리는 표시가 commit record다.
+- **applylogdb / copylogdb**: CUBRID HA에서 **copylogdb**는 master의 로그를 slave로 복사해 오고, **applylogdb**는 그 복사된 로그를 읽어 slave DB에 적용한다. 이 문서가 개선하려는 대상은 applylogdb의 적용 단계다.
+- **worker**: 실제로 변경을 slave DB에 적용하는 일꾼(스레드).
+- **코디네이터(coordinator)**: worker 앞단에서 "어떤 transaction을 지금 보내도 되는가(충돌·순서)"를 판단해 분배하는 계층. ← 이 문서가 새로 도입하려는 모듈.
+- **충돌(conflict)**: 두 transaction이 같은 데이터(1차안에선 같은 class)를 건드려, 적용 순서가 바뀌면 결과가 달라지는 관계.
+- **순서 보존(commit order)**: 병렬로 적용하더라도 최종 반영(commit) 순서는 master에서의 순서와 같게 맞추는 것.
+- **committed_lsa / 순서 정리**: "slave가 (순서대로) 어디까지 반영 완료했는가"를 가리키는 진도 표시가 committed_lsa. **순서 정리**는 병렬로 끝난 결과를 master 순서대로 줄 세워 committed_lsa를 전진시키는 단계다.
+- **barrier**: 병렬화하지 않고 앞뒤를 끊어 직렬로 처리해야 하는 경계(예: 스키마 변경).
+
+> 한 줄 비유: 복제 로그 = master의 "작업 지시서 묶음", 코디네이터 = 지시서를 보고 **"동시에 시켜도 되는 일"과 "순서를 지켜야 하는 일"** 을 나눠 일꾼(worker)에게 배분하는 반장.
+
+## CUBRID 현재 상태와 한계
+
+### 큰 그림 (현재 HA 복제 흐름)
+
+```text
+master                         slave
+  트랜잭션 로그 기록    ──►   copylogdb (master 로그를 slave로 복사)
+                                  │
+                                  ▼
+                              applylogdb (복사된 로그를 읽어 slave DB에 적용)  ← 이 문서의 개선 대상
+                                  │
+                                  ▼
+                              slave DB
+```
+
+### 현재 PoC의 병렬화 방식
 
 현재 PoC는 commit record를 만나면 transaction id로 worker를 고른다.
 
@@ -14,15 +49,50 @@ worker_idx = tranid % LA_APPLY_WORKER_COUNT
 
 이 방식은 단순하지만 두 가지 문제가 있다.
 
-- 서로 관련 있는 transaction도 동시에 실행될 수 있다.
+- 서로 관련 있는(같은 데이터를 건드리는) transaction도 동시에 실행될 수 있다.
 - 서로 독립적인 transaction도 특정 worker에 몰릴 수 있다.
 
 가장 중요한 문제는 첫 번째다. 병렬 적용에서 worker를 고르는 방식보다 먼저
 해결해야 할 것은 transaction 간 충돌과 순서 보존이다. 서로 영향을 주는
 transaction을 동시에 실행하면 복제 결과가 원본 실행 순서와 달라질 수 있다.
+(구체적으로 무엇이 깨지는지는 다음 장의 시나리오에서 다룬다.)
 
 따라서 구현 단계에서는 단순 worker picker가 아니라, transaction 간 의존성을
 판단하고 순차 실행이 필요한 작업을 막아 주는 코디네이터가 필요하다.
+
+### 코드로 확인한 현재 상태 (CUBRID 소스 기준)
+
+> 근거: `src/transaction/log_applier.c` (branch `feature/parallel_applylogdb_poc`). develop(오리지널)과의 차이는 "남은 확인 항목" 참조.
+
+**적용 방식 = 논리(행 재실행).** applylogdb worker는 slave에 DB client session으로 붙어 복제 로그를 `la_apply_insert_log` / `la_apply_update_log` / `la_apply_delete_log` / `la_apply_statement_log`로 **다시 실행**한다(`log_applier.c:897-902`, worker client session `:1720~`). 즉 물리 페이지 redo가 아니라 행/문장 단위 재적용이며, slave는 자기 로그를 새로 생성한다 → **slave LSA ≠ master LSA**. (재시작 시 재적용 멱등성은 물리 redo처럼 자동 보장되지 않으므로 별도 점검이 필요 — 아래 "남은 확인 항목" 참조.)
+
+**적용·가시성 동작 (정확성 판단의 전제, 코드 확인):**
+
+- **적용 경로**: `la_apply_*_log` → `la_repl_add_object`(WS_REPL_OBJ 리스트 적재) → `locator_repl_flush_all` 벌크 flush(`:7589, :7470, :8234`). 질의 실행기(FK·트리거 경로)가 아니라 **locator 복제 경로로 레코드 이미지를 직접 반영**한다.
+- **계층 구분 (중요):** `la_apply_*`는 **applier(client)** 로 변경을 모아 server에 보낼 뿐이고, FK 검사는 **slave server**의 `locator_insert_force`/`locator_update_force` 안에서 일어난다. (그래서 `log_applier.c`엔 FK 코드가 없다 — 없는 게 아니라 **server에 있고 repl 경로가 공유**한다.)
+- **server는 repl 적용에도 FK를 검사한다.** `xlocator_repl_force` → `locator_insert_force(..., dont_check_fk=false)`(`locator_sr.c:7029,7256`) → `if (has_index && !skip_checking_fk) locator_check_foreign_key()`(`:5198-5201`), `skip_checking_fk = locator_Dont_check_foreign_key(false,:116) || dont_check_fk(false)`. update/PK 참조도 동일(`:6013, :8045, :8762`). → **자식을 부모보다 먼저 적용하면 FK 위반 → apply 에러 → 복제 중단.**
+- (참고) `committed_lsa`는 읽기 가시성(MVCC)에 쓰이지 않는다(`src/query`·`mvcc.c`·`src/storage`에 없음). 다만 슬레이브 읽기 일관성(MVCC 가시성)은 본 설계 범위에서 제외한다.
+
+### LSA / 로그 위치 갱신 (진도 관리)
+
+applylogdb는 여러 LSA로 "어디까지 받고 / 읽고 / 반영했는가"를 추적한다(`log_applier.c:465-510`).
+
+| LSA | 의미 | 갱신 시점 |
+|---|---|---|
+| `final_lsa` | 마지막으로 **읽은(처리한)** 로그 위치 (읽기 커서) | 리더가 로그를 읽어 나갈 때 |
+| `committed_lsa` | 마지막으로 **(순서대로) commit 반영**한 위치 | (PoC) retire/순서 정리에서 `result->commit_lsa`로 전진 (`:2082`) |
+| `required_lsa` | **적용해야 할 첫 트랜잭션의 start LSA = 재시작/복구 지점(LWM)** | `la_find_required_lsa()`가 진행 중 트랜잭션들의 **최저 start_lsa**로 산출, 없으면 `final_lsa` (`:4078-4105`) |
+| `append_lsa` · `eof_lsa` | master active log header의 끝 위치 (랙 계산용) | commit 처리 시 master 헤더에서 복사 (`:9740-9741`) |
+
+- **영속화:** 위 값은 `_db_ha_apply_info` 시스템 카탈로그에 기록된다. commit 로그를 처리할 때 `la_log_commit()`이 ① `required_lsa` 재계산 → ② `append/eof_lsa` 갱신 → ③ `la_reader_commit_apply_info()`로 카탈로그에 flush 한다(`:9734-9750`). 재시작 시 `la_get_last_ha_applied_info()`가 이 카탈로그에서 마지막 위치를 읽어 그 지점부터 재개한다(`:4566~`; 최초 기동 시 `required=eof`, `committed=required`로 초기화 `:4628-4643`).
+- **요점:** `required_lsa`는 "아직 끝나지 않은 가장 오래된 트랜잭션의 시작"이라는 **low-water mark**다. 따라서 복구는 항상 `required_lsa`부터 다시 읽고, `committed_lsa`는 그 뒤에서 commit 순서대로 전진한다.
+
+> 설계 반영: 병렬 코디네이터의 "순서 정리 단계"는 이 `committed_lsa`(순서대로 전진)와 `required_lsa`(LWM·복구 지점)를 **정확히 이 의미로** 갱신해야 한다. worker가 병렬·비순차로 끝나더라도 `committed_lsa`는 반드시 commit 순서대로만 전진해야 한다.
+
+### 남은 확인 항목
+
+- **논리 재실행의 재시작 멱등성:** 재시작 시 `required_lsa`부터 재적용하면 이미 commit된 트랜잭션이 다시 실행될 수 있다. 중복 적용을 막는 장치(스킵 조건 등)가 `la_apply_*` 경로에 있는지 추가 확인 필요. (물리 redo는 page LSA 비교로 자동 멱등이지만, 논리 재실행은 그렇지 않다.)
+- **develop(오리지널) 대조:** worker/retire(순서 정리) 구조는 PoC 추가분이다. core LSA·`required_lsa`·`_db_ha_apply_info` 메커니즘이 develop의 단일 적용에서 어떻게 동작하는지 대조해 "기존 vs PoC" 차이를 명시.
 
 ## 다른 DBMS의 처리 방식
 
@@ -710,6 +780,85 @@ worker[3]:  [ Tx6: TblD ]
 
 정리하면, 서로 다른 class를 변경하는 transaction이 많을수록 병렬화 효과가 커지고,
 하나의 hot class에 transaction이 집중될수록 병렬화 효과는 작아진다.
+
+## 정확성·순서 보존 설계 (개선 방향)
+
+> 현재 PoC는 **병렬성 측정용**이라 제약이 많다(예: 일부 worker만 flush하는 `worker_idx < LA_APPLY_WORKER_REPL_ACTIVE_COUNT` 가드, 권한 컨텍스트 TODO 등). 이 절은 PoC 스캐폴딩이 아니라 **개선/최종 구조**를 기준으로 정확성을 설계한다.
+
+### 계층 구분 — 병렬은 applier, FK 강제는 server
+
+- **applier(client, `la_apply_*`)**: 복제 로그를 읽어 worker로 병렬 적용 — **병렬성을 보장해야 하는 주체.**
+- **server(slave `cub_server`, `locator_*_force`)**: applier가 보낸 변경을 반영하며 **FK 제약을 검사**한다(`dont_check_fk=false`).
+- applier는 server의 FK 검사를 **끌 수 없고(현재 구조)**, **무엇을 어떤 순서로 보내느냐**만 제어한다. → FK를 어기지 않으려면 applier가 순서를 책임져야 한다.
+
+### 문제 — server가 FK를 검사하므로, 비순차 병렬은 복제를 깬다
+
+자식(order_items)을 부모(orders)보다 먼저 적용하면 server의 FK 검사가 부모를 못 찾아 **apply 에러 → 복제 중단**(시나리오 2a). 게다가 FK 검사는 **자식 INSERT 시점**에 일어나므로 "commit만 순서대로(SPCO)"로는 부족하다 — 자식이 적용되는 순간 부모가 **이미 커밋되어 보여야** 한다(미커밋 부모는 격리상 안 보일 수 있음). → **부모 커밋 완료 후 자식 적용**이라는 *적용 직렬화*가 필요하다.
+
+#### 시나리오 — FK로 commit 순서가 깨지는 경우
+
+**master (실제 commit 순서 — FK 만족 상태):**
+
+```text
+T1 commit:  INSERT INTO orders(id=100)             ← 부모(parent)
+T2 commit:  INSERT INTO order_items(order_id=100)  ← 자식(child), FK → orders(100)
+```
+
+master에선 T1(부모)이 먼저 커밋됐기에 T2(자식) 삽입 시 부모가 존재 → FK 통과.
+
+**slave applier — class-level 병렬, 순서 미보존:**
+
+```text
+코디네이터 판단:
+  T1.changed = {orders}, T2.changed = {order_items}
+  → 다른 class → "독립" 오판 → worker A=T1, worker B=T2 병렬 배정
+
+time ─────────────────────────────►
+worker A (T1, 부모):  [ INSERT orders(100) .........느림......... commit ]
+worker B (T2, 자식):  [ INSERT order_items(100) → server FK 검사 ]
+                                         │
+                                         ▼
+                           orders(100) 아직 미커밋 → 부모 안 보임
+                           → ❌ FK 위반 에러 → apply 실패 → 복제 중단
+```
+
+자식(T2)이 부모(T1)보다 먼저 적용되려 했고(= master commit 순서 역전), server FK 검사가 이를 막아 **에러로 복제가 멈춘다**(조용한 고아가 아니라 시끄러운 중단 — server가 FK를 보기 때문).
+
+**고치면 (순서 보존 — 부모 커밋 후 자식 적용):**
+
+```text
+코디네이터가 FK 인지 → T1·T2를 같은 직렬 그룹으로:
+worker: [ INSERT orders(100) → commit ]
+            └─► [ INSERT order_items(100) → FK 검사: orders(100) 있음 ✔ → commit ]
+```
+
+> 정리: **FK로 엮인 트랜잭션은 "부모 먼저 커밋" 순서를 반드시 지켜야 한다.** (전부가 아니라 FK 관련 쌍만. FK 관계를 모르면 보수적으로 전체 순서를 지키게 되어 병렬성이 줄어든다.)
+
+### 단계별 설계 (Phase 1 / Phase 2)
+
+**Phase 1 — applier가 보수적으로 보장 (repl log 포맷·server 변경 없음)**
+
+- 같은 class → 직렬.
+- **FK/순서 의존 → 적용 직렬화 + commit 순서 보존**(부모 적용·커밋 후 자식 적용). 독립 트랜잭션만 병렬.
+- 진도/복구: `committed_lsa` 순서 전진 + `required_lsa`(LWM) + **재시작 멱등 스킵**(`commit_lsa ≤ committed_lsa`면 skip).
+- 한계: applier가 "무엇이 FK로 엮였는지"를 알아야 직렬 대상을 고른다 → FK 그래프(스키마 메타)를 코디네이터에 로드하거나, 모르면 보수적으로 더 직렬화(병렬↓).
+
+**Phase 2 — FK 관련의 병렬화는 server 그룹 처리로**
+
+- FK로 엮인 작업까지 병렬화하려면 applier가 그룹을 병렬로 흘리고, **server가 그룹 단위로 적용하며 그룹 내 FK 순서/지연 검사를 처리**하는 방향. (예: repl 적용 경로에서 그룹 경계까지 FK 검사를 지연했다가 일괄 검증, 또는 그룹 내부에서 부모→자식 순서 해소.)
+- 대안: repl log에 **변경 키/의존성 정보**를 실어 server·applier가 행/키 단위로 충돌을 판단(정밀 병렬, repl log 포맷 확장 — 장기 카드).
+
+### 의존성 종류 → 책임 (요약)
+
+| 의존성 | Phase 1 (applier) | Phase 2 (server) |
+|---|---|---|
+| 같은 class(같은 데이터) | 직렬 | — |
+| FK로 엮인 다른 class | **적용 직렬 + commit 순서** | 그룹 처리로 병렬화 |
+| 독립(순서 무관) | 병렬 (단 `committed_lsa`는 순서대로) | 병렬 |
+
+> 비-FK 인과(제약 없는 논리적 선후)와 슬레이브 읽기 일관성은 MVCC 가시성 영역이라 **본 설계 범위 밖**(사용자 결정).
+>
+> 한 줄: **Phase 1은 applier가 FK/순서 의존을 직렬화하고 commit 순서를 보존해 안전을 확보, FK 관련 병렬화는 Phase 2에서 server 그룹 처리로 연다.**
 
 ## 남은 설계 쟁점
 
