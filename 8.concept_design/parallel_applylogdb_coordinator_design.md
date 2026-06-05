@@ -74,19 +74,54 @@ transaction을 동시에 실행하면 복제 결과가 원본 실행 순서와 �
 - **단, applier(applylogdb)는 FK를 알 방법이 없다.** 복제 로그 항목은 `la_make_repl_item`이 **class 이름 + PK 값 + operation type**만 풀어 담고(`log_applier.c:5708~`; LA_ITEM에 FK/참조 class 필드 없음), `log_applier.c`엔 FK·constraint 코드가 전무하다. FK 관계는 server 스키마(`SM_CLASS`)에만 있고 applier는 이를 조회하지 않는다. → **applier는 두 트랜잭션이 FK로 엮였는지 자기 입력(복제 로그)만으로는 판단할 수 없다.**
 - (참고) `committed_lsa`는 읽기 가시성(MVCC)에 쓰이지 않는다(`src/query`·`mvcc.c`·`src/storage`에 없음). 다만 슬레이브 읽기 일관성(MVCC 가시성)은 본 설계 범위에서 제외한다.
 
-### LSA / 로그 위치 갱신 (진도 관리)
+### LSA / 로그 위치 갱신 (진도 관리) — applylogdb가 쓰는 LSA 전수 정리
 
-applylogdb는 여러 LSA로 "어디까지 받고 / 읽고 / 반영했는가"를 추적한다(`log_applier.c:465-510`).
+applylogdb는 여러 LSA로 "마스터가 어디까지 썼나 / applier가 어디까지 읽고·반영했나 / 어디서 재시작하나"를 추적한다(LA_INFO `log_applier.c:465-510`, 구조체들 `:282-344`).
 
-| LSA | 의미 | 갱신 시점 |
+**A. 마스터 로그 위치 (랙 계산용)**
+
+| LSA | 의미 |
+|---|---|
+| `append_lsa` | 마스터 active log가 기록한 끝 위치 (마스터가 어디까지 썼나) (`:500`) |
+| `eof_lsa` | 마스터 active log의 EOF (`:501`) |
+
+→ commit 처리 시 마스터 로그 헤더에서 복사(`la_log_commit:9740-9741`). `append_lsa − committed_lsa` ≈ 복제 지연(lag).
+
+**B. applier 진행 — 핵심 4 (영속 대상)**
+
+| LSA | 의미 | 갱신 |
 |---|---|---|
-| `final_lsa` | 마지막으로 **읽은(처리한)** 로그 위치 (읽기 커서) | 리더가 로그를 읽어 나갈 때 |
-| `committed_lsa` | 마지막으로 **(순서대로) commit 반영**한 위치 | (PoC) retire/순서 정리에서 `result->commit_lsa`로 전진 (`:2082`) |
-| `required_lsa` | **적용해야 할 첫 트랜잭션의 start LSA = 재시작/복구 지점(LWM)** | `la_find_required_lsa()`가 진행 중 트랜잭션들의 **최저 start_lsa**로 산출, 없으면 `final_lsa` (`:4078-4105`) |
-| `append_lsa` · `eof_lsa` | master active log header의 끝 위치 (랙 계산용) | commit 처리 시 master 헤더에서 복사 (`:9740-9741`) |
+| `final_lsa` | 마지막으로 **읽어 처리한** 로그 위치(읽기 커서) | 읽기 루프에서 전진(`:11478`), 재시작 시 `required_lsa`로 초기화(`:4643`) |
+| `required_lsa` | **적용할 첫 트랜잭션의 start = 복구 재시작점(LWM)** | `la_find_required_lsa()` = 진행 중 트랜잭션 최저 `start_lsa`, 없으면 `final_lsa`(`:4078-4105`) |
+| `committed_lsa` | 마지막으로 반영 완료한 **commit 로그 레코드** 위치 | retire(순서 정리)에서 `result->commit_lsa`로 전진(`:2082`) |
+| `committed_rep_lsa` | 마지막으로 반영 완료한 **replication(데이터 변경) 로그 레코드** 위치 | retire에서 `result->committed_rep_lsa`로 전진(`:2085`) |
 
-- **영속화:** 위 값은 `_db_ha_apply_info` 시스템 카탈로그에 기록된다. commit 로그를 처리할 때 `la_log_commit()`이 ① `required_lsa` 재계산 → ② `append/eof_lsa` 갱신 → ③ `la_reader_commit_apply_info()`로 카탈로그에 flush 한다(`:9734-9750`). 재시작 시 `la_get_last_ha_applied_info()`가 이 카탈로그에서 마지막 위치를 읽어 그 지점부터 재개한다(`:4566~`; 최초 기동 시 `required=eof`, `committed=required`로 초기화 `:4628-4643`).
-- **요점:** `required_lsa`는 "아직 끝나지 않은 가장 오래된 트랜잭션의 시작"이라는 **low-water mark**다. 따라서 복구는 항상 `required_lsa`부터 다시 읽고, `committed_lsa`는 그 뒤에서 commit 순서대로 전진한다.
+> `committed_lsa`(commit 레코드 기준) vs `committed_rep_lsa`(데이터 레코드 기준): 한 트랜잭션은 여러 데이터 변경 로그 + 1개 commit 로그를 가지므로 둘을 따로 추적한다.
+
+**C. 재시작 baseline (기동 시점 스냅샷)**
+
+| LSA | 의미 |
+|---|---|
+| `last_committed_lsa` | applylogdb **기동 시점**의 `committed_lsa`(`:468`) |
+| `last_committed_rep_lsa` | 기동 시점의 `committed_rep_lsa`(`:469`) |
+
+**D. 트랜잭션 / 항목 단위 (메모리 내 처리)**
+
+| LSA | 구조체 | 의미 |
+|---|---|---|
+| `start_lsa` / `last_lsa` | `LA_APPLY` (트랜잭션별 목록) | 트랜잭션의 첫/마지막 repl 로그. `start_lsa`가 `required_lsa` 산출 입력(`:292-293`) |
+| `lsa` | `LA_ITEM` (변경 1건) | 그 변경의 **replication 로그** 위치(`:282`) |
+| `target_lsa` | `LA_ITEM` | 그 변경의 **실제 데이터(heap) 로그** 위치 → 적용 시 여기서 **레코드 이미지를 읽어옴**(`la_get_recdes:7904`, `:283`) |
+| `log_lsa` | `LA_COMMIT` (commit 큐) | `LOG_COMMIT` 레코드 LSA(`:306`) |
+
+> `LA_ITEM.lsa`(복제 지시 위치) ≠ `target_lsa`(적용할 레코드 이미지 위치) — applier는 `target_lsa`로 가서 적용할 행 이미지를 가져온다.
+
+**영속화 & 진도선**
+
+- `_db_ha_apply_info` 카탈로그에 **6개**가 기록된다: `final_lsa, committed_lsa, committed_rep_lsa, append_lsa, eof_lsa, required_lsa`(`:581-586`). commit 처리 시 `la_log_commit()`→`la_reader_commit_apply_info()`로 flush, 재시작 시 `la_get_last_ha_applied_info()`로 로드(`:4566~`; 최초 기동 `required=eof`, `committed=required`로 초기화 `:4628-4643`).
+- 정상 진도선(대략): **`required_lsa`(LWM) ≤ `committed_lsa` ≤ `final_lsa` ≤ `append_lsa`(마스터 끝)**.
+
+> 설계 반영: 병렬 코디네이터의 "순서 정리 단계"는 `committed_lsa`/`committed_rep_lsa`(commit 순서대로 전진)와 `required_lsa`(LWM·복구 지점)를 이 의미로 갱신해야 한다. worker가 비순차로 끝나도 `committed_lsa`는 반드시 commit 순서로만 전진해야 한다.
 
 > 설계 반영: 병렬 코디네이터의 "순서 정리 단계"는 이 `committed_lsa`(순서대로 전진)와 `required_lsa`(LWM·복구 지점)를 **정확히 이 의미로** 갱신해야 한다. worker가 병렬·비순차로 끝나더라도 `committed_lsa`는 반드시 commit 순서대로만 전진해야 한다.
 
@@ -882,6 +917,7 @@ FK 외에 검토한 시나리오들. 판단 기준은 **"applier가 자기 입�
 
 - **파티션 class**: 한 논리 테이블의 파티션이 서로 다른 class_oid면 "다른 class=병렬"로 오판할 수 있다 → 글로벌 unique 등에 영향. class 식별을 root/partition 중 무엇으로 할지 확인.
 - **상속(super/sub class)**, **serial / `db_serial` 카탈로그**: 충돌 판단에 미치는 영향 확인.
+- 📄 특수 테이블(파티션·뷰·상속·LOB·serial·non-MVCC) **유형별 상세 분석 → `cubrid_special_table_scenarios.md`**. 요지: **파티션 + 글로벌 인덱스**가 최우선 위험(FK처럼 server 에러), 뷰는 비복제(문제 없음), LOB·상속은 추가 확인 필요, 복제는 PK 필수.
 
 > **class 식별자는 class OID로 확정**한다(이름은 rename/재사용 위험). applier가 이미 `ws_oid()`로 OID를 갖고 있어 추가 비용이 없다.
 
