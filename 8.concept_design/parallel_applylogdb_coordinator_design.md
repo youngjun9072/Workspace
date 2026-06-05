@@ -861,12 +861,38 @@ worker: [ INSERT orders(100) → commit ]
 >
 > 한 줄: **Phase 1은 applier가 FK/순서 의존을 직렬화하고 commit 순서를 보존해 안전을 확보, FK 관련 병렬화는 Phase 2에서 server 그룹 처리로 연다.**
 
+### 기타 시나리오 / 확인 항목
+
+FK 외에 검토한 시나리오들. 판단 기준은 **"applier가 자기 입력(복제 로그)만으로 식별 가능한가"** 다.
+
+**applier가 식별 가능 → 이미 처리됨**
+
+- **Unique / PK 키 재사용 (same-class)**: 예) `DELETE accounts(pk=5)` 후 `INSERT accounts(pk=5)`. server가 unique 인덱스를 유지하므로(`locator_add_or_remove_index`) 비순차면 중복키 에러가 나지만, **둘 다 같은 class라 applier가 class OID(`db_find_class→ws_oid`, `log_applier.c:8162,7601`)로 구분해 same-class 직렬화로 처리**한다. → same-class 규칙은 lost-update뿐 아니라 **unique/PK 에러 방지**도 겸한다.
+- **트리거**: applier가 세션에서 `db_disable_trigger()`(`log_applier.c:1831`)로 **트리거를 끈다** → apply 시 재실행 없음 → 숨은 cross-class 의존 없음. (해당 없음)
+
+**applier가 식별 불가 → 별도 대응 필요**
+
+- **FK (cross-class)**: 유일하게 applier 입력 밖이다(다른 class 간 관계는 server `SM_CLASS`에만). → commit 순서 보존(Phase 1) / server 그룹핑(Phase 2). (위 참조)
+
+**복구 / 진도 축**
+
+- **롱 트랜잭션 (정확성 문제 아님 — 복구 비용)**: 일찍 시작·늦게 끝나면 `required_lsa`(LWM)가 오래 고정되어 재시작 재적용 윈도우·로그 보존이 커진다. 이는 **정확성 깨짐이 아니라 복구 비용**이므로, 설계상 의도적으로 수용하면 문제가 아니다. **단 전제: 재적용이 멱등**이어야 한다(멱등이 없으면 같은 재적용이 중복=정확성 문제로 전환). CUBRID applier엔 이미 `is_long_trans`(LA_APPLY) 플래그가 있어 별도 취급 가능. PoC 워크로드(대형 단일 트랜잭션)가 이 경우.
+
+**CUBRID 특화 — class 식별 단위에 종속(확인 필요)**
+
+- **파티션 class**: 한 논리 테이블의 파티션이 서로 다른 class_oid면 "다른 class=병렬"로 오판할 수 있다 → 글로벌 unique 등에 영향. class 식별을 root/partition 중 무엇으로 할지 확인.
+- **상속(super/sub class)**, **serial / `db_serial` 카탈로그**: 충돌 판단에 미치는 영향 확인.
+
+> **class 식별자는 class OID로 확정**한다(이름은 rename/재사용 위험). applier가 이미 `ws_oid()`로 OID를 갖고 있어 추가 비용이 없다.
+
+> 정리: 서버가 **에러로 막는 cross-class 의존은 FK가 사실상 유일**하다(unique/PK는 class 내라 same-class가 커버, 트리거는 비활성). 나머지는 same-class 직렬화·복구(LWM/멱등)·CUBRID 특화 확인 항목이다.
+
 ## 남은 설계 쟁점
 
 컨셉 단계에서 남겨둘 쟁점은 다음이다.
 
 - class 식별자는 어디서 얻을 것인가
-- class name을 임시로 쓸 것인가, 처음부터 class OID를 쓸 것인가
+- ~~class name을 임시로 쓸 것인가, 처음부터 class OID를 쓸 것인가~~ → **class OID로 확정**(이름 rename/재사용 위험 회피, applier가 `ws_oid()`로 이미 보유). 기타 시나리오 절 참조.
 - 순서 대기 해제 기준을 worker 완료로 볼 것인가, 순서 정리 완료로 볼 것인가
 - pending 작업이 너무 많아질 때 리더를 어떻게 멈출 것인가
 - barrier 범위를 어디까지 잡을 것인가
