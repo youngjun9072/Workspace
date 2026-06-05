@@ -222,6 +222,8 @@ worker 종류는 다음과 같다 [3][4]:
    ```
 
    `sub_a`→apply worker A, `sub_b`→apply worker B로 병렬 적용된다. 다만 **한 구독 안의 트랜잭션은 직렬**이고(6절), **구독을 가로지르는 commit 순서·원자성은 보장되지 않는다**. 따라서 트랜잭션 일관성이 필요한 테이블(예: 서로 의존하는 t1·t3·t5)은 **반드시 같은 publication/구독에 묶어야** 하며, 그만큼 병렬도는 줄어든다. 의존성이 구독 경계를 넘으면 — FK는 subscriber apply가 `session_replication_role=replica`로 동작해 **검사되지 않아 조용히 깨지고**(에러 없이 부모 없는 자식 행 등), PK/UNIQUE 충돌은 **에러로 해당 구독 적용이 중단**될 수 있다 [9].
+
+   > **예시 — 구독 수 vs leader apply worker 풀**: 구독 8개인데 `max_logical_replication_workers=4`면 **동시에 4개 구독만 실시간 복제**된다. leader apply worker는 구독당 1개씩 이 풀에서 나오고 상주(long-lived)하므로, 풀 4를 4개 구독이 점유하면 **나머지 4개 구독은 worker 슬롯을 못 받아 적용을 못 한다**(슬롯 부족으로 계속 재시도). 즉 **동시 실시간 복제 구독 수 ≤ `max_logical_replication_workers`**. 8개를 다 돌리려면 `max_logical_replication_workers ≥ 8`(+ tablesync·parallel apply 예비), `max_worker_processes ≥ 그 값 + 1`로 올려야 한다 [2][4]. (공식: 이 값은 "구독 수 + 예비" 이상으로 설정.)
 2. **초기 동기화 병렬** — 구독 생성/새 테이블 추가 시 여러 tablesync worker가 기존 데이터 `COPY`를 병렬 수행 [2][4].
 3. **large transaction 병렬 apply** — 큰 진행 중 트랜잭션을 commit 전에 `Stream Start`/`Stream Stop` 단위로 받아, `streaming=parallel`이면 parallel apply worker가 직접 적용 [3].
 

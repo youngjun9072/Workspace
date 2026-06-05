@@ -22,6 +22,14 @@
 - 행 데이터 전체가 아니라 **키를 해시로 압축**한 표현. 두 트랜잭션의 write set이 **겹치면 같은 행**을 건드린 것.
 - 소스 주석: "primary key equivalent of the rows that are changing" + unique key를 인덱스 이름으로 prefix (`rpl_write_set_handler.cc:790–805`).
 
+> **주석 — write set에 "정확히" 무엇이 들어가나**
+> "딱 PK/UK 해시값만 들어가나?" → 본질적으로 그렇다. 단 정밀하게는:
+> - 변경된 **행마다**, 그 행의 **PK + 모든 unique key**를 각각 해시한다. 키가 여러 개면 **키 개수만큼 해시**가 생긴다(예: PK 1개 + unique key 2개 → 행 하나당 해시 3개).
+> - 각 해시는 **인덱스 이름(+테이블/DB)으로 prefix**해 계산 → 서로 다른 테이블·인덱스의 같은 키 값이 충돌하지 않는다.
+> - **비키(non-key) 컬럼 값이나 실제 데이터는 들어가지 않는다.** 행을 유일 식별하는 키만 담는다.
+> - NULL이 든 unique key 파트는 유니크 제약상 NULL≠NULL이라 충돌 판단에서 제외될 수 있다.
+> - **PK/UK가 없는 테이블** → `has_missing_keys`, **FK 관련 테이블** → write set 적용을 포기하고 COMMIT_ORDER로 fallback(§5.1·§5.3). 즉 FK는 해시로 담기는 게 아니라 **fallback 트리거**다.
+
 ## 3. 어떻게·언제 만들어지나 (생성)
 
 | 항목 | 내용 |
@@ -63,7 +71,7 @@
 
 ### 5.1 병렬 복제 의존성 추적 (`last_committed` 계산) — 알고리즘 상세
 
-`last_committed`(commit_parent) 산출은 **2단 합성**이다 (`sql/rpl_trx_tracking.cc`). §6 예시 3·6이 이 알고리즘의 실행 사례다.
+`last_committed`(commit_parent)는 **한 번에 계산되는 게 아니라, 두 트래커가 순차로 값을 만들어 합친 결과**다 (`sql/rpl_trx_tracking.cc`). 즉 ① COMMIT_ORDER 트래커가 baseline 값을 먼저 만들고 → ② WRITESET 트래커가 그 값을 `min`으로 더 낮춰(병렬 확대) 합성한다. §6 예시 3·6이 이 알고리즘의 실행 사례다.
 
 **(1) 1단계 — COMMIT_ORDER가 baseline을 먼저 만든다** (`Commit_order_trx_dependency_tracker::get_dependency()` :149)
 - commit 순서·logical clock 기반으로 `commit_parent`를 **미리 채운다**(:166–174).

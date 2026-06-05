@@ -89,6 +89,24 @@ tablesync worker가 COPY 중 실패하면, **apply worker가 이를 감지해 ta
 | bloat/병렬 | 낮음/병렬 가능 | 단일 스냅샷 유지 비용 |
 | 방법 | `CREATE SUBSCRIPTION`(copy_data 기본) | slot export + `pg_dump --snapshot` + `copy_data=false` [6] |
 
+### 7. 예시 — 다중 구독(구독 4개 × 테이블 6개) 초기 복제와 풀 제약
+
+**설정**: 구독 4개, 각 구독에 테이블 6개(총 24개). `max_sync_workers_per_subscription=2`(기본).
+
+**① 초기 복제(tablesync) 단계**
+- 구독당 동시 tablesync = 2개(테이블당 worker 1개). 개념상 "구독마다 2개씩 병렬 COPY".
+- **그러나 풀에 막힌다.** tablesync worker는 `max_logical_replication_workers`(기본 **4**) 풀에서 나오고, 이 풀은 **leader apply worker + parallel apply worker + tablesync worker가 공유**한다. 구독 4개면 **leader apply worker만 4개**라 기본 풀 4를 **이미 다 차지** → **tablesync 슬롯 0** → 기본값으로는 "구독당 2개 동시"가 성립하지 않는다.
+- 실제로 동시 진행하려면: 필요 동시 worker ≈ leader 4 + tablesync(4구독×2) 8 = **12** → `max_logical_replication_workers ≥ 12`, `max_worker_processes`도 그 이상(+병렬쿼리 여유, 예 ≥ 16)으로 **함께 상향**해야 한다.
+
+**② catchup → 핸드오프**
+- 각 tablesync worker가 스냅샷 COPY 후 그 시점부터 밀린 변경을 **catchup**으로 따라잡고, apply worker 위치에 도달하면 그 테이블을 메인 apply worker에 **핸드오프**한다(§2).
+
+**③ 지속(실시간) 적용 단계**
+- 핸드오프 후엔 **구독마다 leader apply worker 1개**가 지속 적용 → 구독 4개면 **4-way 병렬**(구독 단위 병렬).
+- 단 **한 구독 안의 6개 테이블은 그 leader worker 1개가 commit 순서대로 직렬** 적용한다(테이블별 병렬 아님). 즉 전체가 24-way(4×6)가 아니라 **4-way**. (대형 트랜잭션만 `streaming=parallel`로 추가 병렬 — 테이블 단위가 아니라 트랜잭션 단위. → `parallelism_in_ha.md` §4·§5·§6)
+
+**정리**: "초기엔 구독당 2개씩 tablesync 병렬 → catchup → 핸드오프 → 지속은 구독별 병렬"이라는 흐름은 맞다. 단 (a) 초기 동시성은 **풀(`max_logical_replication_workers`)에 막혀** 다중 구독에서는 풀 상향이 필수이고, (b) 지속 단계 병렬도는 **구독 수만큼(4-way)** 이며 한 구독 내부는 직렬이다.
+
 ## 추론 / 유추
 - tablesync의 "스냅샷 시점 COPY → 그 LSN부터 catchup → apply worker와 합류" 패턴은 **초기 적재 후 무중단으로 스트림에 합류하는 일반적 정합성 패턴**이라, CUBRID에서 기존 데이터 초기화 + 복제 합류를 설계할 때 참고 가치가 있다 (← [1], [4]). 단 이는 "정상 운영 중 트랜잭션 병렬 적용"과는 축이 다른, **부트스트랩(1회성) 단계**의 병렬이다.
 - `max_sync_workers_per_subscription` 병렬은 **테이블 단위**라, 테이블이 적거나 한 테이블이 거대하면 초기 동기화가 사실상 직렬화된다 — 병렬 효과가 테이블 분포에 좌우되는 점은 class-level 코디네이터의 hot-class 한계와 구조적으로 유사하다 (← [2]).
