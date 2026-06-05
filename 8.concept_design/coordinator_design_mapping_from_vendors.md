@@ -47,6 +47,23 @@ MySQL MTS 분배는 CUBRID 병렬 applylogdb 코디네이터의 직접 청사진
   - "같은 트랜잭션 내 변경 순서 보존", "commit order 우선"의 보수적 correctness 우선.
   - **cross-subscription 깨짐 사례**(한 트랜잭션이 경계를 넘으면 원자성·순서 깨짐)는 "병렬 단위를 잘못 자르면 무엇이 깨지는가"의 반면교사 → CUBRID가 class/트랜잭션 경계를 자를 때 동일 위험 점검 필요.
 
+### 2.1 EDB PGD(상용) Parallel Apply → CUBRID 시사점
+
+근거 문서: `reference/pgsql/edb_pgd_parallel_apply.md`
+
+community PG는 단일 구독 직렬이지만, **EDB의 상용 멀티마스터 제품 PGD(구 BDR)** 는 단일 구독 내 병렬 적용(Parallel Apply)을 제공한다. 즉 PG 생태계에서도 병렬 apply는 가능하되 **코어가 아닌 상용 레이어**에 있다. 설계 모델로서 PGD는 **MySQL과 다른 축**을 보여준다 — **의존성/충돌 판단을 source가 아니라 apply 측(writer)에서, 행 단위로** 한다.
+
+| 항목 | MySQL MTS | EDB PGD | CUBRID 코디네이터(설계) 시사점 |
+|---|---|---|---|
+| 의존성 판단 **위치** | source(binlog) 선계산 | **apply 측 writer** | CUBRID가 "코디네이터(slave)에서 판단"을 택하면 **PGD가 더 직접적인 모델** |
+| 판단 **단위** | row write-set 해시 | 행(tuple) | class-level(1차안) → row-level로 갈 때 PGD식 **tuple 대기** 채택 가능 |
+| commit 순서 | 큐 front 차례까지 **선제 대기**(SPCO) | **위반 감지 → 에러/롤백**(낙관적) | 두 전략 중 택1. "일단 병렬 커밋 후 보정"은 PGD형 |
+| 관측 지표 | — | `nprovisional/ntuple/ncommit_waits` | CUBRID 병렬 효율 관측 지표 설계에 참고 |
+
+- **"낙관적 병렬 + 위반 시 롤백"의 실존 선례.** PGD의 "each writer ensures the final commit doesn't violate origin commit order; 위반 시 error/rollback"은, 앞서 논의한 *"일단 병렬로 적용·커밋하고 순서/정합은 보정한다"* 아이디어가 상용 제품에서 실제로 쓰인다는 근거다. **단 차이 명시**: PGD는 **apply 중 위반을 감지해 그 트랜잭션을 롤백**하는 것이고, ARIES 크래시 복구의 loser 롤백과는 다른 층위다. (CUBRID 설계 시 "위반 감지 시점·롤백 주체·재시도"를 PGD/ARIES 어느 모델로 할지 구분해서 정해야 함.)
+- **대형 트랜잭션 옵션.** PGD는 transaction streaming으로 **커밋 전부터 writer에 병렬 적용**(실험적)한다 → CUBRID 대형 트랜잭션(병렬 이득이 제한되는 케이스)의 한 가지 돌파 방향.
+- **한계 참고.** PGD도 **Group Commit과는 병렬 apply 비호환**, community PG에서는 writer lock_timeout 이슈 등 → "강한 동기/합의"와 "병렬 apply"는 상충하기 쉽다는 점을 CUBRID 동기화 수준 설계에 반영.
+
 ## 미해결 / 확인 필요
 - CUBRID 복제 로그(repl log)의 성격(물리/논리, 엔진 종속성)과 현재 식별 단위(class/row) — CUBRID 코드로 확인 후 위 매핑의 적합도를 확정.
 - class-level 충돌 판단이 MySQL WRITESET 대비 병렬성을 얼마나 잃는지(hot class 집중 시) — 실측·시뮬레이션 대상.
