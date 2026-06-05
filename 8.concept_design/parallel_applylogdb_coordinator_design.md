@@ -71,6 +71,7 @@ transaction을 동시에 실행하면 복제 결과가 원본 실행 순서와 �
 - **적용 경로**: `la_apply_*_log` → `la_repl_add_object`(WS_REPL_OBJ 리스트 적재) → `locator_repl_flush_all` 벌크 flush(`:7589, :7470, :8234`). 질의 실행기(FK·트리거 경로)가 아니라 **locator 복제 경로로 레코드 이미지를 직접 반영**한다.
 - **계층 구분 (중요):** `la_apply_*`는 **applier(client)** 로 변경을 모아 server에 보낼 뿐이고, FK 검사는 **slave server**의 `locator_insert_force`/`locator_update_force` 안에서 일어난다. (그래서 `log_applier.c`엔 FK 코드가 없다 — 없는 게 아니라 **server에 있고 repl 경로가 공유**한다.)
 - **server는 repl 적용에도 FK를 검사한다.** `xlocator_repl_force` → `locator_insert_force(..., dont_check_fk=false)`(`locator_sr.c:7029,7256`) → `if (has_index && !skip_checking_fk) locator_check_foreign_key()`(`:5198-5201`), `skip_checking_fk = locator_Dont_check_foreign_key(false,:116) || dont_check_fk(false)`. update/PK 참조도 동일(`:6013, :8045, :8762`). → **자식을 부모보다 먼저 적용하면 FK 위반 → apply 에러 → 복제 중단.**
+- **단, applier(applylogdb)는 FK를 알 방법이 없다.** 복제 로그 항목은 `la_make_repl_item`이 **class 이름 + PK 값 + operation type**만 풀어 담고(`log_applier.c:5708~`; LA_ITEM에 FK/참조 class 필드 없음), `log_applier.c`엔 FK·constraint 코드가 전무하다. FK 관계는 server 스키마(`SM_CLASS`)에만 있고 applier는 이를 조회하지 않는다. → **applier는 두 트랜잭션이 FK로 엮였는지 자기 입력(복제 로그)만으로는 판단할 수 없다.**
 - (참고) `committed_lsa`는 읽기 가시성(MVCC)에 쓰이지 않는다(`src/query`·`mvcc.c`·`src/storage`에 없음). 다만 슬레이브 읽기 일관성(MVCC 가시성)은 본 설계 범위에서 제외한다.
 
 ### LSA / 로그 위치 갱신 (진도 관리)
@@ -785,15 +786,15 @@ worker[3]:  [ Tx6: TblD ]
 
 > 현재 PoC는 **병렬성 측정용**이라 제약이 많다(예: 일부 worker만 flush하는 `worker_idx < LA_APPLY_WORKER_REPL_ACTIVE_COUNT` 가드, 권한 컨텍스트 TODO 등). 이 절은 PoC 스캐폴딩이 아니라 **개선/최종 구조**를 기준으로 정확성을 설계한다.
 
-### 계층 구분 — 병렬은 applier, FK 강제는 server
+### 계층 구분 — 병렬은 applier, 그러나 applier는 FK를 알 수 없다
 
-- **applier(client, `la_apply_*`)**: 복제 로그를 읽어 worker로 병렬 적용 — **병렬성을 보장해야 하는 주체.**
-- **server(slave `cub_server`, `locator_*_force`)**: applier가 보낸 변경을 반영하며 **FK 제약을 검사**한다(`dont_check_fk=false`).
-- applier는 server의 FK 검사를 **끌 수 없고(현재 구조)**, **무엇을 어떤 순서로 보내느냐**만 제어한다. → FK를 어기지 않으려면 applier가 순서를 책임져야 한다.
+- **applier(client, `la_apply_*` / applylogdb)**: 복제 로그를 읽어 worker로 병렬 적용 — **병렬성 보장 주체.** 그러나 복제 로그 항목(`la_make_repl_item`)은 **class 이름 + PK 값 + operation**만 담고(LA_ITEM에 FK 필드 없음), applier에 FK·constraint 코드가 전무하다. → **applier는 두 트랜잭션이 FK로 엮였는지 자기 입력만으로 알 수 없다.**
+- **server(slave `cub_server`, `locator_*_force`)**: applier가 보낸 변경을 반영하며 **FK를 검사**한다(`dont_check_fk=false`). FK 관계는 server 스키마(`SM_CLASS`)에만 존재한다.
+- 따라서 applier는 server의 FK 검사를 **끄지도(현재 구조), 미리 알지도 못한다.** 제어 가능한 건 **무엇을 어떤 순서로 보내느냐**뿐이다.
 
-### 문제 — server가 FK를 검사하므로, 비순차 병렬은 복제를 깬다
+### 문제 — applier가 FK를 모르므로, 안전하려면 commit 순서를 (보수적으로) 지켜야 한다
 
-자식(order_items)을 부모(orders)보다 먼저 적용하면 server의 FK 검사가 부모를 못 찾아 **apply 에러 → 복제 중단**(시나리오 2a). 게다가 FK 검사는 **자식 INSERT 시점**에 일어나므로 "commit만 순서대로(SPCO)"로는 부족하다 — 자식이 적용되는 순간 부모가 **이미 커밋되어 보여야** 한다(미커밋 부모는 격리상 안 보일 수 있음). → **부모 커밋 완료 후 자식 적용**이라는 *적용 직렬화*가 필요하다.
+자식(order_items)을 부모(orders)보다 먼저 적용하면 server의 FK 검사가 부모를 못 찾아 **apply 에러 → 복제 중단**(시나리오 2a). 그런데 **applier는 어떤 트랜잭션이 FK로 엮였는지 모르기 때문에** "FK 관련만 콕 집어 직렬화"하는 것이 자기 입력만으로는 불가능하다. → 안전을 위해 applier는 **FK 관련을 구분하지 못한 채 commit 순서를 보수적으로 보존**해야 한다(또는 별도로 스키마 FK 메타를 로드해야 한다). 게다가 FK 검사는 **자식 INSERT 시점**에 일어나므로 "commit만 순서대로(SPCO)"로도 부족하다 — 자식이 적용되는 순간 부모가 **이미 커밋되어 보여야** 한다. → **부모 커밋 완료 후 자식 적용**이라는 *적용 직렬화*가 필요하다.
 
 #### 시나리오 — FK로 commit 순서가 깨지는 경우
 
