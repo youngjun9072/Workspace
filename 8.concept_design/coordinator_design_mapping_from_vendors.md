@@ -7,7 +7,7 @@
 
 ## 1. MySQL MTS 코디네이터 → CUBRID 코디네이터
 
-근거 문서: `reference/mysql/mts_coordinator_dispatch.md`, `reference/mysql/parallel_replication_writeset_logical_clock.md`
+근거 문서: `reference/mysql/05.mts_coordinator_dispatch.md`, `reference/mysql/03.parallel_replication_writeset_logical_clock.md`
 
 MySQL MTS 분배는 CUBRID 병렬 applylogdb 코디네이터의 직접 청사진에 가깝다.
 
@@ -31,7 +31,7 @@ MySQL MTS 분배는 CUBRID 병렬 applylogdb 코디네이터의 직접 청사진
 
 ### 1.2 추가 심화 주제 → CUBRID 시사점
 
-근거 문서: `reference/mysql/replica_preserve_commit_order.md`, `binlog_group_commit_and_large_tx.md`, `initial_provisioning_clone_gtid.md`, `replication_break_cases.md`
+근거 문서: `reference/mysql/06.replica_preserve_commit_order.md`, `07.binlog_group_commit_and_large_tx.md`, `10.initial_provisioning_clone_gtid.md`, `08.replication_break_cases.md`
 
 - **commit 순서 보존(SPCO) → CUBRID 순서 정리 단계**: MySQL은 "병렬 실행 / 직렬 commit"을 ① 분배 시 worker를 **commit 순서 큐에 등록**(=source 순서) → ② commit 직전 **자기 차례(front)까지 대기** → ③ commit 후 **다음 worker를 grant** 로 구현한다. CUBRID의 "순서 정리 단계 / committed_lsa 순서 갱신"을 이 큐+차례대기+grant 구조로 설계하면 검증된 패턴을 그대로 쓸 수 있다. 또한 SPCO가 만드는 **인위적 의존성 데드락**(앞 트랜잭션이 commit 차례를 기다리는데 뒤 트랜잭션이 락을 쥠)을 MySQL은 wait-for 그래프 + worker 최저 weight victim + 자동 재시도로 푸는데, CUBRID도 "순서 대기 + 행 락"이 만나는 데드락을 동일하게 대비해야 한다.
 - **group commit / 대형 트랜잭션 → CUBRID 병렬도·로그 설계**: MySQL은 source의 commit window(같은 group commit 묶음)가 replica 병렬도를 좌우한다 → CUBRID도 "source(master)가 복제 로그에 의존성/병렬 정보를 심을수록" replica 병렬이 넓어진다는 방향성 확인. 대형 트랜잭션은 (streaming 부재로) **단일 worker에 직렬 적용**되어 병렬화 불가 → CUBRID도 대형 트랜잭션은 병렬 이득이 제한된다는 점을 설계 가정에 반영.
