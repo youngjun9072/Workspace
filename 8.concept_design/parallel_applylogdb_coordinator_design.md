@@ -123,12 +123,46 @@ applylogdb는 여러 LSA로 "마스터가 어디까지 썼나 / applier가 어�
 
 > 설계 반영: 병렬 코디네이터의 "순서 정리 단계"는 `committed_lsa`/`committed_rep_lsa`(commit 순서대로 전진)와 `required_lsa`(LWM·복구 지점)를 이 의미로 갱신해야 한다. worker가 비순차로 끝나도 `committed_lsa`는 반드시 commit 순서로만 전진해야 한다.
 
-> 설계 반영: 병렬 코디네이터의 "순서 정리 단계"는 이 `committed_lsa`(순서대로 전진)와 `required_lsa`(LWM·복구 지점)를 **정확히 이 의미로** 갱신해야 한다. worker가 병렬·비순차로 끝나더라도 `committed_lsa`는 반드시 commit 순서대로만 전진해야 한다.
+### 재시작 멱등 스킵 (재적용 중복 방지) — 코드 확인됨
+
+**왜 필요한가.** applylogdb는 논리(행 재실행)라, 재시작 시 `required_lsa`(LWM)부터 복제 로그를 **다시 읽어 적용**한다. 그런데 `required_lsa`는 "아직 안 끝난 가장 오래된 트랜잭션의 시작"이라, 그 뒤에 **이미 커밋된 트랜잭션**이 섞여 있을 수 있다(특히 롱 트랜잭션이 LWM을 뒤로 당길 때). 그대로 재적용하면 **중복**(중복키 에러/중복 행). 물리 redo는 page LSN 비교로 자동 멱등이지만 논리 재실행은 아니므로 **명시적 skip**이 필요하다.
+
+**baseline.** 기동 시 카탈로그(`_db_ha_apply_info`)에서 읽은 마지막 반영 위치를 baseline으로 잡는다: `last_committed_lsa = committed_lsa`, `last_committed_rep_lsa = committed_rep_lsa`(`log_applier.c:4666-4667`). = "이전 실행이 어디까지 반영했나".
+
+**2단계 skip.**
+
+① 트랜잭션 단위 — commit이 baseline 이하면 트랜잭션 통째로 건너뜀:
+```c
+if (apply->head == NULL || LSA_LE (commit_lsa, &la_Info.last_committed_lsa)) {
+    la_free_all_repl_items (apply);   // 이미 적용된 트랜잭션 → 아이템만 비우고 종료
+    return NO_ERROR;
+}
+```
+② 항목(행 변경) 단위 — baseline보다 새 항목만 적용:
+```c
+for (item = apply->head; item; item = item->next)
+  if (LSA_GT (&item->lsa, &la_Info.last_committed_rep_lsa) && ...)   // baseline 이하면 skip
+    la_apply_{insert,update,delete}_log (...);
+```
+
+**예시.**
+```text
+required_lsa(재시작점)=100   (롱tx가 100에서 미커밋이라 LWM 고정)
+last_committed_lsa(baseline)=150,  크래시 @180
+재시작 → 100부터 다시 읽음
+  commit_lsa ≤ 150 : ① 트랜잭션 통째 skip  /  item.lsa ≤ 150 : ② 항목 skip   → 중복 없음
+  > 150 : 실제 적용
+```
+
+**develop = PoC 동일(확인).** skip 조건은 develop에도 동일하다 — `la_apply_commit_list()` 안의 `LSA_LE(commit_lsa, last_committed_lsa)`(develop `:5765`), `LSA_GT(item->lsa, last_committed_rep_lsa)`(develop `:5797`). PoC는 같은 조건을 worker 적용 경로(`:8754, :8775`)로 옮겼을 뿐 **로직은 같다**(레거시 `la_apply_commit_list`는 PoC에서 미호출).
+
+> 의미: 물리 redo의 **page-LSN 멱등성**에 대응하는 것을, CUBRID는 **복제 진도 LSA(`commit_lsa`/`item->lsa`)를 기동 baseline과 비교**하는 방식으로 구현한다. → 병렬 설계의 "재시작 정합 · 롱tx 복구비용 수용 · 비순차 적용" 전제가 성립한다(멱등을 새로 만들 필요 없음, 기존 메커니즘 재사용).
 
 ### 남은 확인 항목
 
-- **논리 재실행의 재시작 멱등성:** 재시작 시 `required_lsa`부터 재적용하면 이미 commit된 트랜잭션이 다시 실행될 수 있다. 중복 적용을 막는 장치(스킵 조건 등)가 `la_apply_*` 경로에 있는지 추가 확인 필요. (물리 redo는 page LSA 비교로 자동 멱등이지만, 논리 재실행은 그렇지 않다.)
-- **develop(오리지널) 대조:** worker/retire(순서 정리) 구조는 PoC 추가분이다. core LSA·`required_lsa`·`_db_ha_apply_info` 메커니즘이 develop의 단일 적용에서 어떻게 동작하는지 대조해 "기존 vs PoC" 차이를 명시.
+- ~~논리 재실행의 재시작 멱등성~~ → **확인됨**: 2단계 LSA skip 존재(위 "재시작 멱등 스킵" 절). develop·PoC 동일.
+- **develop(오리지널) 대조:** 멱등 skip·core LSA·`required_lsa`·`_db_ha_apply_info`는 develop=PoC 동일 확인. 남은 차이는 **worker/retire(순서 정리) 구조가 PoC 추가분**이라는 점 — 적용 위치(`la_apply_commit_list` → worker 경로)와 순서 정리 단계 차이를 별도 정리.
+- **파티션/LOB/상속** 등 특수 테이블 → `cubrid_special_table_scenarios.md`의 확인 항목 참조.
 
 ## 다른 DBMS의 처리 방식
 
