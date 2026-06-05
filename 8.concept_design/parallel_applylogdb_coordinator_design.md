@@ -123,7 +123,9 @@ applylogdb는 여러 LSA로 "마스터가 어디까지 썼나 / applier가 어�
 
 > 설계 반영: 병렬 코디네이터의 "순서 정리 단계"는 `committed_lsa`/`committed_rep_lsa`(commit 순서대로 전진)와 `required_lsa`(LWM·복구 지점)를 이 의미로 갱신해야 한다. worker가 비순차로 끝나도 `committed_lsa`는 반드시 commit 순서로만 전진해야 한다.
 
-### 재시작 멱등 스킵 (재적용 중복 방지) — 코드 확인됨
+### 재시작 시 재적용 멱등성 (idempotent re-apply) — 코드 확인됨
+
+> 용어: **idempotent(멱등)** 은 DB 복구·복제의 **표준 용어**다 — ARIES의 *idempotent redo*(page-LSN 비교로 자동 멱등)와 같은 개념으로, 같은 변경을 여러 번 적용해도 결과가 한 번 적용한 것과 동일함을 뜻한다. 아래 "멱등 스킵"은 그 구현(LSA baseline으로 이미 적용분 건너뛰기)을 가리키는 본 문서의 서술 표현이다.
 
 **왜 필요한가.** applylogdb는 논리(행 재실행)라, 재시작 시 `required_lsa`(LWM)부터 복제 로그를 **다시 읽어 적용**한다. 그런데 `required_lsa`는 "아직 안 끝난 가장 오래된 트랜잭션의 시작"이라, 그 뒤에 **이미 커밋된 트랜잭션**이 섞여 있을 수 있다(특히 롱 트랜잭션이 LWM을 뒤로 당길 때). 그대로 재적용하면 **중복**(중복키 에러/중복 행). 물리 redo는 page LSN 비교로 자동 멱등이지만 논리 재실행은 아니므로 **명시적 skip**이 필요하다.
 
@@ -160,7 +162,7 @@ last_committed_lsa(baseline)=150,  크래시 @180
 
 ### 남은 확인 항목
 
-- ~~논리 재실행의 재시작 멱등성~~ → **확인됨**: 2단계 LSA skip 존재(위 "재시작 멱등 스킵" 절). develop·PoC 동일.
+- ~~논리 재실행의 재시작 멱등성~~ → **확인됨**: 2단계 LSA skip으로 **idempotent re-apply** 보장(위 "재시작 시 재적용 멱등성" 절). develop·PoC 동일.
 - **develop(오리지널) 대조:** 멱등 skip·core LSA·`required_lsa`·`_db_ha_apply_info`는 develop=PoC 동일 확인. 남은 차이는 **worker/retire(순서 정리) 구조가 PoC 추가분**이라는 점 — 적용 위치(`la_apply_commit_list` → worker 경로)와 순서 정리 단계 차이를 별도 정리.
 - **파티션/LOB/상속** 등 특수 테이블 → `cubrid_special_table_scenarios.md`의 확인 항목 참조.
 
