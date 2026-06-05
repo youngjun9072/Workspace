@@ -13,7 +13,7 @@
 
 | 테이블 유형 | applier 처리 | 병렬 시 문제 소지 | 판정 |
 |---|---|---|---|
-| 파티션 테이블 | pruning 처리함(`sm_partitioned_class_type`) | **partition별 class로 기록되면** 서로 다른 class로 보여 cross-partition 병렬 → **글로벌 인덱스(unique/FK)** 위반 가능 | ⚠ **확인 필요(최우선)** |
+| 파티션 테이블 | pruning 처리함(`sm_partitioned_class_type`) | 파티션 키 ∈ 모든 인덱스 키 규칙 → cross-partition unique/PK 충돌 **불가**(§2). FK+파티션은 CUBRID가 제약 | ✅ **구조적으로 안전** |
 | 뷰(vclass) | apply 경로에 처리 없음 | 뷰 자체는 복제 안 됨(기반 테이블이 로깅됨) | ✅ 문제 없음 |
 | 상속(super/sub class) | 인스턴스는 자기 class heap | 파티션과 유사 — 서로 다른 class OID | ⚠ 확인 필요 |
 | LOB 컬럼 | log_applier에 명시적 처리 미발견 | 외부 저장(ELO/ES) 복제 경로가 별도일 수 있음 | ⚠ 확인 필요 |
@@ -21,31 +21,33 @@
 | serial(`db_serial`) | 값은 레코드 이미지로 적용 | 카탈로그 갱신 순서 | ⚠ 경미(같은 class면 same-class가 커버) |
 | PK 없는 테이블 | — | 복제 비대상 | ✅ 해당 없음 |
 
-## 2. 파티션 테이블 (최우선 확인) ⚠
+## 2. 파티션 테이블 — 구조적으로 안전 (확인됨) ✅
 
-**확인된 것**: applier는 파티션을 인지한다 — `la_repl_add_object`에서 `sm_partitioned_class_type(classop, &pruning_type, ...)`(`log_applier.c:7635`)로 pruning type을 구해 `LC_INSERT/UPDATE_OPERATION_TYPE(pruning_type)`로 server에 넘긴다. server가 알맞은 파티션 heap에 적용한다.
+**확인된 것**:
+- applier는 파티션을 인지한다 — `la_repl_add_object`에서 `sm_partitioned_class_type(classop, &pruning_type, ...)`(`log_applier.c:7635`)로 pruning type을 구해 `LC_INSERT/UPDATE_OPERATION_TYPE(pruning_type)`로 server에 넘기고, server가 알맞은 파티션 heap에 적용한다.
+- 복제 로그는 **PK 인덱스에서만** 생성된다 — `repl_log_insert`는 `index->type == BTREE_PRIMARY_KEY`일 때만 호출되며 `class_oid + PK 값`을 남긴다(`locator_sr.c:8082-8088`).
 
-**열린 문제 — 충돌 판단 단위**: 마스터의 `repl_log_insert`는 **행이 실제 저장된 heap의 class_oid** 로 복제 로그를 남길 가능성이 높다(파티션 행은 파티션 heap에 저장). 그렇다면 applier가 보는 class_oid는 **root가 아니라 partition**이 된다.
+**핵심 — cross-partition unique/PK 충돌은 구조적으로 불가능**:
+- CUBRID는 **"파티션 키가 모든 인덱스 키에 포함되어야 한다"** 를 강제한다 (msg 1169 *"Partition key attributes must be present in the index key"*, 비교 불가능한 변경은 msg 1117/181).
+- → 어떤 unique/PK 값이든 **파티션 키가 그 값의 일부**이고, 파티션 키가 파티션을 결정하므로, **같은 unique/PK 값은 정확히 한 파티션에만 존재**한다.
+- → 서로 다른 파티션을 병렬 적용해도 **같은 키를 동시에 건드릴 수 없다** → cross-partition unique/PK 위반이 발생할 수 없다.
 
 ```
-partitioned table ORDERS  (PARTITION BY ... )
-  ├ ORDERS__p0  (class_oid A)
-  └ ORDERS__p1  (class_oid B)
-
-T1: INSERT → p0 (class A)
-T2: INSERT → p1 (class B)
-코디네이터(class OID 기준): A ≠ B → "독립" → 병렬
+partitioned table ORDERS (PARTITION BY ... )
+  ├ ORDERS__p0,  ├ ORDERS__p1, ...
+PK/unique 키에는 항상 파티션 키가 포함됨
+  → 키 값 K 는 파티션 키에 의해 단 하나의 파티션으로 매핑
+  → 다른 파티션의 병렬 적용은 K를 공유하지 않음 → 충돌 없음
 ```
 
-- 파티션 인덱스가 **로컬(파티션별)** 이면: cross-partition 병렬이 안전(각 파티션 인덱스 독립).
-- 파티션에 **글로벌 unique 인덱스 / 글로벌 FK** 가 있으면: 서로 다른 파티션 적용이 같은 글로벌 인덱스를 동시에 건드려 **비순차 시 unique/FK 위반(에러)** 가능 → 복제 중단.
+**FK + 파티션은 CUBRID에서 제한적**: "Cannot add the foreign key constraint to the partitioned class ..."(msg 997), "Altering partitioning schema is not allowed when ... referenced by a foreign key"(msg 1096). → FK+파티션 조합 자체가 제약되어, FK 경로의 cross-partition 위험도 제한적.
 
-**확인 항목**:
-1. `repl_log_insert` 호출부의 `class_oid` 가 **partition인지 root인지**.
-2. CUBRID 파티션 테이블의 PK/unique 인덱스가 **로컬인지 글로벌인지**(글로벌이면 cross-partition 충돌).
-3. 코디네이터가 충돌 키를 **partition OID로 잡으면** 위 위험, **root OID로 잡으면** 한 테이블 전체가 same-class로 직렬화(안전하나 병렬↓).
+**결론**: 파티션은 **correctness 측면에서 안전**하다(스키마 규칙이 cross-partition unique 충돌을 막음). 남는 것은 **병렬성 튜닝** 선택뿐:
+- 복제 로그가 partition class로 기록되면(가능성 높음) 코디네이터가 파티션별로 **병렬** 가능(안전).
+- root class 기준으로 잡으면 테이블 통째 same-class **직렬**(더 보수적, 병렬↓).
+- 어느 쪽이든 **correctness는 동일하게 보장**되므로, 1차안은 단순한 쪽을 택하고 후속 최적화로 둔다.
 
-→ 1차안에서는 보수적으로 **root class 기준(또는 partition을 같은 그룹으로)** 직렬화하는 것이 안전. 정밀 병렬은 인덱스 로컬/글로벌 여부 확인 후.
+> (참고) 파티션 키 값을 바꾸는 UPDATE(행이 파티션 이동)는 server가 delete+insert로 처리하지만, 단일 트랜잭션이므로 1tx=1worker로 원자 적용 → 별도 cross-worker 문제 없음.
 
 ## 3. 뷰(vclass) ✅
 
@@ -74,15 +76,15 @@ T2: INSERT → p1 (class B)
 
 ## 추론 / 유추
 
-- 특수 테이블에서 "에러로 깨질" 위험이 가장 큰 것은 **파티션 + 글로벌 인덱스** 조합이다(← §2). FK와 같은 "server 에러" 가족이며, 코디네이터가 class OID를 partition 단위로 잡으면 노출된다.
-- 뷰·non-MVCC는 사실상 문제 없음(뷰는 비복제, non-MVCC는 처리됨).
-- LOB·상속은 추가 코드 확인 전까지 보수적으로(직렬/barrier) 두는 것이 안전.
+- 파티션은 처음 우려와 달리 **correctness 안전**으로 확인됐다(← §2). CUBRID의 "파티션 키 ∈ 모든 인덱스 키" 규칙이 cross-partition unique/PK 충돌을 구조적으로 막고, FK+파티션은 CUBRID가 제약한다. 남는 것은 병렬성 튜닝뿐.
+- 뷰·non-MVCC도 사실상 문제 없음(뷰는 비복제, non-MVCC는 처리됨).
+- 따라서 **applier가 자기 입력만으로 못 막는 cross-class 위험은 결국 FK가 유일**하다(파티션은 스키마 규칙이 보강). LOB·상속은 추가 코드 확인 전까지 보수적으로(직렬/barrier) 두는 것이 안전.
 
 ## 미해결 / 확인 필요 (우선순위)
 
-1. **(최우선)** `repl_log_insert`의 class_oid = partition vs root + 파티션 인덱스 local/global.
-2. LOB 복제 경로(레코드 이미지 포함 여부, locator 정합성).
-3. 상속 class의 인덱스/제약 공유와 cross-class 충돌.
+1. ~~파티션 class_oid root/partition + 인덱스 local/global~~ → **확인됨**: 파티션 키 ∈ 인덱스 키 규칙으로 cross-partition unique 충돌 불가(§2). root/partition은 병렬성 튜닝 문제일 뿐.
+2. **LOB** 복제 경로(레코드 이미지 포함 여부, locator 정합성).
+3. **상속** class의 인덱스/제약 공유와 cross-class 충돌.
 4. serial 카탈로그 갱신과 사용자 트랜잭션의 엮임.
 
 ## References (소스)
