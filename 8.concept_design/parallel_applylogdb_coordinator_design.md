@@ -6,88 +6,74 @@
 
 ## 발표용 요약 (1차 발표)
 
-> 이 절은 **1차 발표용 압축 요약**(학습 + PT 작성 기반)이다. 범위: ① 사전 지식 → ② 타벤더 비교 → ③ MySQL 차용 이유 → ④ 시나리오 검증. (구현 상세·develop 대조·row/key 정밀화는 범위 밖 = 후속)
-> 상세 근거는 **본 문서의 아래 절들** + `coordinator_design_mapping_from_vendors.md` · `cubrid_special_table_scenarios.md` · `reference/`.
+> 이 절은 **1차 발표용 스토리 정리**(학습 + PT 기반)다. 흐름: **CUBRID 현재(로지컬) → PoC로 병렬 가능성 확인 → "다른 DB는 어떻게?"(병렬화는 로지컬만) → 벤더 조사(PG·PGD 탈락, MySQL 채택) → 코디네이터 설계(Phase1/2) → 정확성 시나리오 → 재시작 문제**.
+> 상세는 본문 아래 절 + `2.design/poc_design.md` + `reference/` + `final_report.md`. 용어는 등장 시 즉석 정리(로지컬/피지컬, LSA, `committed_lsa`/`required_lsa`, watermark, 멱등 등). 슬라이드 = 아래 [1]~[16] 각 1~2장.
 
-### 0. 한 장 요약 (도입)
-- **목표**: applylogdb 병렬 적용 시 **트랜잭션 간 충돌·순서를 코디네이터가 책임**지게 한다. 현 PoC의 `tranid % worker`(관련 트랜잭션도 동시 실행) 문제 해결.
-- **접근**: **MySQL 모델 차용** — "병렬 실행"과 "commit 순서 보존"을 분리.
-- **관건 2가지**: ① 모든 시나리오 **correctness** ② **병렬성** 최대 지원.
+**[1] 기존 CUBRID 복제 동작** — master가 트랜잭션 로그 기록 → **copylogdb**가 slave로 복사 → **applylogdb**가 읽어 slave DB에 적용. 현재는 단순(트랜잭션 id 기반, 거의 직렬).
 
-### Part 1. 사전 지식
-> 복제 일반 → **물리 vs 논리 복제** → CUBRID는 어디에 → 코디네이터 컨셉. (물리/논리가 "왜 병렬화/왜 MySQL"의 토대)
+**[2] 그게 "로지컬 복제"다** — applylogdb는 로그를 **행 단위로 다시 실행**(INSERT/UPDATE…) → **논리(logical) 복제**(물리 페이지 복사 아님 → slave LSA ≠ master LSA).
 
-**1-1. 복제란** — master 변경을 slave가 따라 적용. master/slave = source/replica(MySQL) = publisher/subscriber(PG).
+**[3] 피지컬 vs 로지컬 — 병렬화는 로지컬만**
 
-**1-2. 물리 vs 논리 복제 (핵심 토대)** ★
-
-| | 물리(physical) | 논리(logical) |
+| | 물리 | 논리 |
 |---|---|---|
-| 무엇을 보내나 | 로그(WAL/페이지)를 **그대로 복사·재생** | 변경을 **행 단위로 재실행** |
-| 비용/속도 | 레코드당 쌈, 단 **단일 스레드** | 레코드당 비쌈(파싱·인덱스·제약) |
-| 유연성 | 낮음(통째·동일버전·읽기전용) | 높음(선택·버전간·이기종·쓰기) |
-| 병렬화 | 어려움(LSN·페이지 종속) | 쉬움(트랜잭션/행 단위) |
+| 무엇을 | 로그/페이지 그대로 재생 | 행 단위 재실행 |
+| 비용 | 레코드당 쌈, **단일 스레드** | 레코드당 비쌈 |
+| 병렬화 | 어려움(LSN·페이지 종속) | **상대적으로 쉬움** |
 
-→ **왜 "논리 + 병렬"인가**: 물리는 단일 스레드라 멀티코어 부하를 못 따라가고 경직됨. 그래서 유연한 논리를 택하고 속도는 **병렬로 메운다** = 이 프로젝트.
+→ 물리는 단일 스레드·경직이라 **다른 DB들도 병렬화는 논리 복제에서만** 한다. CUBRID도 논리 → **병렬화가 의미 있다.**
 
-**1-3. 로그·좌표** — repl log(무엇이 바뀌었나), LSA(어디까지 처리했나; MySQL binlog pos·PG LSN 대응).
+**[4] PoC 설계 & develop 비교** — PoC 구조(`poc_design.md`): **LogReader**(읽기·enqueue·결과수집·`committed_lsa` 관리) + **ApplyWorker×N**(병렬 apply·flush·commit). develop은 단일 직렬(`la_apply_commit_list`). PoC가 더한 것 = worker/dispatch/retire + 측정 계측. **설계 §32·34는 "dependency 판별·스케줄링·정교한 오류 복구"를 PoC에서 의도적 제외**(= `tranid%worker`로 단순 분배만).
 
-**1-4. CUBRID는 어디에** — applylogdb = **논리(행 재실행)** → 병렬화로 메우는 게 발표 주제. 복제 = **PK 기반**(PK 필수). class=테이블, copylogdb(복사)/applylogdb(적용). 현 PoC = `tranid % worker` → 관련 트랜잭션 동시 실행(최대 문제)·쏠림.
+**[5] PoC 결과 → "병렬화 가능성이 보인다"** — 병렬화로 slave 반영 **약 3.4×↓·lag 4–6×↓**(워커당 시간은↑, 병목 = slave on-CPU apply). → **병렬화는 효과 있다**는 결론. 단 PoC는 dependency를 안 봄 → *"그럼 제대로 된 병렬화(충돌·순서 처리)는 어떻게?"*
 
-**1-5. 코디네이터 컨셉**
+**[6] 그럼 다른 DB는 병렬화를 어떻게 하나?** — PoC로 가능성은 봤으니, **정식(의존성 기반) 병렬화**를 위해 타 벤더 조사.
+
+**[7] (리마인드) 병렬화는 로지컬에서만** — 조사 대상도 전부 **논리 복제의 병렬 적용**.
+
+**[8] PostgreSQL — 탈락** — 단일 구독 내 트랜잭션 **직렬 적용**, 자동 의존성 병렬 없음(병렬은 초기 동기화·대형tx 스트리밍 한정). → **직접 모델 부적합**(경계 잘못 자르면 깨짐 = 반면교사).
+
+**[9] EDB PGD — 탈락 (단 한 측면 선례)** — apply 측 writer가 행 충돌을 **선행 tuple-wait로 예방 + 위반 시 롤백 backstop**. **탈락 이유**: ① 멀티마스터(CUBRID는 master-slave) ② 상용 폐쇄 ③ 구조 부적합. **단 "apply 측에서 충돌 판단"** 한 측면은 CUBRID와 닮아 선례.
+
+**[10] MySQL — 가장 유사 (채택)** — source가 의존성(`sequence`/`last_committed`=watermark)을 계산해 binlog에 남김 → replica coordinator가 **병렬 실행** + **SPCO로 commit 순서 보존**. **"병렬 실행 ↔ 순서 보존" 분리 + coordinator**가 CUBRID(코디네이터 ↔ 순서 정리) 구조와 **1:1** → **MySQL 모델 차용.**
+
+**[11] 병렬화 설계 — 코디네이터, Phase 1/2** — **코디네이터 = LogReader의 enqueue 결정**(현 `tranid%worker` → 충돌(class)·순서 판단으로 대체).
+- **Phase 1**(repl 로그 무변경): applier가 **class 단위 보수 판단** + commit 순서 보존. 빠르게 검증 가능.
+- **Phase 2**: 정밀(row/key) 병렬 — **repl 로그 구조 변경 필요**. **로그 포맷 변경은 작업분량·기간 예측이 어려워** Phase 2로 분리.
+
+**[12] 설계 방향을 정한 근거 (발견·에러 시나리오 driven)** — 조사·코드 분석 발견이 설계를 좌우: **applier는 FK를 모른다**(복제 로그 = class+PK뿐), **FK/제약은 server가 검사** → 잘못 병렬화하면 **server 에러로 복제 중단**. → "충돌·순서를 applier가 *보수적으로* 책임"으로 방향 확정.
+
+**[13] commit 순서 강제 필요 — FK 시나리오**
+```text
+master:  T1 commit INSERT orders(100)  →  T2 commit INSERT order_items(100, FK→orders)
+slave 비순차 병렬: T2(자식)가 T1(부모)보다 먼저 → server FK 검사 실패 → 복제 중단
 ```
-복제 로그 리더 → [코디네이터: 충돌/순서 판단 → 실행/대기 → worker 선택]
-   → worker pool(병렬) → 순서 정리(committed_lsa를 commit 순서대로 전진)
-```
-질문: ① 충돌? ② 어디까지 대기? ③ 어느 worker? (①②=correctness, ③=성능)
+→ **부모 커밋 후 자식 적용**(commit 순서 보존) 필요. applier가 FK를 못 가리므로 **보수적 순서 보존**. (상속 계층 공유 unique도 같은 가족)
 
-### Part 2. 타벤더 비교
+**[14] 기타 충돌/순서 시나리오 + 이 설계의 동작**
 
-| | MySQL | PostgreSQL | EDB PGD |
-|---|---|---|---|
-| 의존성 판단 위치 | **source**(binlog) | — (자동 병렬 없음) | **apply 측(writer)** |
-| 단위 | row write-set | — | 행(tuple) |
-| 병렬 | LOGICAL_CLOCK 독립 트랜잭션 | 단일 구독 **직렬** | writer 다수 |
-| 순서 보존 | **SPCO**(선제 대기) | 직렬이라 자동 | **선행 tuple-wait 예방 + 위반 시 롤백 backstop** |
-
-- MySQL: source 선계산 → replica 병렬 → SPCO 순서. (실행 ↔ 순서 분리)
-- PG: 단일 구독 직렬(병렬은 초기동기화·대형tx 한정).
-- PGD: apply 측 행충돌을 **선행 tuple-wait로 예방** + commit 순서 위반 시 **롤백을 backstop**으로. (순수 낙관적 아님 — 예방+백스톱)
-
-### Part 3. MySQL 차용 이유
-- **구조 1:1** — MySQL "LOGICAL_CLOCK(병렬) ↔ SPCO(순서)" 분리 = CUBRID "코디네이터(분배) ↔ 순서 정리(committed_lsa)". 목표 동일.
-- **PG 부적합**: 단일 구독 내 자동 의존성 병렬이 없음.
-- **PGD는 전체 모델 아님 — 한 측면만 선례.** 채택 안 한 이유: ① 토폴로지(PGD=멀티마스터, CUBRID=단방향 master-slave → 불필요·부적합) ② 상용 폐쇄(MySQL은 오픈·소스 검증) ③ 구조는 MySQL이 1:1. **단 "apply 측에서 충돌 판단"은 PGD가 실동작한다는 방증**(CUBRID도 복제 로그에 의존성이 없어 apply 측 판단이 강제됨) — 그 한 측면만 PGD 참고.
-- **차이**: MySQL은 source가 의존성 선계산. CUBRID 복제 로그엔 없음(class+PK뿐) → **1차안은 코디네이터가 class 단위 보수 판단**, 정밀(row/key)은 후속.
-
-### Part 4. 시나리오 검증 (핵심)
-**기준**: ① correctness(올바른가) ② 병렬성(최대인가). **컨셉**: class-OID 충돌 판단 → 직렬/병렬 → commit 순서 보존 → 재시작 멱등 skip.
-
-| 시나리오 | ① correctness | ② 병렬성 |
+| 시나리오 | 이 설계에서 | 비고 |
 |---|---|---|
-| 같은 class·같은 행(lost update, unique/PK 재사용) | ✅ same-class 직렬 | 직렬(불가피) |
-| 같은 class·다른 행 | ✅ 보수적 직렬 | ❌ 손해 → row/key 개선여지 |
-| 다른 class·독립 | ✅ | ✅ 최대 병렬 |
-| 다른 class·**FK** | ✅ Phase1 commit 순서 | Phase1 제한 → **Phase2 server 그룹핑** |
-| **상속** 공유 unique | ✅ FK와 동일(빈도 낮음) | FK와 동일 |
-| **파티션** | ✅ 파티션키 ∈ 인덱스키 규칙 | ✅ 파티션별 병렬 |
-| **재시작/복구** | ✅ 멱등 skip(commit_lsa ≤ baseline) | — |
-| **롱 트랜잭션** | ✅ 멱등 전제·복구비용 수용 | 단일tx = 1 worker |
+| 같은 class(같은/다른 행) | **직렬**(class OID 겹침) | 같은 행 lost update·unique 충돌 방지 |
+| 다른 class·독립 | **병렬** | 최대 병렬 |
+| FK·상속(cross-class) | Phase1 **commit 순서 보존** → Phase2 server 그룹핑 | applier가 못 가림 |
+| 파티션 | 병렬 안전 | 파티션키 ∈ 인덱스키 규칙 |
+| 롱 트랜잭션 | 단일 worker | 병렬 이득 제한 |
 
-**FK가 핵심**: applier는 FK를 모름(로그 = class+PK) → 자식을 부모보다 먼저 적용 시 **server FK 검사 실패 → 복제 중단**. 상속(공유 unique)도 같은 가족. → **applier가 못 막는 cross-class = FK + 상속**, 둘 다 Phase 1 commit 순서가 커버. (상세: 아래 "정확성·순서 보존 설계")
+**[15] 재시작 시 문제점 ★** — 논리 재실행이라 재시작 시 `required_lsa`(LWM)부터 재적용. 기존 **멱등 skip**(`commit_lsa ≤ committed_lsa`면 건너뜀)은 **직렬 전제**다. **병렬에선**: worker가 commit 순서보다 앞서 durable commit한 트랜잭션(`commit_lsa > committed_lsa` watermark)은 재시작 시 **skip 안 돼 재적용 = 중복** 위험. (poc_design.md §34가 "정교한 오류 복구"를 PoC에서 뺀 그 영역 = 미해결)
 
-**Phase 1/2**: Phase1(applier) same-class 직렬 + FK 순서 보존 + 독립 병렬 / Phase2(cub_server) FK 병렬화는 FK 아는 server가 그룹 처리.
+**[16] 재시작 문제 해결 — 변경 필요한 부분** — watermark 단일값만으론 부족 → 선택지:
+- ① watermark 위에 **이미 적용된 트랜잭션을 추가 추적**(applied set 영속),
+- ② out-of-order commit **윈도우 bound**(watermark에서 N 이내만 앞서 commit 허용),
+- ③ worker commit 순서 강제(병렬 이득↓).
+→ 정식 구현에서 결정. (멱등 = 표준 용어 *idempotent re-apply*; 물리 redo의 page-LSN 멱등에 대응)
 
-**결론**: correctness = 전 시나리오 안전 / 병렬성 = 독립·파티션 최대, FK·상속은 Phase2 확장, 같은 class 다른 행은 row/key 향후.
-
-### 부록 A. 슬라이드 구성 (약 14장)
-1. 표지/목표·관건 2가지 · 2. 복제란 + 물리vs논리(토대) · 3. 왜 논리+병렬 / 로그·LSA · 4. CUBRID는 어디에 · 5. 코디네이터 컨셉 · 6. 벤더 비교표 · 7. 벤더 요약 · 8. MySQL 차용(1:1) · 9. PG/PGD + 차이 · 10. 검증 기준+컨셉 · 11. **시나리오 매트릭스**(핵심) · 12. FK 깊게 · 13. Phase1/2 · 14. 결론 + 후속(범위 밖)
-
-### 부록 B. 예상 질문
-- "왜 commit 순서?" → FK/상속을 applier가 못 가려서; server FK 검사라 비순차면 에러.
-- "재시작 중복?" → 멱등 skip(commit_lsa ≤ baseline), 기존 코드에 있음.
+### 부록. 예상 질문
+- "왜 commit 순서?" → FK/상속을 applier가 못 가려서; server가 FK 검사라 비순차면 에러.
+- "재시작 중복?" → 직렬에선 멱등 skip(`commit_lsa ≤ watermark`)으로 해결, **병렬에선 보강 필요([15][16])**.
 - "파티션·LOB?" → 파티션 스키마 규칙으로 안전, LOB 데이터는 비복제(외부 저장).
-- "class 단위 병렬 손해?" → 맞음(같은 class 다른 행), 후속 row/key 개선.
+- "왜 Phase 2를 나눴나?" → Phase 2는 **repl 로그 포맷 변경**이라 작업분량·기간 예측이 어려움.
+- "그럼 PGD 쓰지?" → 멀티마스터·상용 폐쇄·구조 부적합. apply 측 판단 한 측면만 참고.
 
 ---
 
@@ -246,7 +232,9 @@ last_committed_lsa(baseline)=150,  크래시 @180
 
 **develop = PoC 동일(확인).** skip 조건은 develop에도 동일하다 — `la_apply_commit_list()` 안의 `LSA_LE(commit_lsa, last_committed_lsa)`(develop `:5765`), `LSA_GT(item->lsa, last_committed_rep_lsa)`(develop `:5797`). PoC는 같은 조건을 worker 적용 경로(`:8754, :8775`)로 옮겼을 뿐 **로직은 같다**(레거시 `la_apply_commit_list`는 PoC에서 미호출).
 
-> 의미: 물리 redo의 **page-LSN 멱등성**에 대응하는 것을, CUBRID는 **복제 진도 LSA(`commit_lsa`/`item->lsa`)를 기동 baseline과 비교**하는 방식으로 구현한다. → 병렬 설계의 "재시작 정합 · 롱tx 복구비용 수용 · 비순차 적용" 전제가 성립한다(멱등을 새로 만들 필요 없음, 기존 메커니즘 재사용).
+> 의미: 물리 redo의 **page-LSN 멱등성**에 대응하는 것을, CUBRID는 **복제 진도 LSA(`commit_lsa`/`item->lsa`)를 기동 baseline과 비교**하는 방식으로 구현한다. (serial 적용에선 `committed_lsa`가 곧 실제 durable frontier라 재시작 정합이 깔끔하다.)
+
+> **⚠ 병렬(비순차 commit)에선 이 단일 baseline만으론 부족하다.** worker가 commit 순서보다 앞서 durable commit한 트랜잭션은 `commit_lsa > committed_lsa`(watermark)이므로, 재시작 시 `commit_lsa ≤ last_committed_lsa` 조건에 걸리지 않아 **재적용 = 중복**될 수 있다. → 정식 병렬 구현에서 보강 필요: **① applied set 추가 추적(영속) / ② out-of-order commit 윈도우 bound / ③ worker commit 순서 강제** 중 택. (이는 poc_design.md §34가 PoC에서 제외한 '정교한 오류 복구' 영역이며, 발표 요약 [15][16]에 정리.)
 
 ### PoC 구현 점검 (develop 대비 + 설계 poc_design.md 대비) — 코드 확인됨
 
