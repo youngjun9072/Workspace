@@ -248,10 +248,31 @@ last_committed_lsa(baseline)=150,  크래시 @180
 
 > 의미: 물리 redo의 **page-LSN 멱등성**에 대응하는 것을, CUBRID는 **복제 진도 LSA(`commit_lsa`/`item->lsa`)를 기동 baseline과 비교**하는 방식으로 구현한다. → 병렬 설계의 "재시작 정합 · 롱tx 복구비용 수용 · 비순차 적용" 전제가 성립한다(멱등을 새로 만들 필요 없음, 기존 메커니즘 재사용).
 
+### develop(오리지널) vs PoC 구조 대조 — 코드 확인됨
+
+> `feature/parallel_applylogdb_poc`는 develop 대비 `log_applier.c`에 약 **+3,900줄**(worker/dispatch/retire + 계측). **핵심 정합성 메커니즘은 develop과 동일**하고, PoC가 더한 건 "병렬 실행 골격 + 측정 계측"이다.
+
+**같다 (develop = PoC, 설계가 의존하는 핵심)**
+- LSA 의미 · `required_lsa`(LWM, `la_find_required_lsa`) · `committed_lsa`/`committed_rep_lsa` · `_db_ha_apply_info` · `la_log_commit`.
+- 재시작 멱등 skip 조건(`commit_lsa ≤ last_committed_lsa` / `item.lsa > last_committed_rep_lsa`) — develop은 `la_apply_commit_list`(`:5765, 5797`), PoC는 worker 경로(`:8754, 8775`), **조건 동일**.
+- 복제 로그 = class+PK+op(`la_make_repl_item`), PK 기반. FK/unique는 server(`locator_insert_force`, `dont_check_fk=false`). 적용 프리미티브 `la_apply_insert/update/delete_log`·`la_repl_add_object`. 실패 처리(재시도+`fail_counter`, abort→clear).
+
+**다르다 (PoC가 추가한 구조)**
+
+| | develop (serial) | PoC (parallel) |
+|---|---|---|
+| 적용 | reader가 commit record를 만나면 `la_apply_commit_list`로 **그 자리에서 직렬 적용** | reader가 트랜잭션을 **worker 큐에 dispatch**(`la_dispatch`), worker pool(`la_apply_worker_main`)이 **병렬 적용** |
+| committed_lsa 갱신 | 직렬 적용 중 inline | **retire/순서 정리**(`la_collect_apply_results`)가 worker 결과를 모아 **commit 순서대로** 갱신 |
+| `la_apply_commit_list` | 활성(메인 경로) | **레거시(미호출)** — 같은 skip 조건만 worker 경로로 이전 |
+| 계측·측정 제약 | — | `la_Debug_progress` 타이밍/카운터, `worker_idx < LA_APPLY_WORKER_REPL_ACTIVE_COUNT`(일부 worker만 flush)·`LA_SKIP_READER_COMMIT_APPLY_INFO` 등 **병목 측정 스캐폴딩** |
+| 부수 변경 | — | `work_space.c/h`(+54, repl-obj bulk flush 리스트), `locator_sr.c`(+44, repl force 경로) 소폭 수정 |
+
+> **설계 시사**: 코디네이터 설계는 PoC의 **측정 스캐폴딩(일부 worker만 flush 등)이 아니라**, "reader → dispatch → worker 병렬 → retire 순서 정리"라는 **골격**을 대상으로 한다. 이 골격이 우리가 정의한 코디네이터 컨셉(분배 ↔ 순서 정리)과 일치하고, 핵심 정합성(LSA·멱등 skip·server FK)은 develop과 공유하므로, **본 설계는 develop의 검증된 토대 위에 PoC 골격을 정식화하는 것**이다.
+
 ### 남은 확인 항목
 
 - ~~논리 재실행의 재시작 멱등성~~ → **확인됨**: 2단계 LSA skip으로 **idempotent re-apply** 보장(위 "재시작 시 재적용 멱등성" 절). develop·PoC 동일.
-- **develop(오리지널) 대조:** 멱등 skip·core LSA·`required_lsa`·`_db_ha_apply_info`는 develop=PoC 동일 확인. 남은 차이는 **worker/retire(순서 정리) 구조가 PoC 추가분**이라는 점 — 적용 위치(`la_apply_commit_list` → worker 경로)와 순서 정리 단계 차이를 별도 정리.
+- ~~develop(오리지널) 대조~~ → **확인됨**: 핵심(LSA·멱등 skip·FK·repl 로그)은 develop=PoC 동일, PoC 추가분은 worker/dispatch/retire + 계측. (위 "develop vs PoC 구조 대조" 절)
 - **파티션/LOB/상속** 등 특수 테이블 → `cubrid_special_table_scenarios.md`의 확인 항목 참조.
 
 ## 다른 DBMS의 처리 방식
