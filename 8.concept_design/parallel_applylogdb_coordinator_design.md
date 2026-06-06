@@ -248,24 +248,24 @@ last_committed_lsa(baseline)=150,  크래시 @180
 
 > 의미: 물리 redo의 **page-LSN 멱등성**에 대응하는 것을, CUBRID는 **복제 진도 LSA(`commit_lsa`/`item->lsa`)를 기동 baseline과 비교**하는 방식으로 구현한다. → 병렬 설계의 "재시작 정합 · 롱tx 복구비용 수용 · 비순차 적용" 전제가 성립한다(멱등을 새로 만들 필요 없음, 기존 메커니즘 재사용).
 
-### develop(오리지널) vs PoC 구조 대조 — 코드 확인됨
+### PoC 구현 점검 (develop 대비 + 설계 poc_design.md 대비) — 코드 확인됨
 
-> `feature/parallel_applylogdb_poc`는 develop 대비 `log_applier.c`에 약 **+3,900줄**(worker/dispatch/retire + 계측). **핵심 정합성 메커니즘은 develop과 동일**하고, PoC가 더한 건 "병렬 실행 골격 + 측정 계측"이다.
+> `feature/parallel_applylogdb_poc`는 develop 대비 `log_applier.c`에 약 **+3,900줄**(worker/dispatch/retire + 계측). **핵심 정합성 메커니즘은 develop과 동일**하고, PoC가 더한 건 "병렬 실행 골격 + 측정 계측"이다. 구조도는 poc_design.md, 아래는 (1) develop과 공유하는 핵심, (2) 설계↔코드 delta만 정리.
 
 **같다 (develop = PoC, 설계가 의존하는 핵심)**
 - LSA 의미 · `required_lsa`(LWM, `la_find_required_lsa`) · `committed_lsa`/`committed_rep_lsa` · `_db_ha_apply_info` · `la_log_commit`.
 - 재시작 멱등 skip 조건(`commit_lsa ≤ last_committed_lsa` / `item.lsa > last_committed_rep_lsa`) — develop은 `la_apply_commit_list`(`:5765, 5797`), PoC는 worker 경로(`:8754, 8775`), **조건 동일**.
 - 복제 로그 = class+PK+op(`la_make_repl_item`), PK 기반. FK/unique는 server(`locator_insert_force`, `dont_check_fk=false`). 적용 프리미티브 `la_apply_insert/update/delete_log`·`la_repl_add_object`. 실패 처리(재시도+`fail_counter`, abort→clear).
 
-**다르다 (PoC가 추가한 구조)**
+**구조 변화(develop→PoC)는 poc_design.md의 AS-IS/TO-BE 참조** — 한 줄로: 직렬 `la_apply_commit_list` → `LogReader` dispatch + `ApplyWorker×N` 병렬 + retire(결과 수집·`committed_lsa`). 구조도 재현은 생략(poc_design.md).
 
-| | develop (serial) | PoC (parallel) |
-|---|---|---|
-| 적용 | reader가 commit record를 만나면 `la_apply_commit_list`로 **그 자리에서 직렬 적용** | reader가 트랜잭션을 **worker 큐에 dispatch**(`la_dispatch`), worker pool(`la_apply_worker_main`)이 **병렬 적용** |
-| committed_lsa 갱신 | 직렬 적용 중 inline | **retire/순서 정리**(`la_collect_apply_results`)가 worker 결과를 모아 **commit 순서대로** 갱신 |
-| `la_apply_commit_list` | 활성(메인 경로) | **레거시(미호출)** — 같은 skip 조건만 worker 경로로 이전 |
-| 계측·측정 제약 | — | `la_Debug_progress` 타이밍/카운터, `worker_idx < LA_APPLY_WORKER_REPL_ACTIVE_COUNT`(일부 worker만 flush)·`LA_SKIP_READER_COMMIT_APPLY_INFO` 등 **병목 측정 스캐폴딩** |
-| 부수 변경 | — | `work_space.c/h`(+54, repl-obj bulk flush 리스트), `locator_sr.c`(+44, repl force 경로) 소폭 수정 |
+**설계(poc_design.md) ↔ 구현 코드 delta** (구현하며 추가/제외된 것만):
+
+- **[코드 > 설계] UPDATE 적용** — 설계 §29는 "insert 연산만 대상"이나 코드는 **INSERT + UPDATE** 지원(`la_is_supported_poc_item`: INSERT·UPDATE(+START/END); statement는 INSERT/UPDATE/CREATE·DROP CLASS). **DELETE는 함수(`la_apply_delete_log`)만 있고 미지원.** (최종 보고서 측정도 Insert+Update)
+- **[코드 > 설계] 측정 계측** — `la_Debug_progress`(per-worker 타이밍·카운터), `la_debug_note_*`, `la_log_parallel_apply_window`. (설계엔 측정 섹션 없음)
+- **[코드 > 설계] 측정용 제약 가드** — `LA_APPLY_WORKER_REPL_ACTIVE_COUNT`(일부 worker만 flush), `LA_SKIP_READER_COMMIT_APPLY_INFO`(apply_info 갱신 skip), `la_is_supported_poc_item`(op 게이팅). → **병목 측정 스캐폴딩, 정식 구현에선 제거 대상.**
+- **[설계가 의도적 제외 = 코드에도 없음, drift 아님]** 설계 §32·34: *"transaction 간 dependency 판별·병렬 스케줄링·정교한 오류 복구는 PoC 범위 제외."* → 코드도 `tranid % worker`(충돌 판단 없음). **→ 본 설계의 코디네이터(충돌/순서 판단)는 PoC가 의도적으로 비워둔 그 자리를 채우는 다음 단계다.**
+- **부수 변경** — `work_space.c/h`(repl-obj bulk flush 리스트 worker별 분리), `locator_sr.c`(repl force 경로) 소폭 수정.
 
 > **설계 시사**: 코디네이터 설계는 PoC의 **측정 스캐폴딩(일부 worker만 flush 등)이 아니라**, "reader → dispatch → worker 병렬 → retire 순서 정리"라는 **골격**을 대상으로 한다. 이 골격이 우리가 정의한 코디네이터 컨셉(분배 ↔ 순서 정리)과 일치하고, 핵심 정합성(LSA·멱등 skip·server FK)은 develop과 공유하므로, **본 설계는 develop의 검증된 토대 위에 PoC 골격을 정식화하는 것**이다.
 
