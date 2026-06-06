@@ -34,7 +34,7 @@ PGD는 pglogical 계열의 logical replication 위에 만들어진 EDB **상용 
 
 병렬 적용의 정합성 핵심: "**each writer ensures that the final commit of its transaction doesn't violate the commit order as executed on the origin node. If there's a violation, an error is generated and the transaction can be rolled back**" [1].
 
-즉 writer들이 트랜잭션을 동시에 *실행*하더라도, **최종 commit은 origin(원본 노드)에서의 commit 순서를 어기지 않도록** 각 writer가 검사하고, 어기게 되면 그 트랜잭션을 에러 처리/롤백한다. (MySQL이 `replica_preserve_commit_order`로 큐 front 대기를 강제하는 것과 목적은 같으나, PGD는 **"위반 감지 → 롤백"** 방식이다.)
+즉 writer들이 트랜잭션을 동시에 *실행*하더라도, **최종 commit은 origin(원본 노드)에서의 commit 순서를 어기지 않도록** 각 writer가 검사하고, 어기게 되면 그 트랜잭션을 에러 처리/롤백한다. (MySQL이 `replica_preserve_commit_order`로 큐 front 대기를 강제하는 것과 목적이 같고, PGD도 §5의 **선행 tuple-wait로 순서를 예방**한다 — 즉 PGD는 "예방(대기) + **위반 시 롤백 backstop**"이지 순수 낙관적 롤백이 아니다.)
 
 ### 5. 행(tuple) 단위 충돌 회피 — 데드락 완화
 
@@ -78,7 +78,7 @@ PGD는 트랜잭션을 **publisher commit 이전에** subscriber로 스트리밍
 ## 추론 / 유추
 
 - PGD의 가장 큰 차별점은 **의존성/충돌 판단을 apply 측(writer)에서 행 단위로 한다**는 것이다. MySQL은 source(binlog writeset)에서 의존성을 미리 계산해 내려보내지만, PGD writer는 **적용 시점에 "같은 tuple을 쓰는 선행 트랜잭션"을 직접 보고** 대기를 건다 (← [1], [5]).
-- commit 순서 보존 전략이 **낙관적(optimistic)** 이다 — 일단 병렬로 진행하다 **순서 위반이 감지되면 롤백**하는 방식으로 보인다(MySQL의 "front 차례까지 선제 대기"와 대비) (← [1]).
+- commit 순서 보존 전략은 **"선행 tuple-wait 예방 + 위반 시 롤백 backstop"의 혼합**이다 — 같은 행 선행 트랜잭션을 대기시켜 순서를 예방하고(§5), 그래도 commit 순서가 어긋나면 롤백으로 막는다(§4). 순수 낙관적이 아니며, MySQL SPCO의 선제 대기와 목적이 같되 롤백 backstop이 더해진 형태로 보인다 (← [1]).
 - transaction streaming + Parallel Apply를 함께 켜면 **대형 트랜잭션을 커밋 전부터 여러 writer로 적용**하는 셈이라, "대형 단일 트랜잭션"이 병목인 워크로드에서 이득이 클 가능성이 있다(단 abort 시 작업 폐기 비용) (← [3]).
 - community PG(단일 구독 직렬) 대비, PGD는 "단일 구독 내 병렬"을 상용 기능으로 채운 사례다 — 즉 PG 생태계에서 병렬 apply는 **코어가 아닌 상용 확장 레이어**에서 제공된다 (← [1] + 같은 폴더 community PG 문서).
 

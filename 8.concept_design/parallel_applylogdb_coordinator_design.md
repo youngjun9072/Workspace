@@ -48,15 +48,16 @@
 | 의존성 판단 위치 | **source**(binlog) | — (자동 병렬 없음) | **apply 측(writer)** |
 | 단위 | row write-set | — | 행(tuple) |
 | 병렬 | LOGICAL_CLOCK 독립 트랜잭션 | 단일 구독 **직렬** | writer 다수 |
-| 순서 보존 | **SPCO** | 직렬이라 자동 | **위반 시 롤백**(낙관적) |
+| 순서 보존 | **SPCO**(선제 대기) | 직렬이라 자동 | **선행 tuple-wait 예방 + 위반 시 롤백 backstop** |
 
 - MySQL: source 선계산 → replica 병렬 → SPCO 순서. (실행 ↔ 순서 분리)
 - PG: 단일 구독 직렬(병렬은 초기동기화·대형tx 한정).
-- PGD: apply 측 행충돌 + 위반 시 롤백.
+- PGD: apply 측 행충돌을 **선행 tuple-wait로 예방** + commit 순서 위반 시 **롤백을 backstop**으로. (순수 낙관적 아님 — 예방+백스톱)
 
 ### Part 3. MySQL 차용 이유
 - **구조 1:1** — MySQL "LOGICAL_CLOCK(병렬) ↔ SPCO(순서)" 분리 = CUBRID "코디네이터(분배) ↔ 순서 정리(committed_lsa)". 목표 동일.
-- **PG 부적합**(자동 의존성 병렬 없음), **PGD 참고**(apply 측 판단 → CUBRID 코디네이터도 slave 측이라 더 가까움).
+- **PG 부적합**: 단일 구독 내 자동 의존성 병렬이 없음.
+- **PGD는 전체 모델 아님 — 한 측면만 선례.** 채택 안 한 이유: ① 토폴로지(PGD=멀티마스터, CUBRID=단방향 master-slave → 불필요·부적합) ② 상용 폐쇄(MySQL은 오픈·소스 검증) ③ 구조는 MySQL이 1:1. **단 "apply 측에서 충돌 판단"은 PGD가 실동작한다는 방증**(CUBRID도 복제 로그에 의존성이 없어 apply 측 판단이 강제됨) — 그 한 측면만 PGD 참고.
 - **차이**: MySQL은 source가 의존성 선계산. CUBRID 복제 로그엔 없음(class+PK뿐) → **1차안은 코디네이터가 class 단위 보수 판단**, 정밀(row/key)은 후속.
 
 ### Part 4. 시나리오 검증 (핵심)
@@ -159,6 +160,7 @@ transaction을 동시에 실행하면 복제 결과가 원본 실행 순서와 �
 - **server는 repl 적용에도 FK를 검사한다.** `xlocator_repl_force` → `locator_insert_force(..., dont_check_fk=false)`(`locator_sr.c:7029,7256`) → `if (has_index && !skip_checking_fk) locator_check_foreign_key()`(`:5198-5201`), `skip_checking_fk = locator_Dont_check_foreign_key(false,:116) || dont_check_fk(false)`. update/PK 참조도 동일(`:6013, :8045, :8762`). → **자식을 부모보다 먼저 적용하면 FK 위반 → apply 에러 → 복제 중단.**
 - **단, applier(applylogdb)는 FK를 알 방법이 없다.** 복제 로그 항목은 `la_make_repl_item`이 **class 이름 + PK 값 + operation type**만 풀어 담고(`log_applier.c:5708~`; LA_ITEM에 FK/참조 class 필드 없음), `log_applier.c`엔 FK·constraint 코드가 전무하다. FK 관계는 server 스키마(`SM_CLASS`)에만 있고 applier는 이를 조회하지 않는다. → **applier는 두 트랜잭션이 FK로 엮였는지 자기 입력(복제 로그)만으로는 판단할 수 없다.**
 - (참고) `committed_lsa`는 읽기 가시성(MVCC)에 쓰이지 않는다(`src/query`·`mvcc.c`·`src/storage`에 없음). 다만 슬레이브 읽기 일관성(MVCC 가시성)은 본 설계 범위에서 제외한다.
+- **실패 처리(현재 동작)**: ① master abort면 그 트랜잭션의 repl 리스트를 비운다(`LOG_ABORT` → `la_free_repl_items_by_tranid`/`la_free_all_repl_items`, `:6014, 8744`). ② apply 에러면 재시도 가능 에러는 재시도(`la_retry_on_error` → `LA_SLEEP`+continue, `:8841-8849`), 그 외 실패는 `fail_counter`++(`:7703, 2093`). → PGD식 롤백도 단순 무시도 아닌 **재시도 + 실패 카운트** 방식. (코디네이터의 충돌 직렬화 = 디스패치 순서 제어로, 이 실패 처리와는 별개 층위)
 
 ### LSA / 로그 위치 갱신 (진도 관리) — applylogdb가 쓰는 LSA 전수 정리
 

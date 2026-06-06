@@ -55,12 +55,14 @@ community PG는 단일 구독 직렬이지만, **EDB의 상용 멀티마스터 �
 
 | 항목 | MySQL MTS | EDB PGD | CUBRID 코디네이터(설계) 시사점 |
 |---|---|---|---|
-| 의존성 판단 **위치** | source(binlog) 선계산 | **apply 측 writer** | CUBRID가 "코디네이터(slave)에서 판단"을 택하면 **PGD가 더 직접적인 모델** |
+| 의존성 판단 **위치** | source(binlog) 선계산 | **apply 측 writer** | CUBRID가 "코디네이터(slave)에서 판단"을 택하므로, **이 판단 위치(apply 측)에 한해 PGD가 직접 선례**(전체 모델은 MySQL) |
 | 판단 **단위** | row write-set 해시 | 행(tuple) | class-level(1차안) → row-level로 갈 때 PGD식 **tuple 대기** 채택 가능 |
-| commit 순서 | 큐 front 차례까지 **선제 대기**(SPCO) | **위반 감지 → 에러/롤백**(낙관적) | 두 전략 중 택1. "일단 병렬 커밋 후 보정"은 PGD형 |
+| commit 순서 | 큐 front 차례까지 **선제 대기**(SPCO) | **선행 tuple-wait 예방 + 위반 시 롤백 backstop** | 둘 다 선제 순서화. CUBRID는 코디네이터 직렬화(예방) + 에러 시 재시도/`fail_counter` |
 | 관측 지표 | — | `nprovisional/ntuple/ncommit_waits` | CUBRID 병렬 효율 관측 지표 설계에 참고 |
 
-- **"낙관적 병렬 + 위반 시 롤백"의 실존 선례.** PGD의 "each writer ensures the final commit doesn't violate origin commit order; 위반 시 error/rollback"은, 앞서 논의한 *"일단 병렬로 적용·커밋하고 순서/정합은 보정한다"* 아이디어가 상용 제품에서 실제로 쓰인다는 근거다. **단 차이 명시**: PGD는 **apply 중 위반을 감지해 그 트랜잭션을 롤백**하는 것이고, ARIES 크래시 복구의 loser 롤백과는 다른 층위다. (CUBRID 설계 시 "위반 감지 시점·롤백 주체·재시도"를 PGD/ARIES 어느 모델로 할지 구분해서 정해야 함.)
+- **PGD는 "apply 측 판단"의 선례일 뿐, 전체 모델은 아니다.** PGD는 같은 행 선행 **tuple-wait로 순서를 예방**하고, commit 순서 위반 시 **롤백을 backstop**으로 둔다("each writer ensures the final commit doesn't violate origin commit order; 위반 시 error/rollback"). → **순수 낙관적이 아니라 예방 + 백스톱.**
+  - **PGD를 전체 모델로 채택하지 않은 이유**: ① 토폴로지 — PGD=멀티마스터(노드 간 충돌해소·합의), CUBRID HA=단방향 master-slave → 불필요·부적합. ② 상용 폐쇄(MySQL은 오픈·소스 검증). ③ 구조는 MySQL의 "병렬↔순서 분리+coordinator"가 CUBRID와 1:1. PGD가 기여하는 건 **"apply 측 충돌 판단이 실동작한다"는 방증 한 가지**(CUBRID도 복제 로그에 의존성이 없어 apply 측 판단이 강제됨).
+  - **CUBRID의 실제 실패 처리(현재)** 는 PGD식 롤백도 아니다 — master abort면 그 tx repl 리스트를 비우고, apply 에러면 재시도 후 실패는 `fail_counter`++. (코디네이터의 충돌 직렬화 = 디스패치 순서 제어로, 이 실패 처리와는 별개 층위)
 - **대형 트랜잭션 옵션.** PGD는 transaction streaming으로 **커밋 전부터 writer에 병렬 적용**(실험적)한다 → CUBRID 대형 트랜잭션(병렬 이득이 제한되는 케이스)의 한 가지 돌파 방향.
 - **한계 참고.** PGD도 **Group Commit과는 병렬 apply 비호환**, community PG에서는 writer lock_timeout 이슈 등 → "강한 동기/합의"와 "병렬 apply"는 상충하기 쉽다는 점을 CUBRID 동기화 수준 설계에 반영.
 
