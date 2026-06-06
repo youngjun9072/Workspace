@@ -943,7 +943,8 @@ FK 외에 검토한 시나리오들. 판단 기준은 **"applier가 자기 입�
 
 **applier가 식별 불가 → 별도 대응 필요**
 
-- **FK (cross-class)**: 유일하게 applier 입력 밖이다(다른 class 간 관계는 server `SM_CLASS`에만). → commit 순서 보존(Phase 1) / server 그룹핑(Phase 2). (위 참조)
+- **FK (cross-class)**: applier 입력 밖이다(다른 class 간 관계는 server `SM_CLASS`에만). → commit 순서 보존(Phase 1) / server 그룹핑(Phase 2). (위 참조)
+- **상속(super/sub class)의 계층 공유 unique 인덱스**: subclass가 superclass의 unique/PK를 inherit하면 **같은 BTID(B-tree)를 공유**해 계층 전체에 unique가 enforce된다 → 서로 다른 subclass에 같은 키를 비순차 적용하면 위반(server 에러). FK와 같은 applier-blind cross-class 위험(단 실무 빈도 낮음). 대응도 FK와 동일.
 
 **복구 / 진도 축**
 
@@ -953,11 +954,11 @@ FK 외에 검토한 시나리오들. 판단 기준은 **"applier가 자기 입�
 
 - **파티션 class**: 한 논리 테이블의 파티션이 서로 다른 class_oid면 "다른 class=병렬"로 오판할 수 있다 → 글로벌 unique 등에 영향. class 식별을 root/partition 중 무엇으로 할지 확인.
 - **상속(super/sub class)**, **serial / `db_serial` 카탈로그**: 충돌 판단에 미치는 영향 확인.
-- 📄 특수 테이블(파티션·뷰·상속·LOB·serial·non-MVCC) **유형별 상세 분석 → `cubrid_special_table_scenarios.md`**. 요지: **파티션은 구조적으로 안전**(파티션 키 ∈ 인덱스 키 규칙이 cross-partition unique 충돌을 막음, FK+파티션은 CUBRID가 제약), 뷰는 비복제(문제 없음), non-MVCC 처리됨, **LOB은 데이터 비복제(코디네이터 무관)**, **상속만 추가 확인 필요**, 복제는 PK 필수. → applier가 못 막는 cross-class 위험은 결국 **FK가 유일**.
+- 📄 특수 테이블(파티션·뷰·상속·LOB·serial·non-MVCC) **유형별 상세 분석 → `cubrid_special_table_scenarios.md`**. 요지: **파티션은 구조적으로 안전**(파티션 키 ∈ 인덱스 키 규칙이 cross-partition unique 충돌을 막음, FK+파티션은 CUBRID가 제약), 뷰는 비복제(문제 없음), non-MVCC 처리됨, LOB은 데이터 비복제(코디네이터 무관), 파티션은 스키마 규칙으로 안전, **상속은 계층 공유 unique 인덱스라 cross-subclass 충돌 가능(FK 가족, 실무 빈도 낮음)**, 복제는 PK 필수. → applier가 못 막는 cross-class 위험은 **FK + 상속** 두 가지(둘 다 Phase 1 commit 순서가 커버).
 
 > **class 식별자는 class OID로 확정**한다(이름은 rename/재사용 위험). applier가 이미 `ws_oid()`로 OID를 갖고 있어 추가 비용이 없다.
 
-> 정리: 서버가 **에러로 막는 cross-class 의존은 FK가 사실상 유일**하다(unique/PK는 class 내라 same-class가 커버, 트리거는 비활성). 나머지는 same-class 직렬화·복구(LWM/멱등)·CUBRID 특화 확인 항목이다.
+> 정리: 서버가 **에러로 막는 applier-blind cross-class 의존은 FK + 상속(계층 공유 unique 인덱스) 두 가지**다(같은 class 내 unique/PK는 same-class가 커버, 트리거는 비활성, 파티션은 스키마 규칙이 보강, LOB은 데이터 비복제). 둘 다 Phase 1 commit 순서 보존이 커버하며, 상속은 실무 빈도가 낮다. 나머지는 same-class 직렬화·복구(LWM/멱등)다.
 
 ## 남은 설계 쟁점
 

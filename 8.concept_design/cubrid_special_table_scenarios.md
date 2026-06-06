@@ -15,7 +15,7 @@
 |---|---|---|---|
 | 파티션 테이블 | pruning 처리함(`sm_partitioned_class_type`) | 파티션 키 ∈ 모든 인덱스 키 규칙 → cross-partition unique/PK 충돌 **불가**(§2). FK+파티션은 CUBRID가 제약 | ✅ **구조적으로 안전** |
 | 뷰(vclass) | apply 경로에 처리 없음 | 뷰 자체는 복제 안 됨(기반 테이블이 로깅됨) | ✅ 문제 없음 |
-| 상속(super/sub class) | 인스턴스는 자기 class heap | 파티션과 유사 — 서로 다른 class OID | ⚠ 확인 필요 |
+| 상속(super/sub class) | 자기 (sub)class OID로 기록 | **계층이 unique 인덱스(BTID) 공유** → cross-subclass unique 충돌 가능(FK 가족). 실무 빈도 낮음 | ⚠ FK와 동일 처리 |
 | LOB 컬럼 | 행엔 ELO locator만, 데이터는 외부 저장 | LOB **데이터는 로그로 비복제**(외부 저장·별도 운영 사안), 코디네이터 무관 | ✅ 코디네이터 무관 |
 | non-MVCC / reusable-OID class | 분기 처리(`is_mvcc_class`, mvcc insid/delid 보정) | 주로 카탈로그/시스템 class | ✅ 처리됨(사용자 테이블 영향 적음) |
 | serial(`db_serial`) | 값은 레코드 이미지로 적용 | 카탈로그 갱신 순서 | ⚠ 경미(같은 class면 same-class가 커버) |
@@ -54,10 +54,14 @@ PK/unique 키에는 항상 파티션 키가 포함됨
 - `log_applier.c`에 vclass/virtual class/view 처리가 없다. 뷰는 데이터를 저장하지 않으므로 **뷰에 대한 복제 로그가 생기지 않는다** — 뷰를 통한 DML은 기반 테이블 변경으로 로깅된다.
 - → 코디네이터는 뷰를 볼 일이 없다. 문제 없음. (단 뷰 정의 변경 같은 DDL은 schema → barrier 대상.)
 
-## 4. 상속 (super/sub class) ⚠
+## 4. 상속 (super/sub class) — cross-class 위험 있음 (FK와 같은 가족) ⚠
 
-- CUBRID 클래스 상속에서 인스턴스는 자신의 class heap에 저장된다 → 파티션과 유사하게 super/sub가 **서로 다른 class OID**.
-- super/sub 간 인덱스·제약 공유 여부에 따라 cross-class 충돌 가능성. → 파티션과 같은 축의 확인 필요(인덱스 단위).
+- 복제/적용 경로엔 상속 전용 처리가 없다(`log_applier.c`/`replication.c`) → applier는 subclass instance를 **자기 (sub)class OID**로 일반 class처럼 기록·식별.
+- **그러나 UNIQUE/PK 제약은 계층 전체가 공유한다.** subclass가 superclass의 unique를 inherit할 때 **superclass의 BTID(같은 B-tree 인덱스)를 그대로 쓴다** — *"go back to the super class to get its real BTID"*(`schema_manager.c:9488-9506`, `inherit_constraint:371`, `sm_class_has_unique_constraint`가 subclass 재귀 `:6067-6096`). → **하나의 unique 인덱스가 superclass + 모든 subclass에 걸쳐 enforce**된다.
+- **위험**: 같은 unique/PK 값을 서로 다른 subclass(다른 class OID)에 비순차 병렬 적용하면 **공유 unique 인덱스 위반 → server 에러 → 복제 중단.** 파티션과 달리 키를 나누는 규칙이 없어 **cross-subclass 충돌이 실제로 가능**하다.
+- **applier-blind**: 계층/공유 BTID 관계는 복제 로그(class+PK)에 없고 server 스키마에만 있다 → **applier가 못 가린다 = FK와 동일한 cross-class 가족.**
+- **대응**: FK와 같다 — Phase 1의 보수적 commit 순서 보존이 이미 커버(또는 계층 관계를 알면 같은 직렬 그룹). Phase 2는 server 그룹핑.
+- **실무 빈도 낮음**: 상속은 CUBRID 레거시 OO 기능이라 일반 관계형 사용에선 드물다 — 위험은 실재하나 빈도 낮음.
 
 ## 5. LOB 컬럼 — 데이터는 비복제, 코디네이터 무관 ✅
 
@@ -79,13 +83,13 @@ PK/unique 키에는 항상 파티션 키가 포함됨
 
 - 파티션은 처음 우려와 달리 **correctness 안전**으로 확인됐다(← §2). CUBRID의 "파티션 키 ∈ 모든 인덱스 키" 규칙이 cross-partition unique/PK 충돌을 구조적으로 막고, FK+파티션은 CUBRID가 제약한다. 남는 것은 병렬성 튜닝뿐.
 - 뷰·non-MVCC도 사실상 문제 없음(뷰는 비복제, non-MVCC는 처리됨).
-- 따라서 **applier가 자기 입력만으로 못 막는 cross-class 위험은 결국 FK가 유일**하다(파티션은 스키마 규칙이 보강, LOB은 데이터 비복제로 무관). **상속**만 추가 코드 확인 전까지 보수적으로(직렬/barrier) 두는 것이 안전.
+- 따라서 **applier가 자기 입력만으로 못 막는 cross-class 위험은 FK와 상속(계층 공유 unique 인덱스) 두 가지**다(파티션은 스키마 규칙이 보강, LOB은 데이터 비복제로 무관). 둘 다 Phase 1의 보수적 commit 순서 보존이 커버하며, 상속은 실무 빈도가 낮다.
 
 ## 미해결 / 확인 필요 (우선순위)
 
 1. ~~파티션 class_oid root/partition + 인덱스 local/global~~ → **확인됨**: 파티션 키 ∈ 인덱스 키 규칙으로 cross-partition unique 충돌 불가(§2). root/partition은 병렬성 튜닝 문제일 뿐.
 2. ~~LOB 복제 경로~~ → **확인됨**: LOB 데이터는 로그로 비복제(locator만), 외부 저장 동기는 별도 운영 사안 → 코디네이터 무관(§5).
-3. **상속** class의 인덱스/제약 공유와 cross-class 충돌.
+3. ~~상속 인덱스/제약 공유~~ → **확인됨**: 계층이 unique BTID 공유 → cross-subclass unique 충돌 가능(FK 가족, §4). Phase 1 commit 순서가 커버, 실무 빈도 낮음.
 4. serial 카탈로그 갱신과 사용자 트랜잭션의 엮임.
 
 ## References (소스)
