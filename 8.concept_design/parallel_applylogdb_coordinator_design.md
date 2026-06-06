@@ -4,6 +4,92 @@
 컨셉을 정리한다. 상세 자료구조나 API 설계가 아니라, 어떤 책임을 새 모듈로
 분리할지와 transaction 간 충돌/순서를 어떻게 다룰지를 잡는 문서다.
 
+## 발표용 요약 (1차 발표)
+
+> 이 절은 **1차 발표용 압축 요약**(학습 + PT 작성 기반)이다. 범위: ① 사전 지식 → ② 타벤더 비교 → ③ MySQL 차용 이유 → ④ 시나리오 검증. (구현 상세·develop 대조·row/key 정밀화는 범위 밖 = 후속)
+> 상세 근거는 **본 문서의 아래 절들** + `coordinator_design_mapping_from_vendors.md` · `cubrid_special_table_scenarios.md` · `reference/`.
+
+### 0. 한 장 요약 (도입)
+- **목표**: applylogdb 병렬 적용 시 **트랜잭션 간 충돌·순서를 코디네이터가 책임**지게 한다. 현 PoC의 `tranid % worker`(관련 트랜잭션도 동시 실행) 문제 해결.
+- **접근**: **MySQL 모델 차용** — "병렬 실행"과 "commit 순서 보존"을 분리.
+- **관건 2가지**: ① 모든 시나리오 **correctness** ② **병렬성** 최대 지원.
+
+### Part 1. 사전 지식
+> 복제 일반 → **물리 vs 논리 복제** → CUBRID는 어디에 → 코디네이터 컨셉. (물리/논리가 "왜 병렬화/왜 MySQL"의 토대)
+
+**1-1. 복제란** — master 변경을 slave가 따라 적용. master/slave = source/replica(MySQL) = publisher/subscriber(PG).
+
+**1-2. 물리 vs 논리 복제 (핵심 토대)** ★
+
+| | 물리(physical) | 논리(logical) |
+|---|---|---|
+| 무엇을 보내나 | 로그(WAL/페이지)를 **그대로 복사·재생** | 변경을 **행 단위로 재실행** |
+| 비용/속도 | 레코드당 쌈, 단 **단일 스레드** | 레코드당 비쌈(파싱·인덱스·제약) |
+| 유연성 | 낮음(통째·동일버전·읽기전용) | 높음(선택·버전간·이기종·쓰기) |
+| 병렬화 | 어려움(LSN·페이지 종속) | 쉬움(트랜잭션/행 단위) |
+
+→ **왜 "논리 + 병렬"인가**: 물리는 단일 스레드라 멀티코어 부하를 못 따라가고 경직됨. 그래서 유연한 논리를 택하고 속도는 **병렬로 메운다** = 이 프로젝트.
+
+**1-3. 로그·좌표** — repl log(무엇이 바뀌었나), LSA(어디까지 처리했나; MySQL binlog pos·PG LSN 대응).
+
+**1-4. CUBRID는 어디에** — applylogdb = **논리(행 재실행)** → 병렬화로 메우는 게 발표 주제. 복제 = **PK 기반**(PK 필수). class=테이블, copylogdb(복사)/applylogdb(적용). 현 PoC = `tranid % worker` → 관련 트랜잭션 동시 실행(최대 문제)·쏠림.
+
+**1-5. 코디네이터 컨셉**
+```
+복제 로그 리더 → [코디네이터: 충돌/순서 판단 → 실행/대기 → worker 선택]
+   → worker pool(병렬) → 순서 정리(committed_lsa를 commit 순서대로 전진)
+```
+질문: ① 충돌? ② 어디까지 대기? ③ 어느 worker? (①②=correctness, ③=성능)
+
+### Part 2. 타벤더 비교
+
+| | MySQL | PostgreSQL | EDB PGD |
+|---|---|---|---|
+| 의존성 판단 위치 | **source**(binlog) | — (자동 병렬 없음) | **apply 측(writer)** |
+| 단위 | row write-set | — | 행(tuple) |
+| 병렬 | LOGICAL_CLOCK 독립 트랜잭션 | 단일 구독 **직렬** | writer 다수 |
+| 순서 보존 | **SPCO** | 직렬이라 자동 | **위반 시 롤백**(낙관적) |
+
+- MySQL: source 선계산 → replica 병렬 → SPCO 순서. (실행 ↔ 순서 분리)
+- PG: 단일 구독 직렬(병렬은 초기동기화·대형tx 한정).
+- PGD: apply 측 행충돌 + 위반 시 롤백.
+
+### Part 3. MySQL 차용 이유
+- **구조 1:1** — MySQL "LOGICAL_CLOCK(병렬) ↔ SPCO(순서)" 분리 = CUBRID "코디네이터(분배) ↔ 순서 정리(committed_lsa)". 목표 동일.
+- **PG 부적합**(자동 의존성 병렬 없음), **PGD 참고**(apply 측 판단 → CUBRID 코디네이터도 slave 측이라 더 가까움).
+- **차이**: MySQL은 source가 의존성 선계산. CUBRID 복제 로그엔 없음(class+PK뿐) → **1차안은 코디네이터가 class 단위 보수 판단**, 정밀(row/key)은 후속.
+
+### Part 4. 시나리오 검증 (핵심)
+**기준**: ① correctness(올바른가) ② 병렬성(최대인가). **컨셉**: class-OID 충돌 판단 → 직렬/병렬 → commit 순서 보존 → 재시작 멱등 skip.
+
+| 시나리오 | ① correctness | ② 병렬성 |
+|---|---|---|
+| 같은 class·같은 행(lost update, unique/PK 재사용) | ✅ same-class 직렬 | 직렬(불가피) |
+| 같은 class·다른 행 | ✅ 보수적 직렬 | ❌ 손해 → row/key 개선여지 |
+| 다른 class·독립 | ✅ | ✅ 최대 병렬 |
+| 다른 class·**FK** | ✅ Phase1 commit 순서 | Phase1 제한 → **Phase2 server 그룹핑** |
+| **상속** 공유 unique | ✅ FK와 동일(빈도 낮음) | FK와 동일 |
+| **파티션** | ✅ 파티션키 ∈ 인덱스키 규칙 | ✅ 파티션별 병렬 |
+| **재시작/복구** | ✅ 멱등 skip(commit_lsa ≤ baseline) | — |
+| **롱 트랜잭션** | ✅ 멱등 전제·복구비용 수용 | 단일tx = 1 worker |
+
+**FK가 핵심**: applier는 FK를 모름(로그 = class+PK) → 자식을 부모보다 먼저 적용 시 **server FK 검사 실패 → 복제 중단**. 상속(공유 unique)도 같은 가족. → **applier가 못 막는 cross-class = FK + 상속**, 둘 다 Phase 1 commit 순서가 커버. (상세: 아래 "정확성·순서 보존 설계")
+
+**Phase 1/2**: Phase1(applier) same-class 직렬 + FK 순서 보존 + 독립 병렬 / Phase2(cub_server) FK 병렬화는 FK 아는 server가 그룹 처리.
+
+**결론**: correctness = 전 시나리오 안전 / 병렬성 = 독립·파티션 최대, FK·상속은 Phase2 확장, 같은 class 다른 행은 row/key 향후.
+
+### 부록 A. 슬라이드 구성 (약 14장)
+1. 표지/목표·관건 2가지 · 2. 복제란 + 물리vs논리(토대) · 3. 왜 논리+병렬 / 로그·LSA · 4. CUBRID는 어디에 · 5. 코디네이터 컨셉 · 6. 벤더 비교표 · 7. 벤더 요약 · 8. MySQL 차용(1:1) · 9. PG/PGD + 차이 · 10. 검증 기준+컨셉 · 11. **시나리오 매트릭스**(핵심) · 12. FK 깊게 · 13. Phase1/2 · 14. 결론 + 후속(범위 밖)
+
+### 부록 B. 예상 질문
+- "왜 commit 순서?" → FK/상속을 applier가 못 가려서; server FK 검사라 비순차면 에러.
+- "재시작 중복?" → 멱등 skip(commit_lsa ≤ baseline), 기존 코드에 있음.
+- "파티션·LOB?" → 파티션 스키마 규칙으로 안전, LOB 데이터는 비복제(외부 저장).
+- "class 단위 병렬 손해?" → 맞음(같은 class 다른 행), 후속 row/key 개선.
+
+---
+
 ## 사전 지식 / 용어
 
 배경 지식이 서로 다른 팀원을 위해, 이 문서에서 쓰는 핵심 용어부터 정리한다.
