@@ -16,7 +16,7 @@
 | 파티션 테이블 | pruning 처리함(`sm_partitioned_class_type`) | 파티션 키 ∈ 모든 인덱스 키 규칙 → cross-partition unique/PK 충돌 **불가**(§2). FK+파티션은 CUBRID가 제약 | ✅ **구조적으로 안전** |
 | 뷰(vclass) | apply 경로에 처리 없음 | 뷰 자체는 복제 안 됨(기반 테이블이 로깅됨) | ✅ 문제 없음 |
 | 상속(super/sub class) | 인스턴스는 자기 class heap | 파티션과 유사 — 서로 다른 class OID | ⚠ 확인 필요 |
-| LOB 컬럼 | log_applier에 명시적 처리 미발견 | 외부 저장(ELO/ES) 복제 경로가 별도일 수 있음 | ⚠ 확인 필요 |
+| LOB 컬럼 | 행엔 ELO locator만, 데이터는 외부 저장 | LOB **데이터는 로그로 비복제**(외부 저장·별도 운영 사안), 코디네이터 무관 | ✅ 코디네이터 무관 |
 | non-MVCC / reusable-OID class | 분기 처리(`is_mvcc_class`, mvcc insid/delid 보정) | 주로 카탈로그/시스템 class | ✅ 처리됨(사용자 테이블 영향 적음) |
 | serial(`db_serial`) | 값은 레코드 이미지로 적용 | 카탈로그 갱신 순서 | ⚠ 경미(같은 class면 same-class가 커버) |
 | PK 없는 테이블 | — | 복제 비대상 | ✅ 해당 없음 |
@@ -59,10 +59,11 @@ PK/unique 키에는 항상 파티션 키가 포함됨
 - CUBRID 클래스 상속에서 인스턴스는 자신의 class heap에 저장된다 → 파티션과 유사하게 super/sub가 **서로 다른 class OID**.
 - super/sub 간 인덱스·제약 공유 여부에 따라 cross-class 충돌 가능성. → 파티션과 같은 축의 확인 필요(인덱스 단위).
 
-## 5. LOB 컬럼 ⚠
+## 5. LOB 컬럼 — 데이터는 비복제, 코디네이터 무관 ✅
 
-- `log_applier.c`에서 LOB/ELO/ES 전용 처리를 찾지 못했다. CUBRID LOB은 **외부 저장(ELO locator, `src/storage/es.c`)** 이라, LOB 데이터의 복제가 일반 레코드 이미지 적용과 다른 경로일 수 있다.
-- **확인 항목**: LOB 값이 복제 로그/레코드 이미지에 포함되는지, 별도 복제 메커니즘인지. 병렬 적용 시 LOB locator 정합성.
+- CUBRID LOB은 행에 **ELO locator(외부 저장 참조)** 만 저장하고 실제 바이트는 외부 저장(ES, `src/storage/es.c`)에 둔다. → 복제 로그/레코드 이미지에는 **locator만** 실리고 **LOB 데이터 자체는 트랜잭션 로그로 배송되지 않는다.**
+- applier는 `lob_path` credential을 가진다(`log_applier.c:1604~`) = locator를 슬레이브에서 해석할 경로. 즉 **LOB 데이터의 HA 정합은 외부 저장 공유/동기 정책의 문제**(별도 운영 사안)이지 병렬 코디네이터의 문제가 아니다.
+- **코디네이터 관점**: LOB 컬럼은 레코드 이미지 안의 값(locator) 하나일 뿐 → PK·class 단위로 일반 컬럼과 동일 처리. **새로운 충돌/순서 시나리오 없음.**
 
 ## 6. non-MVCC / reusable-OID class ✅(처리됨)
 
@@ -78,12 +79,12 @@ PK/unique 키에는 항상 파티션 키가 포함됨
 
 - 파티션은 처음 우려와 달리 **correctness 안전**으로 확인됐다(← §2). CUBRID의 "파티션 키 ∈ 모든 인덱스 키" 규칙이 cross-partition unique/PK 충돌을 구조적으로 막고, FK+파티션은 CUBRID가 제약한다. 남는 것은 병렬성 튜닝뿐.
 - 뷰·non-MVCC도 사실상 문제 없음(뷰는 비복제, non-MVCC는 처리됨).
-- 따라서 **applier가 자기 입력만으로 못 막는 cross-class 위험은 결국 FK가 유일**하다(파티션은 스키마 규칙이 보강). LOB·상속은 추가 코드 확인 전까지 보수적으로(직렬/barrier) 두는 것이 안전.
+- 따라서 **applier가 자기 입력만으로 못 막는 cross-class 위험은 결국 FK가 유일**하다(파티션은 스키마 규칙이 보강, LOB은 데이터 비복제로 무관). **상속**만 추가 코드 확인 전까지 보수적으로(직렬/barrier) 두는 것이 안전.
 
 ## 미해결 / 확인 필요 (우선순위)
 
 1. ~~파티션 class_oid root/partition + 인덱스 local/global~~ → **확인됨**: 파티션 키 ∈ 인덱스 키 규칙으로 cross-partition unique 충돌 불가(§2). root/partition은 병렬성 튜닝 문제일 뿐.
-2. **LOB** 복제 경로(레코드 이미지 포함 여부, locator 정합성).
+2. ~~LOB 복제 경로~~ → **확인됨**: LOB 데이터는 로그로 비복제(locator만), 외부 저장 동기는 별도 운영 사안 → 코디네이터 무관(§5).
 3. **상속** class의 인덱스/제약 공유와 cross-class 충돌.
 4. serial 카탈로그 갱신과 사용자 트랜잭션의 엮임.
 
