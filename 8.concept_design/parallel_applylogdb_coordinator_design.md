@@ -480,12 +480,14 @@ CUBRID가 같은 수준을 목표한다면 복제 log record에 아래 정보를
 항목의 의미는 다음과 같고, **핵심은 `watermark`(결과)와 `conflict key`(원재료)가
 *택1*이며 `sequence`·`barrier`는 공통**이라는 점이다.
 
-| 항목 | 무엇인가 | MySQL 대응 | 역할 |
+| 항목 | 무엇인가 | MySQL 대응 | 전송 여부 / 역할 |
 |---|---|---|---|
-| **transaction sequence** (공통) | 트랜잭션의 논리적 순번("나는 N번째") | `sequence_number` | 정체성·순서 번호 |
-| **dependency watermark** (택1-A) | "이 값 이하 선행 트랜잭션이 끝나야 실행 가능"한 경계 | `last_committed` | source가 의존성을 **미리 계산한 결과**(압축) |
-| **write set / conflict key** (택1-B) | 이 트랜잭션이 바꾼 행/키 집합 | write set(PK/UK 해시, source 내부 계산용) | applier가 **충돌을 직접 계산할 원재료** |
-| **barrier 여부** (공통) | 직렬화 강제 플래그(DDL/스키마/sysop) | gap/DDL 처리 | 앞뒤를 끊고 단독 실행 |
+| **transaction sequence** (공통) | 트랜잭션의 논리적 순번("나는 N번째") | `sequence_number` | **전송** — 정체성·순서 번호 |
+| **dependency watermark** (전송 택1-A) | "이 값 이하 선행 트랜잭션이 끝나야 실행 가능"한 경계 | `last_committed` | **전송** — source가 의존성을 미리 계산한 **결과**(압축). MySQL식 |
+| **conflict key** (전송 택1-B) | 이 트랜잭션이 바꾼 행/키 집합 | (MySQL MTS는 미전송; GR certification만 별도) | **전송** — **원재료**, applier가 충돌 직접 계산. PGD/apply측 |
+| **barrier 여부** (공통) | 직렬화 강제 플래그(DDL/스키마/sysop) | gap/DDL 처리 | **전송** — 앞뒤를 끊고 단독 실행 |
+
+> **"write set" 위치 주의**: write set(변경 키 해시)은 데이터로는 conflict key와 같지만, **MySQL에선 A의 *계산 입력*으로 source 내부에서만 쓰이고 전송되지 않는다**(그 결과인 watermark만 전송). B의 `conflict key`는 그 **원재료를 그대로 전송**하는 것. → 즉 A vs B = "가공 결과(watermark)를 보내냐 / 원재료(conflict key)를 보내냐"의 택1.
 
 - **A안 (watermark, MySQL 충실)**: `sequence` + `watermark`(+`barrier`). source가 write set으로 watermark를 계산해 싣고, applier는 따르기만 한다(write set은 안 실음).
 - **B안 (conflict key, apply 측 계산)**: `sequence` + `conflict key`(+`barrier`). 원재료를 실어 applier가 충돌을 직접 계산한다. CUBRID 코디네이터가 이미 apply 측 판단이라 **B가 더 자연스러운 확장**.
