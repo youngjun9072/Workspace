@@ -269,6 +269,19 @@ last_committed_lsa(baseline)=150,  크래시 @180
 
 > **설계 시사**: 코디네이터 설계는 PoC의 **측정 스캐폴딩(일부 worker만 flush 등)이 아니라**, "reader → dispatch → worker 병렬 → retire 순서 정리"라는 **골격**을 대상으로 한다. 이 골격이 우리가 정의한 코디네이터 컨셉(분배 ↔ 순서 정리)과 일치하고, 핵심 정합성(LSA·멱등 skip·server FK)은 develop과 공유하므로, **본 설계는 develop의 검증된 토대 위에 PoC 골격을 정식화하는 것**이다.
 
+#### PoC 모듈 구조와의 매핑 (← `2.design/poc_design.md`)
+
+PoC 구조는 별도 설계 문서 `2.design/poc_design.md`에 **`LogReader` + `ApplyWorker`** 2모듈로 정의돼 있다(상세·도식은 그 문서 참조). 본 문서의 **"코디네이터"·"순서 정리"는 새 모듈이 아니라 `LogReader`의 책임을 기능 분해한 것**이다:
+
+| 본 문서 개념 | PoC 모듈(poc_design.md)에서의 위치 |
+|---|---|
+| 복제 로그 리더 | `LogReader`의 read/build (LA_ITEM·LA_APPLY 구성) |
+| **코디네이터(충돌/순서 판단)** | `LogReader`의 **"commit 시 worker 큐 enqueue" 결정** — 현 `tranid % worker`를 충돌(class/FK)·순서 판단으로 **대체** |
+| worker | `ApplyWorker × N` (큐/세션/workspace, 병렬 apply·flush·commit) — **그대로** |
+| **순서 정리** | `LogReader`의 **"결과 수집 + commit LSA 순서로 `committed_lsa` 갱신 + reclaim"** — poc_design.md에 이미 LogReader 역할로 명시 |
+
+> 즉 본 설계의 핵심 변경은 **`LogReader`의 enqueue 지점에 충돌·순서 판단(코디네이터)을 넣는 것** 하나이며, 모듈 분할·worker·순서 정리 골격은 poc_design.md를 따른다.
+
 ### 남은 확인 항목
 
 - ~~논리 재실행의 재시작 멱등성~~ → **확인됨**: 2단계 LSA skip으로 **idempotent re-apply** 보장(위 "재시작 시 재적용 멱등성" 절). develop·PoC 동일.
