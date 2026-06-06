@@ -471,21 +471,26 @@ commit order 보존 설정
 ## 코디네이션 CUBRID 적용 방안
 
 MySQL과 동일한 방식으로 병렬 적용을 구현하려면 master/source 쪽에서 복제 로그에
-transaction dependency metadata를 기록해야 한다. MySQL은 source가 binary log에
-`sequence_number`, `last_committed`, write set 기반 dependency 정보를 남기고,
-replica coordinator가 이 정보를 읽어 병렬 실행 가능 여부를 판단한다 [3][4].
+transaction dependency metadata를 기록하고, replica coordinator가 이를 읽어 병렬
+실행 가능 여부를 판단한다. **단 MySQL은 source에서 write set으로 `last_committed`를
+*계산*해 binary log에는 `sequence_number` + `last_committed`만 남긴다 — write set
+자체는 복제 로그에 싣지 않는다**(replica는 watermark만 보고 따른다) [3][4].
 
-CUBRID에서 이 방식을 그대로 적용하려면 복제 로그에 다음과 같은 정보를 추가해야 한다.
+CUBRID가 같은 수준을 목표한다면 복제 log record에 아래 정보를 추가해야 한다. 각
+항목의 의미는 다음과 같고, **핵심은 `watermark`(결과)와 `conflict key`(원재료)가
+*택1*이며 `sequence`·`barrier`는 공통**이라는 점이다.
 
-```text
-transaction sequence
-dependency watermark
-write set 또는 conflict key
-barrier 여부
-```
+| 항목 | 무엇인가 | MySQL 대응 | 역할 |
+|---|---|---|---|
+| **transaction sequence** (공통) | 트랜잭션의 논리적 순번("나는 N번째") | `sequence_number` | 정체성·순서 번호 |
+| **dependency watermark** (택1-A) | "이 값 이하 선행 트랜잭션이 끝나야 실행 가능"한 경계 | `last_committed` | source가 의존성을 **미리 계산한 결과**(압축) |
+| **write set / conflict key** (택1-B) | 이 트랜잭션이 바꾼 행/키 집합 | write set(PK/UK 해시, source 내부 계산용) | applier가 **충돌을 직접 계산할 원재료** |
+| **barrier 여부** (공통) | 직렬화 강제 플래그(DDL/스키마/sysop) | gap/DDL 처리 | 앞뒤를 끊고 단독 실행 |
 
-즉 MySQL과 같은 수준의 logical clock/write set 기반 병렬화를 목표로 한다면
-복제 로그 포맷 또는 복제 log record 확장이 필요하다.
+- **A안 (watermark, MySQL 충실)**: `sequence` + `watermark`(+`barrier`). source가 write set으로 watermark를 계산해 싣고, applier는 따르기만 한다(write set은 안 실음).
+- **B안 (conflict key, apply 측 계산)**: `sequence` + `conflict key`(+`barrier`). 원재료를 실어 applier가 충돌을 직접 계산한다. CUBRID 코디네이터가 이미 apply 측 판단이라 **B가 더 자연스러운 확장**.
+
+> 즉 `watermark`와 `conflict key`는 "결과를 싣느냐 vs 원재료를 싣느냐"의 **택1**이지 둘 다 싣는 게 아니다. logical clock/write set 기반 정밀 병렬을 목표로 하면 복제 log record 확장이 필요하다.
 
 다만 1차 구현에서 반드시 복제 로그부터 변경할 필요는 없다. 현재 `applylogdb`는
 복제 로그를 읽으면서 transaction별 apply list를 구성한다. 이 과정에서 slave/applylogdb
