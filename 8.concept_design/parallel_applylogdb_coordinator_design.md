@@ -60,9 +60,9 @@ slave 비순차 병렬: T2(자식)가 T1(부모)보다 먼저 → server FK 검�
 | 파티션 | 병렬 안전 | 파티션키 ∈ 인덱스키 규칙 |
 | 롱 트랜잭션 | 단일 worker | 병렬 이득 제한 |
 
-**[15] 재시작 시 문제점 ★** — 논리 재실행이라 재시작 시 `required_lsa`(LWM)부터 재적용. 기존 **멱등 skip**(`commit_lsa ≤ committed_lsa`면 건너뜀)은 **직렬 전제**다. **병렬에선**: worker가 commit 순서보다 앞서 durable commit한 트랜잭션(`commit_lsa > committed_lsa` watermark)은 재시작 시 **skip 안 돼 재적용 = 중복** 위험. (poc_design.md §34가 "정교한 오류 복구"를 PoC에서 뺀 그 영역 = 미해결)
+**[15] 재시작 문제 — "병렬화 때문에" 생기는 정합 문제 ★** — 짚을 점: 재시작 시 **재적용 자체는 병렬일 필요 없다(직렬 재적용으로 충분)**. 문제는 그 전에 **병렬 운영이 남긴 out-of-order durable commit**이다 — worker가 commit 순서보다 앞서 durable commit한 트랜잭션은 `commit_lsa > committed_lsa`(watermark)라, `required_lsa`부터 (직렬로) 재적용할 때 기존 **멱등 skip**(`commit_lsa ≤ watermark`면 건너뜀)에 안 걸려 **재적용 = 중복**된다. → **직렬 운영이면 watermark가 곧 frontier라 안 생기는, 오직 병렬화 때문에 생기는 문제.** (poc_design.md §34 '정교한 오류 복구' 제외 영역 = 미해결)
 
-**[16] 재시작 문제 해결 — 변경 필요한 부분** — watermark 단일값만으론 부족 → 선택지:
+**[16] 재시작 문제 해결 — 변경 필요한 부분** — 재적용은 직렬로 두되, **skip 판정이 out-of-order durable commit을 정확히 반영**하게 해야 한다 → 선택지:
 - ① watermark 위에 **이미 적용된 트랜잭션을 추가 추적**(applied set 영속),
 - ② out-of-order commit **윈도우 bound**(watermark에서 N 이내만 앞서 commit 허용),
 - ③ worker commit 순서 강제(병렬 이득↓).
@@ -234,7 +234,7 @@ last_committed_lsa(baseline)=150,  크래시 @180
 
 > 의미: 물리 redo의 **page-LSN 멱등성**에 대응하는 것을, CUBRID는 **복제 진도 LSA(`commit_lsa`/`item->lsa`)를 기동 baseline과 비교**하는 방식으로 구현한다. (serial 적용에선 `committed_lsa`가 곧 실제 durable frontier라 재시작 정합이 깔끔하다.)
 
-> **⚠ 병렬(비순차 commit)에선 이 단일 baseline만으론 부족하다.** worker가 commit 순서보다 앞서 durable commit한 트랜잭션은 `commit_lsa > committed_lsa`(watermark)이므로, 재시작 시 `commit_lsa ≤ last_committed_lsa` 조건에 걸리지 않아 **재적용 = 중복**될 수 있다. → 정식 병렬 구현에서 보강 필요: **① applied set 추가 추적(영속) / ② out-of-order commit 윈도우 bound / ③ worker commit 순서 강제** 중 택. (이는 poc_design.md §34가 PoC에서 제외한 '정교한 오류 복구' 영역이며, 발표 요약 [15][16]에 정리.)
+> **⚠ 병렬(비순차 commit)에선 이 단일 baseline만으론 부족하다.** (재적용 자체는 직렬로 충분 — 문제는 *병렬 운영이 남긴* out-of-order durable commit이다.) worker가 commit 순서보다 앞서 durable commit한 트랜잭션은 `commit_lsa > committed_lsa`(watermark)이므로, 재시작 시 `commit_lsa ≤ last_committed_lsa` 조건에 걸리지 않아 **재적용 = 중복**될 수 있다. 직렬 운영이면 watermark가 곧 durable frontier라 안 생기는, **오직 병렬화 때문에 생기는 문제**다. → 정식 병렬 구현에서 보강 필요: **① applied set 추가 추적(영속) / ② out-of-order commit 윈도우 bound / ③ worker commit 순서 강제** 중 택. (poc_design.md §34가 PoC에서 제외한 '정교한 오류 복구' 영역; 발표 요약 [15][16].)
 
 ### PoC 구현 점검 (develop 대비 + 설계 poc_design.md 대비) — 코드 확인됨
 
