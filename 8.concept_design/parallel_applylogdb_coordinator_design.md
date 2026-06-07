@@ -24,11 +24,25 @@ CUBRID HA 노드는 마스터 프로세스(`cub_master`), 데이터베이스 서
 
 ## A.2 applylogdb는 로지컬(행 재실행) 복제다
 
-코드를 확인해 보면 applylogdb의 워커는 슬레이브에 DB 클라이언트 세션으로 접속해, 복제 로그를 `la_apply_insert_log`·`la_apply_update_log`·`la_apply_delete_log`·`la_apply_statement_log`로 **행/문장 단위로 다시 실행**한다(`log_applier.c:897-902`, 워커 세션 `:1720~`) [C2]. 즉 마스터의 물리 페이지를 그대로 복사하는 방식이 아니라 변경을 논리적으로 재적용하는 **로지컬 복제**다. 쉽게 말하면 마스터에서 일어난 INSERT/UPDATE/DELETE를 슬레이브에서 다시 수행하는 셈인데, 다만 SQL 문장을 재실행하는 것이 아니라 마스터가 만든 *변경된 행 이미지*를 서버 내부 경로(locator)로 직접 반영한다 — 물리 복제(페이지 바이트 복사)와도, 단순 SQL 재실행과도 구분되는 중간 형태다. 그 결과 슬레이브는 자기 로그를 새로 생성하므로 **슬레이브의 LSA와 마스터의 LSA는 별개의 값**이 된다.
+**어떻게 도는가 (개념).** applylogdb의 워커는 슬레이브에 **DB 클라이언트로 접속해 마스터의 변경을 행/문장 단위로 다시 실행**한다. 물리 페이지를 바이트째 복사하는 것도, SQL 문장을 그대로 재실행하는 것도 아닌 **중간 형태**다 — 마스터가 만든 *변경된 행 이미지*를 서버 내부 경로(locator)로 직접 반영한다. 재실행 방식이라 **슬레이브는 자기 로그를 새로 생성**하고, 그래서 **슬레이브의 LSA와 마스터의 LSA는 별개 값**이 된다.
 
-이 적용 경로에서 정확성과 직결되는 사실 몇 가지를 코드로 확인했다 [C2]. 첫째, 적용은 `la_repl_add_object`로 변경 객체를 워커별 리스트에 모았다가 `locator_repl_flush_all`로 한꺼번에 flush하는 방식이다(`:7589`, `:7470`). 둘째, **복제는 PK를 기준으로 동작**한다 — 복제 로그 항목은 `class + PK 값 + operation`만 담고(`la_make_repl_item:5708~`, 마스터 측 `repl_log_insert`는 PK 인덱스에서만 로그를 남긴다), 따라서 복제 대상 테이블에는 반드시 PK가 있어야 하고 충돌 판단의 키로 class와 PK를 항상 쓸 수 있다. 셋째, **외래키 검사는 applier가 아니라 슬레이브 서버가 한다** — `la_apply_*`는 변경을 모아 서버에 보낼 뿐이고, FK는 서버의 `locator_insert_force`/`update_force` 안에서 검사된다(`xlocator_repl_force` → `locator_insert_force(..., dont_check_fk=false)` → `locator_check_foreign_key`, `locator_sr.c:7029,5198`). 그래서 자식 행을 부모보다 먼저 적용하면 서버의 FK 검사에 걸려 apply 에러가 나고 복제가 멈춘다(이 점이 뒤의 설계를 좌우한다).
+이 적용 경로에서 **설계를 좌우하는 성질**이 셋 있다.
 
-실패 처리도 봐 두면, 마스터에서 트랜잭션이 abort되면 applier는 그 트랜잭션의 복제 항목 리스트를 비우고(`LOG_ABORT → la_free_repl_items_by_tranid`), apply 중 에러가 나면 재시도 가능한 에러는 잠시 쉬었다 다시 시도하며(`la_retry_on_error` → `LA_SLEEP`+continue), 그래도 안 되면 `fail_counter`를 올린다(`:8841-8849`, `:7703`).
+- **PK 기반 복제** — 복제 로그 항목은 `class + PK + operation`만 담는다. 그래서 복제 대상 테이블엔 PK가 필수이고, 충돌 판단 키로 `(class, PK)`를 항상 쓸 수 있다.
+- **FK 검사는 applier가 아니라 슬레이브 서버가 한다** — applier는 변경을 모아 서버에 넘길 뿐이고, FK는 서버의 force 경로 안에서 검사된다. 따라서 **자식을 부모보다 먼저 적용하면 서버 FK 검사에 걸려 복제가 멈춘다**(이 점이 뒤 설계의 핵심이다).
+- **변경은 모았다가 한꺼번에 flush** — 워커별 리스트에 쌓아 두고 일괄 반영한다.
+
+그리고 **실패 처리**는 — 마스터에서 트랜잭션이 abort되면 그 트랜잭션의 복제 항목을 비우고, apply 에러는 재시도하다 그래도 안 되면 `fail_counter`를 올린다.
+
+**코드 근거** (`feature/parallel_applylogdb_poc` 기준, [C2])
+
+| 동작 / 성질 | 함수 · 위치 |
+|---|---|
+| 행/문장 재실행 (로지컬) | `la_apply_insert/update/delete/statement_log` (`log_applier.c:897-902`), 워커 세션 `:1720~` |
+| 변경 수집 → 일괄 flush | `la_repl_add_object`(`:7589`) → `locator_repl_flush_all`(`:7470`) |
+| PK 기반 (로그 = class+PK+op) | `la_make_repl_item:5708~`, 마스터 측 `repl_log_insert`(PK 인덱스에서만) |
+| FK = 슬레이브 서버가 검사 | `xlocator_repl_force` → `locator_insert_force(…, dont_check_fk=false)` → `locator_check_foreign_key` (`locator_sr.c:7029,5198`) |
+| 실패 처리 | abort: `LOG_ABORT → la_free_repl_items_by_tranid` / 재시도: `la_retry_on_error`+`LA_SLEEP`(`:8841-8849`) / `fail_counter`(`:7703`) |
 
 ## A.3 물리 vs 로지컬 — 병렬화는 왜 로지컬에서만 하는가
 
