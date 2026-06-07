@@ -18,7 +18,7 @@ CUBRID HA 노드는 마스터 프로세스(`cub_master`), 데이터베이스 서
 
 ![LSA로 보는 복제 위치와 진도](images/lsa_mechanism.png)
 
-복제가 "어디까지 따라왔는지"는 결국 로그 상의 위치(LSA)로 표현된다. 위 그림처럼 복제 로그를 LSA 순서(왼쪽=과거 → 오른쪽=최신)로 늘어놓으면, `applylogdb`가 **마스터와 같은 순서로 반영을 끝낸 지점**이 진도이고(이를 `committed_lsa`라 부른다), 그 지점과 **마스터 로그의 끝** 사이의 간격이 곧 **복제 지연(lag)** 이다. 병렬화로 줄이려는 것이 바로 이 간격이다. 재시작 기준점·읽기 커서·수신 위치처럼 더 세분된 LSA 표지들은 진도 관리와 재시작을 논할 때 다시 필요하므로 B.3에서 정리한다.
+복제가 "어디까지 따라왔는지"는 결국 로그 상의 위치(LSA)로 표현된다. 위 그림처럼 복제 로그를 LSA 순서(왼쪽=과거 → 오른쪽=최신)로 늘어놓으면, `applylogdb`가 **마스터와 같은 순서로 반영을 끝낸 지점**이 진도이고(이를 `committed_lsa`라 부른다), 그 지점과 **마스터 로그의 끝** 사이의 간격이 곧 **복제 지연(lag)** 이다. 병렬화로 줄이려는 것이 바로 이 간격이다. 재시작 기준점·읽기 커서·수신 위치처럼 더 세분된 LSA 표지들은 진도 관리와 재시작을 논할 때 다시 필요하므로 B.4에서 정리한다.
 
 용어를 미리 맞춰 두면, 복제 로그(repl log)는 마스터가 "무엇이 바뀌었는지"를 남긴 기록이고, **LSA**(Log Sequence Address)는 그 로그 안의 위치를 가리키는 번호표다. 정확히는 **로그 페이지 id(`pageid`)와 페이지 내 오프셋(`offset`)** 으로 이루어진다(`log_lsa.hpp`: pageid 48bit + offset 16bit) — 즉 "몇 번 로그 페이지의 몇 바이트 지점"이라는 뜻이지 파일 번호가 아니다. "어디까지 처리했는지"를 이 LSA로 표현하며, 역할로는 MySQL의 binlog position(파일명+오프셋)·PostgreSQL의 LSN(WAL 바이트 위치)에 대응한다(좌표의 granularity는 서로 다르다). CUBRID에서 **class**는 테이블을 가리키는 말이라, 이후 예시의 `TblA`는 곧 class A다. 그리고 이 문서가 새로 도입하려는 **코디네이터**는 워커 앞단에서 "이 트랜잭션을 지금 보내도 되는가(충돌·순서)"를 판단해 분배하는 계층이다. 마지막으로 **committed_lsa**는 "어디까지 순서대로 반영을 끝냈는가"를 가리키는 진도이고, **순서 정리**는 병렬로 끝난 결과를 commit 순서대로 줄 세워 이 진도를 전진시키는 단계를 말한다.
 
@@ -52,27 +52,27 @@ CUBRID HA 노드는 마스터 프로세스(`cub_master`), 데이터베이스 서
 
 핵심은 **병렬화 가능성**이다. 물리 재생은 LSN·페이지에 강하게 묶여 있어 병렬화가 어렵다(PostgreSQL도 parallel recovery는 아직 제안 단계다 [P-rec]). 반면 논리 복제는 트랜잭션·행 단위라 "어떤 트랜잭션이 서로 독립인가"를 판단해 병렬화하기가 상대적으로 쉽다. 그래서 현대 DB들이 유연한 논리 복제를 택하고 그 약점인 적용 속도를 병렬화로 메우는 방향으로 가며, 실제로 **병렬 적용을 제공하는 것은 전부 논리 복제 계열**이다(MySQL의 멀티스레드 복제, PostgreSQL의 parallel apply, EDB PGD의 Parallel Apply). CUBRID의 applylogdb 역시 논리 복제이므로 같은 논리로 병렬화가 의미가 있다 — 이것이 이 프로젝트의 출발점이다(상세는 `reference/base/physical_vs_logical_replication.md`).
 
-## A.5 현재 PoC의 병렬화 방식과 한계
+---
+
+# Act B. PoC 설계·구현과 결과
+
+## B.1 현재 PoC의 병렬화 방식과 한계
 
 먼저 왜 병렬화가 필요한지부터 짚자. 마스터는 여러 클라이언트가 멀티코어로 동시에 쓰지만, 슬레이브의 applylogdb 반영은 사실상 직렬이라 마스터를 못 따라가 **복제 지연(lag)** 이 쌓인다. lag이 커지면 두 가지가 곤란하다 — 마스터 장애로 슬레이브가 승격될 때 뒤처진 만큼 **데이터가 유실되고(failover RPO)**, 슬레이브를 읽기용으로 쓰면 **오래된 데이터**를 보게 된다. 그래서 슬레이브도 멀티코어를 활용해 병렬로 따라잡아야 한다 — 그것이 이 작업의 목적이다.
 
 현재 PoC는 commit 레코드를 만나면 `worker_idx = tranid % LA_APPLY_WORKER_COUNT`로 워커를 고른다. 구현이 단순하다는 장점이 있지만 두 가지 문제가 있다. 하나는 서로 관련 있는(같은 데이터를 건드리는) 트랜잭션이 우연히 다른 워커에 배정되어 동시에 실행될 수 있다는 점이고 — 이러면 복제 결과가 원본의 실행 순서와 달라질 수 있어 가장 큰 문제다 — 다른 하나는 서로 독립인 트랜잭션이 같은 워커에 쏠려 병렬 효과를 못 내는 경우다. 결국 단순한 워커 선택기로는 부족하고, 트랜잭션 간 **충돌과 순서를 먼저 판단하는 코디네이터**가 필요하다(Act D).
 
----
-
-# Act B. PoC 설계·구현과 결과
-
-## B.1 PoC의 모듈 구조와 develop 대비 변경점
+## B.2 PoC의 모듈 구조와 develop 대비 변경점
 
 PoC의 구조는 별도 설계 문서 `2.design/poc_design.md`에 **LogReader와 ApplyWorker** 두 모듈로 정의되어 있다. LogReader는 active/archive 로그에서 복제 로그를 읽어 `LA_ITEM`을 만들고 트랜잭션 단위로 `LA_APPLY`를 구성하다가, commit 로그를 만나면 그 트랜잭션을 확정해 워커 큐에 넣는다. 그리고 워커들의 완료 결과를 수집해 **commit LSA 순서대로** 전역 완료를 판정하고 `committed_lsa`와 `db_ha_apply_info`를 갱신하며 다 쓴 항목을 정리한다. ApplyWorker는 설정된 개수만큼 생성되어 각자 작업 큐·워커 로컬 workspace·슬레이브 서버 세션을 갖고, 받은 트랜잭션을 적용·flush·commit한 뒤 완료 LSA를 LogReader에 보고한다. 즉 이 PoC 구조에서 우리가 말하는 "코디네이터"와 "순서 정리"는 새로운 모듈이 아니라 **LogReader가 이미 맡고 있는 책임**이다 — 코디네이터는 LogReader가 워커 큐에 넣는 그 enqueue 판단(현재 `tranid % worker`)을 충돌·순서 판단으로 바꾸는 것이고, 순서 정리는 LogReader의 결과 수집·committed_lsa 갱신 부분이다.
 
 develop(오리지널)과 PoC를 비교하면, PoC는 `log_applier.c`에 약 3,900줄을 더했는데 대부분이 워커·dispatch·retire 구조와 측정 계측이다. **핵심 정합성 메커니즘(LSA 관리, 재시작 멱등 skip, FK 검사, 복제 로그 형식)은 develop과 동일**하다 — develop은 단일 직렬 함수 `la_apply_commit_list`로 적용하던 것을 PoC가 워커 경로로 옮겼을 뿐 판정 조건은 같다 [C2]. 설계 문서(poc_design.md)와 실제 코드 사이에는 몇 가지 차이가 있다. 설계는 "insert 연산만"(§29)을 대상으로 했지만 코드는 **INSERT와 UPDATE를 모두** 지원하며(`la_is_supported_poc_item`; DELETE는 함수만 있고 실제로는 미지원), 설계에 없던 측정 계측(`la_Debug_progress`)과 병목 측정용 제약(일부 워커만 flush하는 `LA_APPLY_WORKER_REPL_ACTIVE_COUNT`, apply_info 갱신을 건너뛰는 `LA_SKIP_READER_COMMIT_APPLY_INFO`)이 들어가 있다. 이 측정용 제약들은 정식 구현에서는 제거 대상이다. 반대로 설계가 명시적으로 PoC 범위에서 제외한 것도 있는데, 바로 §32·34의 **"트랜잭션 간 의존성 판별, 병렬 스케줄링, 정교한 오류 복구"** 다. 즉 현재 PoC가 의존성을 안 보고 `tranid % worker`로만 분배하는 것은 설계대로이며, **우리 코디네이터는 PoC가 의도적으로 비워 둔 바로 그 자리를 채우는 다음 단계**다.
 
-## B.2 PoC 결과 — 병렬화의 가능성
+## B.3 PoC 결과 — 병렬화의 가능성
 
 같은 설정(buffer 5G, dwb=0)에서 순차 적용과 병렬 적용을 비교했을 때, 병렬화로 슬레이브 전체 반영 시간이 약 3.4배 단축되고 복제 지연(lag)이 4~6배 줄었다. 다만 워커 하나가 단일 테이블을 처리하는 시간 자체는 1.5~2배 늘었는데(insert 기준 8.05초 → 16.10초), 이는 병목이 네트워크가 아니라 **슬레이브에서 실제로 변경을 적용하는 on-CPU 로직**(로그 생성의 prior_lsa, lock, page/space 할당)에 있기 때문이다. 이는 insert/update 콜체인 분석으로 확인했다(상세는 `final_report.md`). 요컨대 **병렬화의 효과 자체는 분명하다**는 것이 PoC의 결론이다. 다만 PoC는 의존성을 보지 않고 단순 분배만 하므로, 자연히 다음 질문이 따라온다 — *제대로 된(충돌·순서를 지키는) 병렬화는 어떻게 해야 하는가?*
 
-## B.3 진도 관리에 쓰이는 LSA들
+## B.4 진도 관리에 쓰이는 LSA들
 
 이 질문에 답하기 전에, applylogdb가 진도를 추적하는 데 쓰는 LSA들을 정리해 두면 뒤의 순서 정리·재시작 논의가 쉬워진다 [C2]. 마스터 로그의 끝을 가리키는 `append_lsa`·`eof_lsa`는 복제 지연 계산에 쓰인다(`append_lsa − committed_lsa`가 대략 lag이다). applier의 진행을 나타내는 핵심 값은 넷이다. `final_lsa`는 마지막으로 읽어 처리한 위치(읽기 커서)이고, `required_lsa`는 "아직 끝나지 않은 가장 오래된 트랜잭션의 시작" 즉 **재시작 시 다시 읽기 시작할 지점(low-water mark)** 으로 `la_find_required_lsa`가 진행 중 트랜잭션들의 최저 start_lsa로 계산한다(`:4078`). `committed_lsa`는 마지막으로 반영을 끝낸 commit 로그의 위치이고 `committed_rep_lsa`는 마지막으로 반영한 데이터 변경 로그의 위치인데, 둘 다 순서 정리(retire) 단계에서 갱신된다(`:2082`). 이 값들은 `db_ha_apply_info` 카탈로그에 영속되어 재시작 시 `la_get_last_ha_applied_info`로 로드되며, 정상 상태의 진도선은 `required_lsa ≤ committed_lsa ≤ final_lsa ≤ append_lsa`다.
 
