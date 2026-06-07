@@ -72,5 +72,5 @@
 
   <!-- feedback: report completed lsa (dashed, right margin) -->
   <polyline points="770,300 788,300 788,90 600,90" fill="none" stroke="#2f7d4a" stroke-width="1.3" stroke-dasharray="5,4" marker-end="url(#pg)"/>
-  <text x="784" y="210" transform="rotate(90 784 210)" text-anchor="middle" font-size="11" fill="#2f7d4a">report completed lsa</text>
+  <text x="690" y="80" text-anchor="middle" font-size="11" fill="#2f7d4a">report completed lsa &#8593;</text>
 </svg>
