@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="320" viewBox="0 0 820 320" font-family="DejaVu Sans, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#555"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="820" height="320" fill="#ffffff"/>
+
+  <!-- direction -->
+  <text x="40" y="46" font-size="12" fill="#777">older (small LSA)</text>
+  <line x1="160" y1="42" x2="700" y2="42" stroke="#bbb" stroke-width="1" marker-end="url(#arr2)"/>
+  <text x="712" y="46" font-size="12" fill="#777">newer (large LSA)</text>
+
+  <!-- log bar regions: 40..190..350..500..640..780 -->
+  <rect x="40"  y="90" width="150" height="46" fill="#e9ecef" stroke="#adb5bd"/>
+  <rect x="190" y="90" width="160" height="46" fill="#dbe7f3" stroke="#6f9fcf"/>
+  <rect x="350" y="90" width="150" height="46" fill="#d8efdd" stroke="#6cbf86"/>
+  <rect x="500" y="90" width="140" height="46" fill="#fdf3d4" stroke="#d9b441"/>
+  <rect x="640" y="90" width="140" height="46" fill="#fbe0de" stroke="#e08b86"/>
+
+  <!-- region labels -->
+  <text x="115" y="118" text-anchor="middle" font-size="12" fill="#444">done</text>
+  <text x="270" y="118" text-anchor="middle" font-size="12" fill="#2c5f8a">baseline</text>
+  <text x="425" y="118" text-anchor="middle" font-size="12" fill="#2f7d4a">applying</text>
+  <text x="570" y="118" text-anchor="middle" font-size="12" fill="#9a7d1f">buffered</text>
+  <text x="710" y="118" text-anchor="middle" font-size="12" fill="#b4524c">not yet (lag)</text>
+
+  <!-- marker ticks at 190,350,500,640,780 -->
+  <g stroke="#333" stroke-width="1.5">
+    <line x1="190" y1="80" x2="190" y2="150"/>
+    <line x1="350" y1="80" x2="350" y2="150"/>
+    <line x1="500" y1="80" x2="500" y2="150"/>
+    <line x1="640" y1="80" x2="640" y2="150"/>
+    <line x1="780" y1="80" x2="780" y2="150"/>
+  </g>
+  <!-- marker names -->
+  <text x="190" y="172" text-anchor="middle" font-size="12" fill="#1a2733">required_lsa</text>
+  <text x="350" y="172" text-anchor="middle" font-size="12" fill="#1a2733">committed_lsa</text>
+  <text x="500" y="172" text-anchor="middle" font-size="12" fill="#1a2733">final_lsa</text>
+  <text x="640" y="172" text-anchor="middle" font-size="12" fill="#1a2733">recv_end</text>
+  <text x="780" y="172" text-anchor="end"    font-size="12" fill="#1a2733">append/eof_lsa</text>
+
+  <!-- roles under names -->
+  <text x="190" y="190" text-anchor="middle" font-size="10" fill="#888">restart point</text>
+  <text x="350" y="190" text-anchor="middle" font-size="10" fill="#888">progress</text>
+  <text x="500" y="190" text-anchor="middle" font-size="10" fill="#888">read cursor</text>
+  <text x="640" y="190" text-anchor="middle" font-size="10" fill="#888">copied up to</text>
+  <text x="780" y="190" text-anchor="end"    font-size="10" fill="#888">master end</text>
+
+  <!-- lag bracket: committed(350)..eof(780) -->
+  <line x1="350" y1="232" x2="780" y2="232" stroke="#b4524c" stroke-width="1.2" marker-end="url(#arr2)"/>
+  <line x1="350" y1="226" x2="350" y2="238" stroke="#b4524c" stroke-width="1.2"/>
+  <text x="565" y="252" text-anchor="middle" font-size="11" fill="#b4524c">replication lag = eof_lsa - committed_lsa</text>
+
+  <!-- invariant -->
+  <text x="40" y="290" font-size="11" fill="#666">invariant:  required_lsa  &#8804;  committed_lsa  &#8804;  final_lsa  &#8804;  recv_end  &#8804;  append/eof_lsa</text>
+</svg>

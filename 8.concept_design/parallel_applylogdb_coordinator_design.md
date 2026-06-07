@@ -10,9 +10,15 @@
 
 ## A.1 현재 CUBRID HA 복제는 어떻게 도는가
 
+![CUBRID HA 복제 전체 아키텍처](images/ha_architecture.png)
+
 CUBRID HA 노드는 마스터 프로세스(`cub_master`), 데이터베이스 서버(`cub_server`), 그리고 복제를 담당하는 두 프로세스 **`copylogdb`** 와 **`applylogdb`** 로 구성된다 [C1]. 복제는 두 단계로 이루어진다. 먼저 슬레이브의 `copylogdb`가 마스터 서버에 트랜잭션 로그를 요청해 받아 로컬에 복사해 둔다(저장 위치는 `ha_copy_log_base`, 동기 방식은 `ha_copy_sync_mode`의 SYNC/ASYNC로 설정). 그다음 `applylogdb`가 그 복사된 로그를 읽어 슬레이브 DB에 실제로 반영하고, 어디까지 반영했는지를 내부 카탈로그 `db_ha_apply_info`에 기록한다 [C1].
 
 복사와 반영을 굳이 다른 프로세스로 나눈 이유는, 반영이 느려지더라도 로그를 받아두는 일은 계속할 수 있게 하여 반영 지연이 마스터의 트랜잭션 진행에 영향을 주지 않도록 하기 위함이다 [C1]. 이 문서가 손대려는 부분은 이 가운데 **applylogdb의 반영(apply) 단계**다.
+
+![LSA로 보는 복제 위치와 진도](images/lsa_mechanism.png)
+
+이 복제가 "어디까지 받고·읽고·반영했는지"를 표시하는 방식이 위 그림이다. 복제 로그를 LSA 순서(왼쪽=과거 → 오른쪽=최신)로 펼쳐 놓고 진도 표지들을 얹은 것인데, 오른쪽부터 보면 마스터 로그의 끝이 **`append/eof_lsa`**, `copylogdb`가 받아 둔 마지막 위치가 **`recv_end`** 다(둘 사이는 아직 못 받은 구간). `applylogdb`는 받아 둔 로그를 읽기 커서 **`final_lsa`** 까지 읽어 적용에 투입하고, 그중 **마스터와 같은 순서로 반영·commit을 끝낸 경계**가 **`committed_lsa`**(=진도)다. 그리고 **`required_lsa`** 는 아직 끝나지 않은 가장 오래된 트랜잭션의 시작점으로, **재시작 시 여기서부터 다시 읽어 멱등 재적용**하는 기준점(low-water mark)이다. 그래서 정상 상태에서 이 표지들은 늘 `required_lsa ≤ committed_lsa ≤ final_lsa ≤ recv_end ≤ append/eof_lsa` 순서를 유지하며, 복제 지연(lag)은 대략 `append/eof_lsa − committed_lsa`로 가늠한다. 이 값들은 `db_ha_apply_info`에 영속되어 재시작 지점과 진도를 결정한다(LSA 종류별 세부와 코드 위치는 B.3에서 다시 다룬다).
 
 용어를 미리 맞춰 두면, 복제 로그(repl log)는 마스터가 "무엇이 바뀌었는지"를 남긴 기록이고, **LSA**(Log Sequence Address)는 그 로그 안의 위치를 가리키는 번호표다. 정확히는 **로그 페이지 id(`pageid`)와 페이지 내 오프셋(`offset`)** 으로 이루어진다(`log_lsa.hpp`: pageid 48bit + offset 16bit) — 즉 "몇 번 로그 페이지의 몇 바이트 지점"이라는 뜻이지 파일 번호가 아니다. "어디까지 처리했는지"를 이 LSA로 표현하며, 역할로는 MySQL의 binlog position(파일명+오프셋)·PostgreSQL의 LSN(WAL 바이트 위치)에 대응한다(좌표의 granularity는 서로 다르다). CUBRID에서 **class**는 테이블을 가리키는 말이라, 이후 예시의 `TblA`는 곧 class A다. 그리고 이 문서가 새로 도입하려는 **코디네이터**는 워커 앞단에서 "이 트랜잭션을 지금 보내도 되는가(충돌·순서)"를 판단해 분배하는 계층이다. 마지막으로 **committed_lsa**는 "어디까지 순서대로 반영을 끝냈는가"를 가리키는 진도이고, **순서 정리**는 병렬로 끝난 결과를 commit 순서대로 줄 세워 이 진도를 전진시키는 단계를 말한다.
 
