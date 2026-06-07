@@ -167,6 +167,8 @@ applylogdb는 논리 재실행 방식이라 재시작하면 `required_lsa`(LWM)�
 
 ③의 비용은 "앞 트랜잭션이 늦으면 뒤 워커가 commit을 못 하고 대기"하는 commit 단계의 head-of-line 지연이다. 다만 **실행(적용) 자체는 ③에서도 그대로 병렬**이고, PoC 측정에서 병목은 commit이 아니라 slave on-CPU apply(prior_lsa·락·페이지/공간 할당)였으므로 commit 직렬화가 반납하는 병렬 이득은 작을 가능성이 크다. 실제 영향은 정식 구현에서 실측으로 확인한다.
 
+①·②(out-of-order durable commit 허용)는 commit 단계의 병렬을 더 살리는 길이라 **Phase 2의 완화책으로도 검토했으나 채택하지 않는다.** out-of-order로 굳은 트랜잭션을 재시작 시 정확히 가려내려면 applied-set의 크래시-세이프 영속화·복구·GC(또는 윈도우 관리)가 필요한데, 이 재시작 정합 복잡도와 그로 인한 새 실패 표면이 commit 병렬에서 얻을 이득보다 크다고 판단했다. 따라서 Phase 1·2 모두 **워커가 commit 순서를 제어하는 ③(commit 게이트)을 유지**한다 — 적용은 병렬, durable commit은 마스터 순서.
+
 ---
 
 ## 남은 설계 쟁점
