@@ -62,6 +62,16 @@ CUBRID HA 노드는 마스터 프로세스(`cub_master`), 데이터베이스 서
 
 ## B.2 PoC의 모듈 구조와 develop 대비 변경점
 
+PoC는 develop의 **단일 처리 구조(AS-IS)** 를 **LogReader + 워커 풀(TO-BE)** 로 바꾼다(구조도는 `2.design/poc_design.md`).
+
+**develop (AS-IS) — 단일 프로세스가 읽기·적용·commit·진도 갱신을 직렬로 수행**
+
+![develop 단일 처리 구조](images/poc_asis_develop.png)
+
+**PoC (TO-BE) — LogReader가 읽기·분배·순서 정리를, 워커 풀이 병렬 적용을 분담**
+
+![PoC 병렬 처리 구조](images/poc_tobe_parallel.png)
+
 PoC의 구조는 별도 설계 문서 `2.design/poc_design.md`에 **LogReader와 ApplyWorker** 두 모듈로 정의되어 있다. LogReader는 active/archive 로그에서 복제 로그를 읽어 `LA_ITEM`을 만들고 트랜잭션 단위로 `LA_APPLY`를 구성하다가, commit 로그를 만나면 그 트랜잭션을 확정해 워커 큐에 넣는다. 그리고 워커들의 완료 결과를 수집해 **commit LSA 순서대로** 전역 완료를 판정하고 `committed_lsa`와 `db_ha_apply_info`를 갱신하며 다 쓴 항목을 정리한다. ApplyWorker는 설정된 개수만큼 생성되어 각자 작업 큐·워커 로컬 workspace·슬레이브 서버 세션을 갖고, 받은 트랜잭션을 적용·flush·commit한 뒤 완료 LSA를 LogReader에 보고한다. 즉 이 PoC 구조에서 우리가 말하는 "코디네이터"와 "순서 정리"는 새로운 모듈이 아니라 **LogReader가 이미 맡고 있는 책임**이다 — 코디네이터는 LogReader가 워커 큐에 넣는 그 enqueue 판단(현재 `tranid % worker`)을 충돌·순서 판단으로 바꾸는 것이고, 순서 정리는 LogReader의 결과 수집·committed_lsa 갱신 부분이다.
 
 develop(오리지널)과 PoC를 비교하면, PoC는 `log_applier.c`에 약 3,900줄을 더했는데 대부분이 워커·dispatch·retire 구조와 측정 계측이다. **핵심 정합성 메커니즘(LSA 관리, 재시작 멱등 skip, FK 검사, 복제 로그 형식)은 develop과 동일**하다 — develop은 단일 직렬 함수 `la_apply_commit_list`로 적용하던 것을 PoC가 워커 경로로 옮겼을 뿐 판정 조건은 같다 [C2]. 설계 문서(poc_design.md)와 실제 코드 사이에는 몇 가지 차이가 있다. 설계는 "insert 연산만"(§29)을 대상으로 했지만 코드는 **INSERT와 UPDATE를 모두** 지원하며(`la_is_supported_poc_item`; DELETE는 함수만 있고 실제로는 미지원), 설계에 없던 측정 계측(`la_Debug_progress`)과 병목 측정용 제약(일부 워커만 flush하는 `LA_APPLY_WORKER_REPL_ACTIVE_COUNT`, apply_info 갱신을 건너뛰는 `LA_SKIP_READER_COMMIT_APPLY_INFO`)이 들어가 있다. 이 측정용 제약들은 정식 구현에서는 제거 대상이다. 반대로 설계가 명시적으로 PoC 범위에서 제외한 것도 있는데, 바로 §32·34의 **"트랜잭션 간 의존성 판별, 병렬 스케줄링, 정교한 오류 복구"** 다. 즉 현재 PoC가 의존성을 안 보고 `tranid % worker`로만 분배하는 것은 설계대로이며, **우리 코디네이터는 PoC가 의도적으로 비워 둔 바로 그 자리를 채우는 다음 단계**다.

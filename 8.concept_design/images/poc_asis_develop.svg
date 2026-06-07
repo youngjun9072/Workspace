@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="380" height="380" viewBox="0 0 380 380" font-family="DejaVu Sans, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="d" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#555"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="380" height="380" fill="#ffffff"/>
+
+  <rect x="65" y="28" width="250" height="262" rx="8" fill="#ffffff" stroke="#3b6ea5"/>
+  <text x="190" y="50" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a2733">ApplyLog Main</text>
+  <text x="190" y="67" text-anchor="middle" font-size="10" fill="#888">single process · serial</text>
+  <line x1="65" y1="78" x2="315" y2="78" stroke="#cdd7e1"/>
+  <text x="84" y="100" font-size="12" fill="#33414f">• read active/archive log</text>
+  <text x="84" y="126" font-size="12" fill="#33414f">• decode → build LA_ITEM / LA_APPLY</text>
+  <text x="84" y="152" font-size="12" fill="#33414f">• process repl items → flush</text>
+  <text x="84" y="178" font-size="12" fill="#33414f">• execute stmt</text>
+  <text x="84" y="204" font-size="12" fill="#33414f">• commit</text>
+  <text x="84" y="230" font-size="12" fill="#33414f">• update db_ha_apply_info</text>
+
+  <line x1="190" y1="290" x2="190" y2="320" stroke="#555" stroke-width="1.5" marker-end="url(#d)"/>
+  <rect x="115" y="322" width="150" height="44" rx="6" fill="#fff6e6" stroke="#d9a441"/>
+  <text x="190" y="349" text-anchor="middle" font-size="13" fill="#1a2733">Slave DB / Server</text>
+</svg>
