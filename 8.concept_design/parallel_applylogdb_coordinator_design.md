@@ -28,7 +28,7 @@ CUBRID HA 노드는 마스터 프로세스(`cub_master`), 데이터베이스 서
 
 이 적용 경로에서 정확성과 직결되는 사실 몇 가지를 코드로 확인했다 [C2]. 첫째, 적용은 `la_repl_add_object`로 변경 객체를 워커별 리스트에 모았다가 `locator_repl_flush_all`로 한꺼번에 flush하는 방식이다(`:7589`, `:7470`). 둘째, **복제는 PK를 기준으로 동작**한다 — 복제 로그 항목은 `class + PK 값 + operation`만 담고(`la_make_repl_item:5708~`, 마스터 측 `repl_log_insert`는 PK 인덱스에서만 로그를 남긴다), 따라서 복제 대상 테이블에는 반드시 PK가 있어야 하고 충돌 판단의 키로 class와 PK를 항상 쓸 수 있다. 셋째, **외래키 검사는 applier가 아니라 슬레이브 서버가 한다** — `la_apply_*`는 변경을 모아 서버에 보낼 뿐이고, FK는 서버의 `locator_insert_force`/`update_force` 안에서 검사된다(`xlocator_repl_force` → `locator_insert_force(..., dont_check_fk=false)` → `locator_check_foreign_key`, `locator_sr.c:7029,5198`). 그래서 자식 행을 부모보다 먼저 적용하면 서버의 FK 검사에 걸려 apply 에러가 나고 복제가 멈춘다(이 점이 뒤의 설계를 좌우한다).
 
-실패 처리도 봐 두면, 마스터에서 트랜잭션이 abort되면 applier는 그 트랜잭션의 복제 항목 리스트를 비우고(`LOG_ABORT → la_free_repl_items_by_tranid`), apply 중 에러가 나면 재시도 가능한 에러는 잠시 쉬었다 다시 시도하며(`la_retry_on_error` → `LA_SLEEP`+continue), 그래도 안 되면 `fail_counter`를 올린다(`:8841-8849`, `:7703`). 트리거는 applier가 `db_disable_trigger`로 꺼 두므로 적용 중 재실행되지 않는다(`:1831`).
+실패 처리도 봐 두면, 마스터에서 트랜잭션이 abort되면 applier는 그 트랜잭션의 복제 항목 리스트를 비우고(`LOG_ABORT → la_free_repl_items_by_tranid`), apply 중 에러가 나면 재시도 가능한 에러는 잠시 쉬었다 다시 시도하며(`la_retry_on_error` → `LA_SLEEP`+continue), 그래도 안 되면 `fail_counter`를 올린다(`:8841-8849`, `:7703`).
 
 ## A.3 물리 vs 로지컬 — 병렬화는 왜 로지컬에서만 하는가
 
@@ -151,7 +151,7 @@ class 단위 병렬화의 효과는 트랜잭션이 얼마나 여러 class로 �
 
 ## E.3 그 밖의 충돌·특수 테이블 점검
 
-여기서 판단의 기준은 한 가지다 — **applier가 자기 입력만으로 식별할 수 있는가.** 식별할 수 있는 것은 이미 처리된다. unique/PK 키 재사용(예: 같은 class에서 `DELETE pk=5` 후 `INSERT pk=5`)은 서버가 unique 인덱스로 잡아 비순차면 중복키 에러가 나지만, 같은 class라 코디네이터가 class OID로 same-class 직렬화해 막는다. 트리거는 applier가 `db_disable_trigger`로 꺼 두므로 재실행되지 않아 숨은 의존을 만들지 않는다. 반대로 applier가 식별할 수 없는 것이 cross-class 위험인데, 앞서 본 FK와 상속이 여기 속한다. 상속은 subclass가 superclass의 unique 제약을 물려받을 때 **같은 인덱스(BTID)를 공유**하므로(`schema_manager.c:9488-9506`), 서로 다른 subclass에 같은 키를 비순차로 적용하면 공유 unique를 위반한다 — FK와 같은 가족이며 실무 빈도는 낮다.
+여기서 판단의 기준은 한 가지다 — **applier가 자기 입력만으로 식별할 수 있는가.** 식별할 수 있는 것은 이미 처리된다. unique/PK 키 재사용(예: 같은 class에서 `DELETE pk=5` 후 `INSERT pk=5`)은 서버가 unique 인덱스로 잡아 비순차면 중복키 에러가 나지만, 같은 class라 코디네이터가 class OID로 same-class 직렬화해 막는다. 반대로 applier가 식별할 수 없는 것이 cross-class 위험인데, 앞서 본 FK와 상속이 여기 속한다. 상속은 subclass가 superclass의 unique 제약을 물려받을 때 **같은 인덱스(BTID)를 공유**하므로(`schema_manager.c:9488-9506`), 서로 다른 subclass에 같은 키를 비순차로 적용하면 공유 unique를 위반한다 — FK와 같은 가족이며 실무 빈도는 낮다.
 
 특수 테이블 중 파티션은 걱정과 달리 안전하다. CUBRID는 "파티션 키가 모든 인덱스 키에 포함되어야 한다"는 규칙(msg 1169)을 강제하므로, 같은 unique 키 값은 반드시 한 파티션에만 존재하여 서로 다른 파티션을 병렬로 적용해도 충돌이 생길 수 없다(FK와 파티션의 조합 역시 CUBRID가 제약한다). 뷰는 데이터를 저장하지 않아 비복제이고, LOB는 행에 외부 저장(ELO) locator만 들어가고 실제 데이터는 트랜잭션 로그로 복제되지 않으므로 코디네이터와 무관하다. 결국 **applier가 막을 수 없는 cross-class 위험은 FK와 상속 둘뿐**이고, 둘 다 Phase 1의 commit 순서 보존으로 덮인다.
 
