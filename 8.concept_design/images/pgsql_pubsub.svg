@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="330" viewBox="0 0 800 330" font-family="DejaVu Sans, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="s" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#555"/>
+    </marker>
+    <marker id="b" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#3b6ea5"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="800" height="330" fill="#ffffff"/>
+
+  <!-- Publisher -->
+  <rect x="20" y="50" width="320" height="200" rx="10" fill="#eef3f8" stroke="#9bb4cc"/>
+  <text x="36" y="74" font-size="13" font-weight="bold" fill="#5a6b7b">Publisher (wal_level = logical)</text>
+  <rect x="40" y="90" width="280" height="42" rx="6" fill="#ffffff" stroke="#3b6ea5"/>
+  <text x="180" y="110" text-anchor="middle" font-size="12" fill="#1a2733">PUBLICATION</text>
+  <text x="180" y="125" text-anchor="middle" font-size="10" fill="#888">what to send (tables, ops)</text>
+  <rect x="40" y="140" width="280" height="42" rx="6" fill="#ffffff" stroke="#3b6ea5"/>
+  <text x="180" y="160" text-anchor="middle" font-size="11" fill="#1a2733">WAL -> logical decoding -> pgoutput</text>
+  <text x="180" y="175" text-anchor="middle" font-size="10" fill="#888">filter by publication</text>
+  <rect x="40" y="192" width="280" height="42" rx="6" fill="#fff6e6" stroke="#d9a441"/>
+  <text x="180" y="212" text-anchor="middle" font-size="12" fill="#1a2733">walsender · replication slot</text>
+  <text x="180" y="227" text-anchor="middle" font-size="10" fill="#a07a2a">slot = subscriber progress (keeps WAL)</text>
+
+  <!-- Subscriber -->
+  <rect x="460" y="50" width="320" height="200" rx="10" fill="#eef8f1" stroke="#9bccac"/>
+  <text x="476" y="74" font-size="13" font-weight="bold" fill="#5a7b66">Subscriber</text>
+  <rect x="480" y="90" width="280" height="42" rx="6" fill="#ffffff" stroke="#3b6ea5"/>
+  <text x="620" y="110" text-anchor="middle" font-size="12" fill="#1a2733">SUBSCRIPTION</text>
+  <text x="620" y="125" text-anchor="middle" font-size="10" fill="#888">where + how (WITH options)</text>
+  <rect x="480" y="140" width="280" height="42" rx="6" fill="#ffffff" stroke="#3b6ea5"/>
+  <text x="620" y="160" text-anchor="middle" font-size="12" fill="#1a2733">apply worker (1 / subscription)</text>
+  <text x="620" y="175" text-anchor="middle" font-size="10" fill="#888">serial apply (commit order)</text>
+  <rect x="480" y="192" width="280" height="42" rx="6" fill="#ffffff" stroke="#3b6ea5"/>
+  <text x="620" y="212" text-anchor="middle" font-size="12" fill="#1a2733">tablesync worker · origin</text>
+  <text x="620" y="227" text-anchor="middle" font-size="10" fill="#888">initial COPY · applied LSN</text>
+
+  <!-- arrows in the gap (340..460) -->
+  <line x1="460" y1="108" x2="344" y2="108" stroke="#3b6ea5" stroke-width="1.4" stroke-dasharray="5,4" marker-end="url(#b)"/>
+  <text x="402" y="100" text-anchor="middle" font-size="10" fill="#3b6ea5">(1) connect + slot</text>
+
+  <line x1="340" y1="161" x2="456" y2="161" stroke="#555" stroke-width="1.6" marker-end="url(#s)"/>
+  <text x="402" y="153" text-anchor="middle" font-size="10" fill="#555">(2) changes (push)</text>
+
+  <line x1="460" y1="213" x2="344" y2="213" stroke="#3b6ea5" stroke-width="1.4" stroke-dasharray="5,4" marker-end="url(#b)"/>
+  <text x="402" y="205" text-anchor="middle" font-size="10" fill="#3b6ea5">(3) feedback LSN</text>
+
+  <!-- registration order -->
+  <text x="400" y="290" text-anchor="middle" font-size="11" fill="#666">register:  CREATE SUBSCRIPTION → create slot → initial COPY (tablesync) → stream apply → LSN feedback</text>
+  <text x="400" y="312" text-anchor="middle" font-size="10" fill="#999">connection opened by subscriber (pull); changes then pushed by publisher; 1 subscription = 1 apply worker (serial)</text>
+</svg>
