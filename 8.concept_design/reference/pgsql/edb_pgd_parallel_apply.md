@@ -75,6 +75,18 @@ PGD는 트랜잭션을 **publisher commit 이전에** subscriber로 스트리밍
 - **CAMO 관련:** "CAMO isn't currently compatible with transaction streaming" 및 "decoding worker"와도 비호환 [4].
 - **Quorum/streaming:** transaction streaming은 `file`/`off` 모드를 제외하면 Quorum Commit과 비호환 [4].
 
+### 9. apply 에러 시 재시도 — 횟수 제한 없음(확인된 범위)
+
+writer가 에러(commit 순서 위반·데드락·충돌 등)를 만나면 트랜잭션을 롤백하고 다음과 같이 동작한다(이 거동은 PGD 기반인 pglogical worker 일반 에러 처리로 확인됨 [6]).
+
+- 워커는 에러를 **PostgreSQL 로그**에 남기고, 가능하면 **`pglogical.worker_error` 테이블에 기록**한 뒤 **종료(exit)** 한다 [6].
+- 그 DB의 **manager worker가 "few seconds 후" 워커를 재기동**하고, 워커는 실패한 트랜잭션을 **마지막 recoverable 지점부터 처음부터 재실행**한다(중간 복구가 아님) [6].
+- **별도의 재시도 횟수 제한(retry count)은 없다.** 문서는 이 사이클이 **"원인이 고쳐질 때까지(until the cause of the error is fixed)" 반복**된다고만 한다 → 사실상 무한 재시도. 대부분의 에러는 transient라 재시도에서 성공한다 [6].
+- 재기동 rate를 제어하는 설정 `pglogical.min_worker_backoff_delay`(최소 재기동 backoff 지연)가 있다 — "횟수 카운터"가 아니라 "재기동 간격" 제어 [6].
+- (배경) commit 순서 위반의 비용은 ① 데드락 감지 ② 롤백 ③ 이미 적용한 변경의 간접 GC ④ 재실행(redo)의 합이라, PGD는 §5의 선행 tuple-wait로 **애초에 에러를 줄이는** 데 무게를 둔다 [1].
+
+> ⚠️ **확인 못한 상세(명시):** 위는 pglogical worker **일반** 에러 처리 기준이며, **Parallel Apply writer 전용의 재시도 동작이 별도로 다른지**, `min_worker_backoff_delay`의 기본값·증가(backoff) 곡선, "원인 해결까지" 외의 **상한/포기 조건**은 공식 문서에서 **구체 내용을 찾지 못했다**(상용·소스 비공개). 정확한 동작은 EDB 문서/지원 확인 필요.
+
 ## 추론 / 유추
 
 - PGD의 가장 큰 차별점은 **의존성/충돌 판단을 apply 측(writer)에서 행 단위로 한다**는 것이다. MySQL은 source(binlog writeset)에서 의존성을 미리 계산해 내려보내지만, PGD writer는 **적용 시점에 "같은 tuple을 쓰는 선행 트랜잭션"을 직접 보고** 대기를 건다 (← [1], [5]).
@@ -85,7 +97,7 @@ PGD는 트랜잭션을 **publisher commit 이전에** subscriber로 스트리밍
 ## 미해결 / 자료 부족
 
 - **writer에 트랜잭션을 배정하는 스케줄링 규칙**(해시/라운드로빈/세션 고정 등)의 구체는 공식 문서에서 확인하지 못함 — 소스 비공개(상용).
-- **"violation → error → rollback" 이후 재시도(retry) 메커니즘**(자동 재시도 횟수/백오프)의 세부 미확인.
+- **"violation → error → rollback" 이후 재시도(retry) 메커니즘**: §9에서 "워커 재기동 → 처음부터 재시도 → 횟수 제한 없음(원인 해결까지)·`min_worker_backoff_delay`"까지는 확인. 다만 **Parallel Apply writer 전용 동작인지, backoff 기본값·상한/포기 조건은 공식 문서에서 찾지 못함**(상용·비공개).
 - **commit 순서를 강제하는 내부 자료구조**(MySQL의 commit-order 큐에 대응하는 구조)의 세부 미확인.
 - **v5 vs v6 정확한 호환성 차이**(예: v5에서 CAMO/Quorum과의 호환 여부) 원문 추가 확인 필요 — 본 문서의 호환성 진술은 주로 v6 기준 [1].
 - §2의 receiver↔writer 공유메모리 큐 서술은 EDB docs 검색 색인 기반 요약이라, 단일 페이지 직접 인용으로 보강하면 더 정확하다 [5].
@@ -101,3 +113,5 @@ PGD는 트랜잭션을 **publisher commit 이전에** subscriber로 스트리밍
 [4] EDB. "Known issues and limitations" (PGD v6). EDB Postgres Distributed Documentation, 2025. https://www.enterprisedb.com/docs/pgd/latest/known_issues/
 
 [5] EDB. "PGD settings" / "Node management interfaces" (receiver–writer 아키텍처, `writers_per_subscription` 기본/`-1`, writer 0 예약). EDB Postgres Distributed Documentation, 2025. https://www.enterprisedb.com/docs/pgd/latest/reference/pgd-settings/
+
+[6] EDB. "Error handling in pglogical"(워커 에러→`pglogical.worker_error` 기록·exit→manager 재기동·처음부터 재시도·원인 해결까지 반복·`min_worker_backoff_delay`). EDB Postgres Distributed Documentation. https://www.enterprisedb.com/docs/pgd/3.7/pglogical/troubleshooting/
