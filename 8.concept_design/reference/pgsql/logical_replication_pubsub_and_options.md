@@ -101,6 +101,43 @@ CREATE SUBSCRIPTION 실행
 - 복제 대상은 **일반 테이블만**(뷰 불가). 테이블은 **완전한 이름**으로 매칭(다른 이름 테이블로 복제 불가), 열은 **이름**으로 매칭 [3].
 - 열 타입이 정확히 같지 않아도 텍스트 표현이 변환 가능하면 됨(예: `integer→bigint`). subscriber에 추가 열이 있으면 기본값으로 채워짐 [3].
 
+### 8. 구성 설정 (서버 GUC) — publisher / subscriber
+
+§5의 WITH 옵션이 "구독 단위" 설정이라면, 아래는 논리 복제가 동작하기 위해 **양 노드의 서버 인스턴스에 두는 GUC**다. 각 GUC는 한쪽 노드에만 적용된다 [4].
+
+**publisher 측**
+
+| GUC | 기본값 | 의미 · 설정 기준 |
+|---|---|---|
+| `wal_level` | `replica` | 논리 복제하려면 **`logical`** 필수(값별 의미는 아래 표) |
+| `max_replication_slots` | `10` | 슬롯 최대 수. **예상 구독 수 + 테이블 동기화 여유** 이상 |
+| `max_wal_senders` | `10` | WAL sender 최대 수. **`max_replication_slots` + 동시 물리 복제본 수** 이상 |
+| `wal_sender_timeout` | `60s` | 비활성 복제 연결 종료 시간(논리 WAL sender에도 적용) |
+| `idle_replication_slot_timeout` | `0`(비활성) | 일정 시간 idle인 논리 슬롯을 무효화 |
+
+**subscriber 측**
+
+| GUC | 기본값 | 의미 · 설정 기준 |
+|---|---|---|
+| `max_active_replication_origins` | `10` | origin 최대 수. **구독 수 + 테이블 동기화 여유** 이상 |
+| `max_logical_replication_workers` | `4` | 논리 복제 워커 풀. **구독 수(leader apply) + tablesync + parallel apply 여유** 이상 |
+| `max_worker_processes` | `8` | 배경 프로세스 총량. 최소 **`max_logical_replication_workers + 1`**(확장·병렬쿼리도 이 풀 사용) |
+| `max_sync_workers_per_subscription` | `2` | 초기 데이터 COPY(tablesync) 병렬도 |
+| `max_parallel_apply_workers_per_subscription` | `2` | `streaming=parallel`일 때 진행 중 트랜잭션 병렬 적용 워커 수 |
+| `wal_receiver_timeout` | `60s` | 수신 측 비활성 연결 종료 |
+| `wal_receiver_status_interval` | `10s` | 진도 보고(feedback) 최소 주기 |
+| `wal_retrieve_retry_interval` | `5s` | WAL 재수집 재시도 간격 |
+
+**`wal_level` 값(publisher)** — 세 값의 차이가 "무엇을 복제할 수 있는가"를 가른다(상세는 같은 폴더 `wal_level.md`).
+
+| 값 | WAL 양 | 무엇이 가능한가 |
+|---|---|---|
+| `minimal` | 최소 | crash recovery만. 아카이빙·스트리밍 복제·logical decoding **모두 불가** |
+| `replica` (기본) | 중간 | 아카이빙 + **물리** 스트리밍 복제 + standby 읽기. logical decoding **불가** |
+| `logical` | 최대 | `replica`의 모든 것 + **logical decoding(논리 복제)** 에 필요한 추가 정보 |
+
+→ 논리 복제(그리고 그 위의 모든 parallel apply)는 publisher가 **`wal_level=logical`** 이어야 비로소 성립한다. 다만 **병렬도 자체는 `wal_level`이 아니라** subscriber의 워커 GUC(`max_logical_replication_workers`·`max_worker_processes`)와 구독 옵션 `streaming=parallel`이 정한다 — `wal_level=logical`은 "논리 복제가 가능해지는 전제"일 뿐, 병렬화의 직접 스위치는 아니다.
+
 ## 추론 / 유추
 
 - `connect=false`/`create_slot=false`/`slot_name=NONE` 조합은 "슬롯을 수동 관리"하는 운영 시나리오(원격 불통, 노드 이전)를 위한 것으로, CUBRID HA의 단방향 자동 구성과는 결이 다르다 — CUBRID 부트스트랩 설계에 직접 차용보다는 "초기 스냅샷 + 좌표 핸드오프" 패턴의 참고로만 유효하다 (← [1][3]).
@@ -116,3 +153,4 @@ CREATE SUBSCRIPTION 실행
 [1] PostgreSQL Docs — CREATE SUBSCRIPTION. https://www.postgresql.org/docs/current/sql-createsubscription.html
 [2] PostgreSQL Docs — CREATE PUBLICATION. https://www.postgresql.org/docs/current/sql-createpublication.html
 [3] PostgreSQL Docs — Logical Replication: Subscription / Architecture. https://www.postgresql.org/docs/current/logical-replication-subscription.html , https://www.postgresql.org/docs/current/logical-replication-architecture.html
+[4] PostgreSQL Docs — Logical Replication Configuration Settings(§29.12) / Replication·Resource 런타임 설정(기본값). https://www.postgresql.org/docs/current/logical-replication-config.html , https://www.postgresql.org/docs/current/runtime-config-replication.html , https://www.postgresql.org/docs/current/runtime-config-resource.html
