@@ -214,11 +214,11 @@ REPLICA (복제본)
 
 **❶ 의존성 계산 (source).** source는 트랜잭션마다 `sequence_number`(binlog 안의 논리 순번)와 `last_committed`(이 트랜잭션이 기다려야 하는 가장 최근 선행 트랜잭션 = watermark)를 binlog에 적는다 [M2][M4]. 이 `last_committed`를 *무슨 기준으로* 정하느냐가 `binlog_transaction_dependency_tracking`이다 [M3][M5].
 
-| 값 | 의존성 판단 기준 | 병렬 폭 |
-|---|---|---|
-| `COMMIT_ORDER` (8.0 선택지, 8.0 기본) | source에서 **같이 commit된 묶음(group commit window)** 안의 트랜잭션만 독립으로 봄 — *실행 순서/시점*에 의존 | 좁음 |
-| `WRITESET` (8.0 선택지, 8.4+ 기본 동작) | 트랜잭션이 **바꾼 행/키 집합(write set)의 충돌 여부**로 판단 — 키가 안 겹치면 독립(실행 순서 무관) | 넓음(가장 정밀) |
-| `WRITESET_SESSION` (8.0 선택지) | `WRITESET` + **같은 세션의 트랜잭션끼리는 원래 순서 유지** | 넓되 세션 단위 안전 |
+| 값 | 버전 상태 | 의존성 판단 기준 | 병렬 폭 |
+|---|---|---|---|
+| `COMMIT_ORDER` | 8.0에서 선택 가능했고 기본값. 8.4+에서는 제거됨. | source에서 **같이 commit된 묶음(group commit window)** 안의 트랜잭션만 독립으로 봄 — *실행 순서/시점*에 의존 | 좁음 |
+| `WRITESET` | 8.0에서 선택 가능. 8.4+에서는 선택지가 아니라 기본 동작. | 트랜잭션이 **바꾼 행/키 집합(write set)의 충돌 여부**로 판단 — 키가 안 겹치면 독립(실행 순서 무관) | 넓음(가장 정밀) |
+| `WRITESET_SESSION` | 8.0에서 선택 가능. 8.4+에서는 제거됨. | `WRITESET` + **같은 세션의 트랜잭션끼리는 원래 순서 유지** | 넓되 세션 단위 안전 |
 
 여기서 핵심은 **write set 자체는 binlog에 실리지 않는다**는 점이다 — source가 `last_committed` 계산에만 쓰는 내부 입력이고, replica엔 결과(`sequence_number`/`last_committed`)만 전달된다 [M3]. (우리 Act E도 동일 — writeset은 마스터 내부, `last_committed`만 전송)
 
@@ -232,7 +232,7 @@ REPLICA (복제본)
 
 **정리.** MySQL은 **"의존성 판단(분배)"과 "commit 순서 보존(집행)"을 분리**하고, 그 의존성을 **source가 미리 계산해(writeset) 내려보낸다.** 이 두 축이 CUBRID의 "코디네이터가 분배(Act E) ↔ 순서 정리·A안이 commit 순서 보존(G.2)"과 1:1로 대응하여, 우리는 MySQL 모델(병렬↔commit순서 분리 + WRITESET·LOGICAL_CLOCK)을 차용하기로 했다(상세는 `reference/mysql/`, 정식 설계는 Act E).
 
-**버전 연혁 요약.** 병렬 복제 의존성 추적은 `DATABASE` 단위 병렬에서 시작해, 5.7.2의 `LOGICAL_CLOCK` v1에서는 group commit 묶음이 사실상 병렬의 전제였고, 5.7.6의 v2에서 lock interval 기반으로 바뀌며 group commit 의존이 끊겼다. 8.0.1에서 `binlog_transaction_dependency_tracking`이 생기며 `COMMIT_ORDER`(8.0 기본)와 `WRITESET`(옵션)을 선택할 수 있었지만, 8.0.35/8.2.0에서 deprecated, 8.4.0에서 제거되면서 현재 LTS/9.x 기준은 항상 `WRITESET` 동작이다.
+**버전 연혁 요약.** 병렬 복제 의존성 추적은 `DATABASE` 단위 병렬에서 시작해, 5.7.2의 `LOGICAL_CLOCK` v1에서는 group commit 묶음이 사실상 병렬의 전제였고, 5.7.6의 v2에서 lock interval 기반으로 바뀌며 group commit 의존이 끊겼다. 8.0.1에서 `binlog_transaction_dependency_tracking`이 생기며 기본값은 `COMMIT_ORDER`였고 `WRITESET`은 사용자가 선택하는 옵션이었지만, 8.0.35/8.2.0에서 deprecated, 8.4.0에서 제거되면서 현재 LTS/9.x 기준은 항상 `WRITESET` 동작이다.
 
 | 시점 | 병렬 복제 의존성 추적 의미 |
 |---|---|
