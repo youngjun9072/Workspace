@@ -138,6 +138,18 @@ CREATE SUBSCRIPTION 실행
 
 → 논리 복제(그리고 그 위의 모든 parallel apply)는 publisher가 **`wal_level=logical`** 이어야 비로소 성립한다. 다만 **병렬도 자체는 `wal_level`이 아니라** subscriber의 워커 GUC(`max_logical_replication_workers`·`max_worker_processes`)와 구독 옵션 `streaming=parallel`이 정한다 — `wal_level=logical`은 "논리 복제가 가능해지는 전제"일 뿐, 병렬화의 직접 스위치는 아니다.
 
+**`wal_level` 미충족 시 동작 (코드 확인 [5]).** publisher가 `minimal`/`replica`인 채로 `CREATE SUBSCRIPTION`(기본 `connect=true`·`create_slot=true`)을 하면, subscriber가 publisher에 `CREATE_REPLICATION_SLOT … LOGICAL`을 요청하는 단계에서 **에러로 실패**한다. publisher의 `walsender`가 슬롯 생성 직전 `CheckLogicalDecodingRequirements()`를 호출하는데(`src/backend/replication/walsender.c:1262`), 그 안에서 `wal_level < WAL_LEVEL_LOGICAL`이면 `ereport(ERROR, …"logical decoding requires \"wal_level\" >= \"logical\"")`로 막기 때문이다(`src/backend/replication/logical/logical.c:120-123`).
+
+```c
+// src/backend/replication/logical/logical.c:120
+if (wal_level < WAL_LEVEL_LOGICAL)
+    ereport(ERROR,
+            (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+             errmsg("logical decoding requires \"wal_level\" >= \"logical\"")));
+```
+
+두 가지 정리: ① **검사 대상은 publisher의 `wal_level`** 이다(`walsender`는 publisher 측 프로세스). subscriber의 `wal_level`이나 병렬 설정(`streaming=parallel`, 워커 GUC)과는 **무관** — subscriber가 `minimal`/`replica`여도 *수신·병렬 적용*은 정상이고, 막히는 건 오직 publisher가 logical이 아닐 때다. ② `WITH (connect=false)`로 만들면 그 순간 에러는 안 나지만(슬롯 생성을 미룸), 이후 슬롯 생성·enable 단계에서 결국 같은 검사에 걸려 logical 복제는 성립하지 못한다. (캐스케이딩 예외: subscriber가 *재발행*하는 노드라면 그 노드도 `wal_level=logical` 필요.)
+
 ## 추론 / 유추
 
 - `connect=false`/`create_slot=false`/`slot_name=NONE` 조합은 "슬롯을 수동 관리"하는 운영 시나리오(원격 불통, 노드 이전)를 위한 것으로, CUBRID HA의 단방향 자동 구성과는 결이 다르다 — CUBRID 부트스트랩 설계에 직접 차용보다는 "초기 스냅샷 + 좌표 핸드오프" 패턴의 참고로만 유효하다 (← [1][3]).
@@ -154,3 +166,4 @@ CREATE SUBSCRIPTION 실행
 [2] PostgreSQL Docs — CREATE PUBLICATION. https://www.postgresql.org/docs/current/sql-createpublication.html
 [3] PostgreSQL Docs — Logical Replication: Subscription / Architecture. https://www.postgresql.org/docs/current/logical-replication-subscription.html , https://www.postgresql.org/docs/current/logical-replication-architecture.html
 [4] PostgreSQL Docs — Logical Replication Configuration Settings(§29.12) / Replication·Resource 런타임 설정(기본값). https://www.postgresql.org/docs/current/logical-replication-config.html , https://www.postgresql.org/docs/current/runtime-config-replication.html , https://www.postgresql.org/docs/current/runtime-config-resource.html
+[5] PostgreSQL 소스(로컬, `/home/youngjun/Workspace/postgres`) — `wal_level < logical` 시 logical 슬롯 생성 거부: `src/backend/replication/logical/logical.c:120-123`(`CheckLogicalDecodingRequirements`), 호출부 `src/backend/replication/walsender.c:1262`(`CREATE_REPLICATION_SLOT … LOGICAL`).
