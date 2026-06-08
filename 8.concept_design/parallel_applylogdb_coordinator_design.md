@@ -102,7 +102,25 @@ PostgreSQL 논리 복제는 **publish/subscribe(발행/구독)** 모델이다. p
 
 > *PostgreSQL 공식 문서(§29.9 Architecture, §29.2 Subscription [P1])의 서술을 도식화한 것이다 — 공식 문서는 텍스트 전용이라 원본 그림은 없다. 각 요소(walsender·logical decoding·pgoutput·replication slot·tablesync·apply worker·origin)와 "초기 스냅샷 COPY → 연속 스트리밍 → 동일 순서 적용"은 모두 해당 문서 서술과 일치한다.*
 
-구독 등록은 `CREATE SUBSCRIPTION` 한 번에 **① publisher에 복제 슬롯 생성 → ② 기존 데이터 초기 COPY(tablesync 워커) → ③ 정상 스트리밍 적용** 으로 이어지며, 진도는 publisher의 슬롯과 subscriber의 origin으로 추적된다. 동작은 아래 옵션들로 정한다(전체 카탈로그·등록 lifecycle 상세는 `reference/pgsql/logical_replication_pubsub_and_options.md`).
+그림의 각 컴포넌트는 다음과 같다 [P1].
+
+| 컴포넌트 | 노드 | 설명 |
+|---|---|---|
+| **PUBLICATION** | publisher | "어떤 테이블의 어떤 연산을 보낼지" 정의한 **명세 객체**(설정 시 생성). 보낼 때 pgoutput이 이 기준으로 필터한다 |
+| **WAL → logical decoding → pgoutput** | publisher | 트랜잭션 로그(WAL)를 logical decoding으로 해석하고, 기본 출력 플러그인 **pgoutput**이 PUBLICATION 기준으로 변경을 논리 스트림으로 변환·필터한다 |
+| **walsender · replication slot** | publisher | **walsender**는 그 스트림을 subscriber로 전송하는 프로세스. **slot**은 "이 구독이 어디까지 받았나"를 보존해 아직 안 받은 WAL이 지워지지 않게 한다 |
+| **SUBSCRIPTION** | subscriber | "어느 publisher의 어떤 publication을, 어떻게(WITH 옵션) 받을지" 정의한 **명세 객체**(설정 시 생성) |
+| **apply worker** | subscriber | 받은 변경 스트림을 로컬에 적용하는 워커. **구독당 1개**, publisher의 **commit 순서대로 직렬** 적용 |
+| **tablesync worker · origin** | subscriber | **tablesync**는 구독 시작 시 기존 데이터를 COPY로 초기 동기화하는(테이블별·일시적) 워커. **origin**은 어디까지 적용했는지(LSN)를 기록해 재시작 시 이어 적용한다 |
+
+여기서 **PUBLICATION·SUBSCRIPTION은 동작 "순서"가 아니라 설정 시 만드는 정의(기준)** 이고, 나머지는 런타임에 그 정의를 보고 움직이는 프로세스·자료구조다. 따라서 왼쪽→오른쪽 배치는 위치일 뿐 동작 순서가 아니며, **실제 동작 순서는 그림의 화살표 ①②③** 다 [P1].
+
+1. **등록·연결** — `CREATE SUBSCRIPTION` 시 subscriber의 apply worker가 publisher에 접속해 **replication slot을 만든다**(그림 ①).
+2. **초기 동기화** — **tablesync worker**가 published 테이블의 기존 데이터를 COPY로 복사한다(`publish` 설정과 무관하게 전부). 끝나면 정상 스트리밍으로 핸드오프한다.
+3. **정상 스트리밍** — publisher에서 변경이 생기면 WAL → logical decoding → pgoutput(PUBLICATION 필터) → walsender가 스트림을 보낸다(그림 ②).
+4. **적용·진도** — apply worker가 commit 순서대로 적용하고 origin에 적용 LSN을 남긴 뒤 feedback을 보내 slot을 전진시킨다(그림 ③).
+
+동작 세부는 아래 옵션들로 정한다(전체 카탈로그·등록 lifecycle 상세는 `reference/pgsql/logical_replication_pubsub_and_options.md`).
 
 | 옵션 | 위치 | 기본값 | 개념 |
 |---|---|---|---|
