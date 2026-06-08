@@ -597,6 +597,29 @@ result queue backpressure 부재다.
 
 브랜치 `feature/parallel_applylogdb_poc` 기준.
 
+## A.0 데이터 흐름 한눈에 (메모리 → 디스크 복제 로그 → 슬레이브)
+
+먼저 "복제 로그"가 어디서 어떤 형태로 만들어지는지부터 잡는다. `tdes->repl_records[]`는 **복제 로그 자체가 아니라, commit 때 복제 로그가 되는 트랜잭션 단위 메모리 스테이징 버퍼**다. 내용은 디스크 복제 로그와 동일하다(commit 시 페이로드를 그대로 복사).
+
+```text
+행 변경(INSERT/UPDATE/DELETE)
+   │  repl_log_insert()                                   (replication.c:293)
+   ▼
+① tdes->repl_records[]   — 메모리, 트랜잭션 단위로 쌓임 (아직 WAL 아님)
+   │     · struct log_repl: (class+PK) 직렬화된 repl_data + inst_oid + rcvindex
+   │  commit 시 log_append_repl_info_with_lock()가 이 배열을 순회        (log_manager.c:4565)
+   │     · prior_lsa_alloc_and_copy_data(... repl_rec->repl_data ...) ← 페이로드 그대로 복사 (log_manager.c:4574)
+   ▼
+② LOG_REC_REPLICATION + payload   — 디스크 WAL = "진짜 복제 로그 레코드"   (log_record.hpp:227-233)
+   │  copylogdb가 복사 → applylogdb가 la_make_repl_item()으로 파싱        (log_applier.c)
+   ▼
+③ LA_ITEM   — 슬레이브 측 파싱 형태 (class_name + PK + operation)
+```
+
+- **①** = 복제 로그의 *메모리 전구체*(마스터, commit 전). **②** = 실제 디스크 복제 로그(copylogdb가 복사·applylogdb가 읽는 그것). **③** = 슬레이브 파싱 형태.
+- 의존성(seqno/conflict key)을 넣을 **계산 자리는 ①→② 전이가 일어나는 commit 직렬화 구간**(A.4·A.5)이고, **실어 보낼 자리는 ②의 헤더 또는 페이로드**다.
+- 그리고 **conflict key의 원천이 바로 ①의 `repl_records[]`** 다 — 이미 "이 트랜잭션이 바꾼 (class, PK)" 목록이라, 별도 writeset 추적 없이 그대로 재사용한다(A.3·A.6a).
+
 ## A.1 repl 레코드 — 메모리 구조와 디스크 구조
 
 행이 바뀌면 마스터는 먼저 **tdes 안의 in-memory repl 레코드 배열**에 쌓고, commit 시 디스크 WAL로 append한다. 두 구조가 다르다.
