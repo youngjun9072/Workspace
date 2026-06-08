@@ -215,13 +215,15 @@ REPLICA (복제본)
 
 | 값 | 의존성 판단 기준 | 병렬 폭 |
 |---|---|---|
-| `COMMIT_ORDER` (8.0.46 기본) | source에서 **같이 commit된 묶음(group commit window)** 안의 트랜잭션만 독립으로 봄 — *실행 순서*에 의존 | 좁음 |
+| `COMMIT_ORDER` (8.0 기본) | source에서 **같이 commit된 묶음(group commit window)** 안의 트랜잭션만 독립으로 봄 — *실행 순서/시점*에 의존 | 좁음 |
 | `WRITESET` | 트랜잭션이 **바꾼 행/키 집합(write set)의 충돌 여부**로 판단 — 키가 안 겹치면 독립(실행 순서 무관) | 넓음(가장 정밀) |
 | `WRITESET_SESSION` | `WRITESET` + **같은 세션의 트랜잭션끼리는 원래 순서 유지** | 넓되 세션 단위 안전 |
 
 여기서 핵심은 **write set 자체는 binlog에 실리지 않는다**는 점이다 — source가 `last_committed` 계산에만 쓰는 내부 입력이고, replica엔 결과(`sequence_number`/`last_committed`)만 전달된다 [M3]. (우리 Act E도 동일 — writeset은 마스터 내부, `last_committed`만 전송)
 
-**❷ 병렬 분배 (replica).** replica의 coordinator(`replica_parallel_type=LOGICAL_CLOCK`)가 relay log를 순서대로 읽어, 트랜잭션의 `last_committed` 이하가 모두 끝났으면 워커에 병렬로 보낸다(워커 수 = `replica_parallel_workers`) [M2][M4]. 한편 binary log group commit은 병렬 복제의 필수 조건은 아니고, 여러 트랜잭션의 commit window를 겹치게 해 LOGICAL_CLOCK의 병렬 폭을 넓혀 주는 보조 요소다 [M3].
+> **버전 주의 — 위 표의 "모드 선택"은 MySQL 8.0 한정이다.** `binlog_transaction_dependency_tracking`은 **8.0.35부터 deprecated**이고, **8.4 LTS·9.x에서는 변수 자체가 제거돼 source가 항상 `WRITESET`을 쓴다**(= COMMIT_ORDER 선택지 없음, 사실상 WRITESET이 기본). 본 분석 코드는 8.0.46(8.0 최종·2026-04 EoL)이고, 최신 LTS인 **9.7.0 소스에서 `binlog_transaction_dependency_tracking`·`transaction_write_set_extraction`이 코드에서 제거됐음을 확인**했다(SPCO·`Commit_order_manager`는 유지, `replica_preserve_commit_order` 기본 ON 동일). → 최신 MySQL이 WRITESET을 강제 기본으로 삼은 것은 우리 Act E(마스터 writeset 계산) 방향과 일치한다.
+
+**❷ 병렬 분배 (replica).** replica의 coordinator(`replica_parallel_type=LOGICAL_CLOCK`)가 relay log를 순서대로 읽어, 트랜잭션의 `last_committed` 이하가 모두 끝났으면 워커에 병렬로 보낸다(워커 수 = `replica_parallel_workers`) [M2][M4]. 한편 **binary log group commit은 병렬 복제의 필수 요소가 아니다.** group commit을 기준으로 의존성을 보는 건 `COMMIT_ORDER` 모드뿐인데, 그 모드에선 "source에서 같이 commit된 묶음(group commit window)"만 독립으로 보므로 group commit 폭(및 `binlog_group_commit_sync_delay` 같은 튜닝)이 곧 replica 병렬 폭을 좌우한다 [M3]. 반면 `WRITESET`은 의존성을 **바꾼 행/키 충돌**로 판단해 *마스터에서의 commit 시점·순서와 무관하게* 독립 여부를 정하므로(WL#9556 — "no longer dependent on any particular execution order on the master") group commit과 **무관**하다 [M5]. 즉 group commit은 *COMMIT_ORDER에서 병렬 폭을 키우는 보조 요소*였을 뿐 병렬 복제의 전제가 아니며, 위 버전 주의대로 **8.4·9.x는 WRITESET을 강제**하므로 현재 MySQL에선 group commit이 병렬 복제와 직접 묶이지 않는다.
 
 **❸ commit 순서 보존 (replica).** 병렬로 실행한 트랜잭션의 최종 commit 순서는 `replica_preserve_commit_order`(SPCO, 8.0.27부터 기본 ON, LOGICAL_CLOCK 전제)가 source 순서로 강제한다. 워커들이 동시에 실행해도 commit만큼은 원본 순서대로 외부에 보여, 뒤 트랜잭션이 앞보다 먼저 보이는 "gap"이 방지된다 [M2][M6].
 
