@@ -783,4 +783,4 @@ ret = xbtree_find_unique (thread_p, &local_btid, S_SELECT_WITH_LOCK,
 4. `seqno`(+옵션 b면 conflict key 원재료)를 **repl 페이로드에 1회** 실음 → 디스크 헤더 불변.
 5. 슬레이브 `log_applier.c`가 디코드해 코디네이터가 `last_committed`(또는 conflict key 교집합) 기준으로 병렬/직렬 판단.
 
-> 옵션 a(가공된 `last_committed`만 전송, 슬레이브 단순) vs 옵션 b(conflict key 원재료 전송, 슬레이브가 비교, 마스터 가벼움)는 `coordinator_design.md` D.5의 두 갈래와 동일한 선택이다.
+> 옵션 a(가공된 `last_committed`만 전송, 슬레이브 단순) vs 옵션 b(conflict key 원재료 전송, 슬레이브가 비교, 마스터 가벼움)는 `coordinator_design.md` D.3의 옵션 a/b와 동일한 선택이다(설계는 옵션 a 확정).
