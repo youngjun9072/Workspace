@@ -100,6 +100,8 @@ PostgreSQL 논리 복제는 **publish/subscribe(발행/구독)** 모델이다. p
 
 ![PostgreSQL 논리 복제 pub-sub 개념](images/pgsql_pubsub.png)
 
+> *PostgreSQL 공식 문서(§29.9 Architecture, §29.2 Subscription [P1])의 서술을 도식화한 것이다 — 공식 문서는 텍스트 전용이라 원본 그림은 없다. 각 요소(walsender·logical decoding·pgoutput·replication slot·tablesync·apply worker·origin)와 "초기 스냅샷 COPY → 연속 스트리밍 → 동일 순서 적용"은 모두 해당 문서 서술과 일치한다.*
+
 구독 등록은 `CREATE SUBSCRIPTION` 한 번에 **① publisher에 복제 슬롯 생성 → ② 기존 데이터 초기 COPY(tablesync 워커) → ③ 정상 스트리밍 적용** 으로 이어지며, 진도는 publisher의 슬롯과 subscriber의 origin으로 추적된다. 동작은 아래 옵션들로 정한다(전체 카탈로그·등록 lifecycle 상세는 `reference/pgsql/logical_replication_pubsub_and_options.md`).
 
 | 옵션 | 위치 | 기본값 | 개념 |
