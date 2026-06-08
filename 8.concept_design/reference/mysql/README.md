@@ -32,6 +32,10 @@ MySQL 문서들은 "물리 vs 논리", "WAL vs binlog" 개념을 전제한다. �
 - `09.initial_provisioning_guide.md` — **비전문가용 입문**(쉬움, 사전지식 포함)
 - `10.initial_provisioning_clone_gtid.md` — 전문가용 상세(09 읽고 깊게)
 
+### 심화 — 의존성·성능 실측
+- `11.writeset_fk_dependency_tracking.md` — WRITESET이 FK를 포함해 의존 계산(+FK는 보수적 fallback/과직렬)
+- `12.rpco_benchmark_and_lag_measuring.md` — RPCO ON/OFF 성능 실측(차이 1~3%)·워커 수가 지배·sub-linear(왜 N배 안 되나)·lag 측정 기준
+
 ### 그다음 — CUBRID로 잇기
 - `../coordinator_design_mapping_from_vendors.md` — 위 전부 → CUBRID 코디네이터 설계 매핑
 
