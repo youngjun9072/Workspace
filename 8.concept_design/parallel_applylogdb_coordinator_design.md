@@ -160,9 +160,9 @@ subscriber 쪽 GUC는 다음과 같다(기본값은 reference §8).
 
 여기서 우리 관심은 **병렬성**인데, PostgreSQL의 병렬은 **"독립 트랜잭션 자동 병렬"이 아니다.** 전제: **한 구독(subscription) 안에서는 트랜잭션을 publisher commit 순서대로 직렬 적용**하고, 트랜잭션 일관성도 *그 구독 범위 안에서만* 보장된다 [P1]. MySQL처럼 트랜잭션 간 의존성을 계산해 독립 트랜잭션을 병렬 분배하지는 않는다. 병렬이 나오는 곳은 셋뿐이다.
 
-- **① 초기 동기화(tablesync)** — 구독 시작 시 기존 데이터 COPY를 여러 tablesync worker가 병렬 복사(`max_sync_workers_per_subscription`). 일반 변경 스트림의 병렬이 아니다 [P1][P2].
-- **② 대형 트랜잭션 streaming** — `streaming=parallel`이면 진행 중(미commit) 큰 트랜잭션을 조각내 parallel apply worker가 적용하고 commit 때 순서를 맞춘다(PG16 도입, 18 기본). 단 *한 트랜잭션의 조각* 병렬이지 여러 트랜잭션 병렬이 아니다 [P3][P4][P5].
-- **③ 다중 구독(subscription splitting)** — 한 subscriber 노드에 구독을 여러 개 두면 구독당 apply worker 1개라 **구독끼리 병렬**이 된다. 테이블을 구독별로 나눠 처리량을 올리는, PG에서 현실적인 병렬화 수단이다(구독 간 발행 객체가 겹치면 안 됨 [P6]).
+- **① 초기 동기화(tablesync)** — 구독을 만들거나 새 테이블이 추가될 때, 기존 데이터를 `COPY`로 슬레이브에 채우는 **1회성 단계**다. 이때 테이블마다 별도의 **tablesync worker**가 붙어 여러 테이블을 동시에 복사한다(`max_sync_workers_per_subscription`, 기본 2). 복사가 끝나면 그 테이블은 정상 스트리밍 적용으로 핸드오프된다. 즉 **초기 적재의 병렬**이지, 운영 중 변경 스트림을 병렬 적용하는 게 아니다 [P1][P2].
+- **② 대형 트랜잭션 streaming** — 보통은 트랜잭션이 commit돼야 변경을 보내지만, `streaming=parallel`이면 **commit 전 진행 중인 큰 트랜잭션을 조각내어 미리** 보낸다. 받는 쪽에서 **leader apply worker**가 그 조각을 **parallel apply worker**에게 넘겨 적용하고, commit 시점에 leader가 그 워커의 완료를 기다려 순서를 맞춘다(PostgreSQL 16에서 비기본 도입, 18부터 기본). 그러나 이는 어디까지나 **하나의 큰 트랜잭션을 쪼개 빨리 적용**하는 것이지, 서로 다른 트랜잭션을 의존성 기준으로 병렬화하는 게 아니다 [P3][P4][P5].
+- **③ 다중 구독(subscription splitting)** — 한 subscriber 노드에 `SUBSCRIPTION`을 여러 개 만들면 **구독마다 leader apply worker가 1개씩** 붙어 구독끼리 동시에 적용된다. 운영자가 테이블을 구독 A·B·C로 나눠 두면 그만큼 워커가 병렬로 돈다 — PG에서 "여러 트랜잭션을 동시에 처리"에 가장 가까운 현실적 수단이다. 단 의존성/순서 판단을 시스템이 해 주는 게 아니라 **운영자가 테이블을 어느 구독에 둘지로 수동 분배**하는 것이고, 구독 간 발행 객체(테이블)가 겹치면 이중 적용되므로 안 된다. 무엇보다 아래 ③의 함정이 따른다 [P6].
 
 → 셋 다 "독립 트랜잭션 자동 병렬 + 전역 순서 보존"은 아니므로, 우리 목표엔 **직접 모델로 부적합**하다.
 
