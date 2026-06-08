@@ -119,16 +119,15 @@ PostgreSQL 논리 복제는 **publish/subscribe(발행/구독)** 모델이다. p
 - **② changes** — publisher가 변경을 **push**한다: WAL → logical decoding → pgoutput(PUBLICATION 필터) → walsender.
 - **③ feedback** — apply worker가 적용 후 **적용 LSN을 feedback**으로 보내(origin 기록) publisher의 slot을 전진시킨다.
 
-동작 세부는 아래 옵션들로 정한다(전체 카탈로그·등록 lifecycle 상세는 `reference/pgsql/logical_replication_pubsub_and_options.md`).
+여기서는 **복제·병렬에 직접 닿는 핵심 옵션만** 명시한다(전체 옵션 카탈로그·기본값·등록 lifecycle은 `reference/pgsql/logical_replication_pubsub_and_options.md`).
 
 | 옵션 | 위치 | 기본값 | 개념 |
 |---|---|---|---|
-| `publish` | PUBLICATION | insert, update, delete, truncate | 어떤 DML 연산을 보낼지 |
-| `copy_data` | SUBSCRIPTION | `true` | 시작 시 기존 데이터를 초기 COPY |
-| `streaming` | SUBSCRIPTION | `parallel` | 대형 미commit 트랜잭션 처리(off / on / parallel) |
-| `origin` | SUBSCRIPTION | `any` | 양방향 루프 방지(`none`이면 origin 없는 변경만) |
-| `two_phase` | SUBSCRIPTION | `false` | 2단계 커밋을 PREPARE 시점에 전송 |
-| `connect`·`create_slot`·`enabled` | SUBSCRIPTION | `true` | 등록 시 접속·슬롯 생성·즉시 시작 여부 |
+| `FOR TABLE` / `FOR ALL TABLES` + `WITH (publish=…)` | PUBLICATION | publish=4연산 전부 | 무엇을(어떤 테이블·DML) 보낼지 |
+| `copy_data` | SUBSCRIPTION | `true` | 시작 시 기존 데이터를 초기 COPY할지 |
+| `streaming` | SUBSCRIPTION | `parallel` | 진행 중 대형 tx 처리 — **병렬과 직결**(`off`/`on`/`parallel`) |
+
+> 그 외 `connect`·`create_slot`·`slot_name`·`binary`·`synchronous_commit`·`two_phase`·`origin`·`disable_on_error`(SUBSCRIPTION)와 `FOR TABLES IN SCHEMA`·행 필터·열 목록·`publish_via_partition_root`·`publish_generated_columns`(PUBLICATION)는 접속·슬롯·내구성·필터 등 세부라 여기선 생략한다 — 전체는 reference.
 
 위 WITH 옵션이 "구독 단위"라면, 논리 복제 자체를 켜고 병렬도를 정하는 건 **서버 구성(GUC)** 이다(한쪽 노드에만 적용). *GUC(Grand Unified Configuration)는 PostgreSQL이 서버 설정 파라미터를 부르는 용어다 — `postgresql.conf`/`ALTER SYSTEM`으로 바꾸는 그 설정값들로, CUBRID의 시스템 파라미터(`cubrid.conf`)에 해당한다.* 우선 publisher는 **`wal_level`** 이 핵심인데, 값에 따라 가능한 복제가 갈린다.
 

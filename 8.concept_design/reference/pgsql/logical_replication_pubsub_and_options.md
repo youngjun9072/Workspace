@@ -62,6 +62,7 @@ CREATE SUBSCRIPTION 실행
 | `FOR ALL TABLES` | — | DB의 모든 테이블(향후 포함) 발행 [2] |
 | `WITH (publish = ...)` | `insert, update, delete, truncate` | 복제할 DML 연산 선택. 예: `publish='insert'`면 UPDATE/DELETE는 스트리밍에서 제외 [2] |
 | `WITH (publish_via_partition_root)` | `false` | true면 파티션 변경을 **루트 테이블 정체성**으로 발행, false면 개별 파티션으로 [2] |
+| `WITH (publish_generated_columns)` | `none` | 생성 열(generated column) 복제 여부. `stored`면 stored 생성 열도 발행 [2] |
 | 행 필터 `... WHERE (조건)` | — | 발행할 행을 조건으로 거름. **UPDATE/DELETE에는 `REPLICA IDENTITY` 열만** 사용 가능(괄호 필수) [2] |
 | 열 목록 `(col1, col2)` | — | 복제할 열 선택. UPDATE/DELETE면 `REPLICA IDENTITY` 열 포함 필수. `FOR TABLES IN SCHEMA`와 비호환 [2] |
 
