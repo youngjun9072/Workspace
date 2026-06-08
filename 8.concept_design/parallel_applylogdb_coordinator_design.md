@@ -138,7 +138,25 @@ PostgreSQL 논리 복제는 **publish/subscribe(발행/구독)** 모델이다. p
 | `replica`(기본) | 아카이빙 + **물리** 스트리밍 복제 + standby 읽기. logical decoding **불가** |
 | `logical` | `replica`의 모든 것 + **logical decoding(논리 복제)** 가능 |
 
-→ 논리 복제는 publisher가 **`wal_level=logical`** 이어야 성립한다. 다만 **병렬도 자체는 `wal_level`이 아니라** subscriber의 워커 GUC가 정한다 — `max_logical_replication_workers`(leader apply·tablesync·parallel apply 워커가 모두 이 풀에서 나옴, 그 상위는 `max_worker_processes`), 초기 COPY 병렬은 `max_sync_workers_per_subscription`, 진행 중 대형 tx 병렬은 `streaming=parallel`+`max_parallel_apply_workers_per_subscription`. (전체 GUC 목록·기본값은 `reference/pgsql/logical_replication_pubsub_and_options.md` §8)
+→ 논리 복제는 publisher가 **`wal_level=logical`** 이어야 성립한다. 다만 **병렬도 자체는 `wal_level`이 아니라** subscriber의 GUC가 정한다.
+
+subscriber 쪽 GUC는 다음과 같다(기본값은 reference §8).
+
+| subscriber GUC | 의미 |
+|---|---|
+| `max_logical_replication_workers` | 논리 복제 워커 풀. **leader apply·tablesync·parallel apply 워커가 전부 여기서 나옴** → 작으면 복제가 막히거나 직렬로 떨어짐(가장 영향 큼) |
+| `max_worker_processes` | 배경 프로세스 총량(위 풀의 상위). 최소 `max_logical_replication_workers + 1`(확장·병렬쿼리도 이 풀 사용) |
+| `max_active_replication_origins` | 추적 가능한 replication origin 수. 구독 수 + 테이블 동기화 여유 이상 |
+| `max_sync_workers_per_subscription` | **초기 데이터 COPY(tablesync) 병렬도** |
+| `max_parallel_apply_workers_per_subscription` | `streaming=parallel`일 때 **진행 중 대형 tx 병렬 적용 워커 수** |
+| `wal_receiver_timeout` | 수신 측 비활성 연결 종료 시간 |
+| `wal_receiver_status_interval` | 진도 보고(feedback) 최소 주기 |
+| `wal_retrieve_retry_interval` | WAL 재수집 재시도 간격 |
+| (구독 옵션) `synchronous_commit` | apply 워커 commit 내구성/지연. 기본 `off`라 apply가 빠름(처리량 레버) |
+
+**publisher가 `logical`이 아니면 `CREATE SUBSCRIPTION`은 에러난다.** subscriber가 publisher에 logical 슬롯을 만드는 단계에서 publisher의 `walsender`가 `wal_level < logical`을 검사해 `ERROR: logical decoding requires "wal_level" >= "logical"`로 막기 때문이다(코드: `logical.c:120`·`walsender.c:1262`, reference §8 [5]). 이 검사 대상은 **publisher의 wal_level**이라, subscriber의 병렬 설정(`streaming=parallel`·워커 GUC)과는 무관하다 — 즉 같은 이유로 직렬로 설정해도 똑같이 실패한다.
+
+**그래서 publisher가 `minimal`/`replica`면 subscriber 설정으로는 못 고친다.** 유일한 해법은 **publisher의 `wal_level=logical`로 올리고 재시작**하는 것이다(슬롯·decoding의 전제라 subscriber의 어떤 GUC도 우회 불가). `WITH (connect=false)`로 구독을 만들면 그 순간 에러만 미룰 뿐, 이후 슬롯 생성·enable에서 결국 같은 검사에 걸린다. (subscriber 자신의 `wal_level`은 *수신*과 무관하므로 `replica`여도 되고, 그 노드가 *재발행*까지 하는 캐스케이딩일 때만 `logical`이 필요하다.)
 
 여기서 우리 관심은 **병렬성**이다. PostgreSQL은 **하나의 구독 안에서는 트랜잭션을 publisher의 순서 그대로 직렬로 적용**하며, MySQL처럼 트랜잭션 간 의존성을 계산해 독립 트랜잭션을 병렬로 분배하지는 않는다. 병렬성이 나타나는 곳은 두 군데뿐이다. 하나는 구독 생성 시 기존 테이블 데이터를 복사하는 초기 동기화 단계로, 여러 tablesync worker가 병렬로 복사한다(`max_sync_workers_per_subscription`) [P1][P2]. 다른 하나는 큰 트랜잭션을 commit 전에 조각내어 보내는 streaming인데, `streaming=parallel`이면 leader apply worker가 parallel apply worker에게 조각을 넘겨 적용하고 commit 시점에 leader가 그 워커의 완료를 기다려 순서를 맞춘다(PostgreSQL 16에서 비기본으로 도입, 18부터 기본) [P3][P4][P5]. 그러나 이는 어디까지나 *한 트랜잭션의 조각*을 처리하는 것이지 여러 트랜잭션을 의존성 기준으로 병렬화하는 것이 아니다. 따라서 "독립 트랜잭션 자동 병렬 + 전역 순서 보존"을 목표로 하는 우리에게 PostgreSQL은 직접 모델로 부적합하다. 다만 구독 경계를 잘못 자르면 원자성·순서가 깨지는 사례는 "병렬 단위를 잘못 자르면 무엇이 깨지는가"를 보여주는 반면교사로 가치가 있다 [P6]. (Publisher/Subscriber 역할·구독 등록 과정·`CREATE PUBLICATION/SUBSCRIPTION` 옵션별 동작은 `reference/pgsql/logical_replication_pubsub_and_options.md`에 정리했다.)
 
