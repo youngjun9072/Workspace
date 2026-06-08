@@ -1,6 +1,6 @@
 # 병렬 applylogdb 코디네이터 설계 보고서
 
-이 문서는 parallel `applylogdb` PoC 이후 실제 구현으로 넘어가기 위한 병렬화 컨셉을 정리한 **설계 보고서**다. 상세 자료구조나 API가 아니라, 어떤 책임을 새 모듈로 분리할지와 트랜잭션 간 충돌·순서를 어떻게 다룰지에 초점을 둔다. 발표·학습 자료로 함께 쓰며, 흐름은 *CUBRID 현재 복제 → 로지컬 복제와 병렬화의 관계 → PoC로 본 가능성 → 다른 DBMS는 어떻게 하는가 → 그래서 우리 코디네이터 설계 → 정확성 시나리오 → 재시작 문제* 순이다. 벤더별 더 깊은 근거는 같은 폴더의 조사 문서(`reference/{base,mysql,pgsql}/`, `coordinator_design_mapping_from_vendors.md`, `cubrid_special_table_scenarios.md`)에 있고, 외부 출처 링크는 문서 끝 **참고문헌**에 모았다.
+이 문서는 parallel `applylogdb` PoC 이후 실제 구현으로 넘어가기 위한 병렬화 컨셉을 정리한 **설계 보고서**다. 상세 자료구조나 API가 아니라, 어떤 책임을 새 모듈로 분리할지와 트랜잭션 간 충돌·순서를 어떻게 다룰지에 초점을 둔다. 발표·학습 자료로 함께 쓰며, 흐름은 *CUBRID 현재 복제 → 로지컬 복제와 병렬화의 관계 → PoC로 본 가능성 → 다른 DBMS는 어떻게 하는가 → 그래서 우리 코디네이터 설계 → 마스터가 의존성을 계산하는 정밀 병렬 → 정확성 시나리오 → 재시작 문제* 순이다. 벤더별 더 깊은 근거는 같은 폴더의 조사 문서(`reference/{base,mysql,pgsql}/`, `coordinator_design_mapping_from_vendors.md`, `cubrid_special_table_scenarios.md`)에 있고, 외부 출처 링크는 문서 끝 **참고문헌**에 모았다.
 
 > **한눈 요약.** CUBRID의 applylogdb는 로지컬(행 재실행) 복제이고, 로지컬이기 때문에 병렬 적용이 의미가 있다. PoC는 트랜잭션을 `tranid % worker`로 단순 분배해 병렬화의 *가능성*(반영 시간 약 3.4배 단축)을 보였지만, 트랜잭션 간 의존성은 일부러 다루지 않았다. 정식 병렬화를 위해 MySQL·PostgreSQL·EDB PGD를 조사한 결과, "병렬 실행과 commit 순서 보존을 분리하고 coordinator가 분배"하는 **MySQL 모델**이 CUBRID 구조와 가장 잘 맞았다. 그래서 현재 PoC의 LogReader가 트랜잭션을 워커 큐에 넣는 그 지점에 **충돌·순서 판단(코디네이터)** 을 넣는 것이 1차 설계의 핵심이다. 다만 applier는 복제 로그만으로는 외래키 관계를 알 수 없어, 안전을 위해 commit 순서를 보수적으로 지켜야 하며, 병렬로 적용하면 재시작 시 정합성 문제가 새로 생긴다.
 
@@ -144,7 +144,7 @@ MySQL 복제는 source가 변경을 binary log에 기록하고, replica의 I/O �
 
 병렬로 실행한 트랜잭션의 최종 commit 순서는 `replica_preserve_commit_order`(SPCO, 8.0.27부터 기본 ON이며 LOGICAL_CLOCK이 전제)가 source 순서로 강제한다. 그래서 워커들이 동시에 실행하더라도 commit만큼은 원본 순서대로 외부에 보이며, 뒤 트랜잭션이 앞보다 먼저 보이는 "gap"이 방지된다 [M2][M6]. 한편 binary log group commit은 병렬 복제의 필수 조건은 아니고, 여러 트랜잭션의 commit window를 겹치게 만들어 LOGICAL_CLOCK의 병렬 폭을 넓혀 주는 보조 요소다 [M3]. 정리하면 MySQL의 "source가 의존성을 계산해 내려보내고, replica coordinator가 병렬 실행하되 commit 순서는 따로 보존한다"는 구조가 CUBRID의 "코디네이터가 분배하고 순서 정리 단계가 committed_lsa를 순서대로 갱신한다"와 1:1로 대응하여, 우리는 MySQL 모델을 차용하기로 했다(상세는 `reference/mysql/`).
 
-한 가지 더 짚을 점은 **MySQL이 commit 순서를 보존하는 "층위"와 그 이유**인데, 이는 뒤의 Act F(재시작 문제)와 직접 맞닿아 있다. SPCO는 단순히 진도 표시만 순서대로 맞추는 게 아니라, 워커가 **물리적으로 commit하기 직전에 자기 차례가 올 때까지 대기**시켜 durable commit 자체를 source 순서로 직렬화한다(코드상 `Commit_order_manager`가 책임지며, ordered_commit의 첫 단계에서 차례 대기로 진입한다 — `sql/rpl_replica_commit_order_manager.h`, `sql/binlog.cc`의 ordered_commit) [M7]. MySQL이 *왜* 여기까지 하는지는 두 가지로 확인된다. 첫째, replica가 **source에 존재한 적 없는 중간 상태를 외부에 노출하지 않게** 하기 위해서다 — 뒤 트랜잭션이 앞보다 먼저 보이는 gap이 생기면 read scale-out에서 일관성이 깨지며, 이것이 이 기능의 원 설계 동기다("the slave database can be in a state that never existed on the master") [M8]. 둘째, **크래시 복구 좌표가 gap-free여야 유효**하기 때문이다 — commit이 순서대로면 단일 복구 위치 앞은 전부 적용 완료가 보장되지만, out-of-order commit은 그 위치 뒤에 이미 durable한 트랜잭션을 남겨 복구를 어긋나게 한다(매뉴얼이 multithreaded replica의 gap을 복구 실패 요인으로 명시) [M6]. **이 둘째 이유가 바로 CUBRID에서 Act F가 다루는 재시작 정합 문제와 정확히 같은 동기**다. MySQL은 commit 순서를 진도층이 아니라 물리 commit 단계에서 강제함으로써 그 문제를 애초에 만들지 않는다.
+한 가지 더 짚을 점은 **MySQL이 commit 순서를 보존하는 "층위"와 그 이유**인데, 이는 뒤의 Act G(재시작 문제)와 직접 맞닿아 있다. SPCO는 단순히 진도 표시만 순서대로 맞추는 게 아니라, 워커가 **물리적으로 commit하기 직전에 자기 차례가 올 때까지 대기**시켜 durable commit 자체를 source 순서로 직렬화한다(코드상 `Commit_order_manager`가 책임지며, ordered_commit의 첫 단계에서 차례 대기로 진입한다 — `sql/rpl_replica_commit_order_manager.h`, `sql/binlog.cc`의 ordered_commit) [M7]. MySQL이 *왜* 여기까지 하는지는 두 가지로 확인된다. 첫째, replica가 **source에 존재한 적 없는 중간 상태를 외부에 노출하지 않게** 하기 위해서다 — 뒤 트랜잭션이 앞보다 먼저 보이는 gap이 생기면 read scale-out에서 일관성이 깨지며, 이것이 이 기능의 원 설계 동기다("the slave database can be in a state that never existed on the master") [M8]. 둘째, **크래시 복구 좌표가 gap-free여야 유효**하기 때문이다 — commit이 순서대로면 단일 복구 위치 앞은 전부 적용 완료가 보장되지만, out-of-order commit은 그 위치 뒤에 이미 durable한 트랜잭션을 남겨 복구를 어긋나게 한다(매뉴얼이 multithreaded replica의 gap을 복구 실패 요인으로 명시) [M6]. **이 둘째 이유가 바로 CUBRID에서 Act G가 다루는 재시작 정합 문제와 정확히 같은 동기**다. MySQL은 commit 순서를 진도층이 아니라 물리 commit 단계에서 강제함으로써 그 문제를 애초에 만들지 않는다.
 
 ---
 
@@ -181,21 +181,111 @@ MySQL 복제는 source가 변경을 binary log에 기록하고, replica의 I/O �
 
 ## D.4 설계 방향을 그렇게 잡은 이유 (applier는 FK를 모른다)
 
-그 전에, **슬레이브가 commit 순서를 (마스터 순서대로) 조절·보존해야 하는 이유**부터 짚자. 크게 셋이다. ① **서버가 강제하는 cross-class 제약(FK 등)** — 부모보다 자식을 먼저 commit하면 서버의 FK 검사에 걸려 apply 에러로 복제가 멈춘다(E.1). ② **같은 데이터의 갱신 순서** — 같은 행을 바꾸는 두 트랜잭션의 순서가 뒤바뀌면 최종 값이 원본과 달라진다(lost update). ③ **진도·복구의 유효성** — 진도(`committed_lsa`)가 commit 순서대로(연속 prefix로) 전진해야 재시작 지점이 유효하고, 슬레이브를 읽을 때도 마스터에 존재한 적 있는 상태만 보인다. 이 셋 중 ②는 같은 class 직렬화(D.2)로, ③은 순서 정리 단계로 다루고, 가장 까다로운 ①(FK)이 1차 설계의 방향을 좌우했다 — 아래에서 그 이유를 본다.
+그 전에, **슬레이브가 commit 순서를 (마스터 순서대로) 조절·보존해야 하는 이유**부터 짚자. 크게 셋이다. ① **서버가 강제하는 cross-class 제약(FK 등)** — 부모보다 자식을 먼저 commit하면 서버의 FK 검사에 걸려 apply 에러로 복제가 멈춘다(F.1). ② **같은 데이터의 갱신 순서** — 같은 행을 바꾸는 두 트랜잭션의 순서가 뒤바뀌면 최종 값이 원본과 달라진다(lost update). ③ **진도·복구의 유효성** — 진도(`committed_lsa`)가 commit 순서대로(연속 prefix로) 전진해야 재시작 지점이 유효하고, 슬레이브를 읽을 때도 마스터에 존재한 적 있는 상태만 보인다. 이 셋 중 ②는 같은 class 직렬화(D.2)로, ③은 순서 정리 단계로 다루고, 가장 까다로운 ①(FK)이 1차 설계의 방향을 좌우했다 — 아래에서 그 이유를 본다.
 
 왜 "보수적으로 commit 순서를 지킨다"는 방향을 택했는지는 코드 분석에서 나온 두 발견으로 설명된다. 첫째, **applier는 외래키 관계를 알 방법이 없다.** 복제 로그 항목(`la_make_repl_item`)은 class와 PK, operation만 담고 있고 `log_applier.c`에는 FK나 제약을 다루는 코드가 전혀 없다 — FK 관계는 서버의 스키마 카탈로그(`SM_CLASS`)에만 존재한다. 따라서 applier는 두 트랜잭션이 부모-자식으로 엮였는지를 자기 입력(복제 로그)만으로는 판단할 수 없다. 둘째, **그 FK 검사는 서버가 한다**(A.2). 그래서 코디네이터가 부모와 자식을 독립으로 오판해 병렬로 보내고 자식이 부모보다 먼저 적용되면, 서버의 FK 검사에 걸려 apply 에러가 나고 복제가 멈춘다. 게다가 FK 검사는 자식의 INSERT 시점에 일어나므로, 최종 commit 순서만 맞추는 것(MySQL의 SPCO 같은 방식)으로는 부족하고 자식이 적용되는 순간 이미 부모가 commit되어 보여야 한다. 결국 applier가 FK를 못 가리는 이상, 안전하게 가려면 commit 순서를 (FK 관련을 구분하지 못한 채) 보수적으로 지키거나 별도로 스키마의 FK 메타데이터를 읽어 와야 한다. 이 발견이 설계의 방향을 정했다.
 
 ## D.5 (장기) 정밀 병렬을 위한 복제 로그 확장
 
-class 단위의 보수성을 넘어 정밀하게 병렬화하려면 결국 복제 로그에 의존성 정보를 실어야 한다. MySQL이 source에서 write set으로 watermark를 계산해 그 결과만 binlog에 남기는 것과 같은 맥락이다. CUBRID가 이를 한다면 추가할 정보는 네 가지로 정리되는데, 트랜잭션의 논리 순번(`sequence`)과 직렬화가 필요한 barrier 표시는 공통으로 두고, 의존성은 **둘 중 하나**를 택한다 — source가 미리 계산한 결과인 watermark를 싣거나(MySQL식), 아니면 바꾼 키 집합(conflict key)이라는 원재료를 실어 applier가 직접 충돌을 계산하게 하거나다. 둘 다 싣는 것이 아니라 "가공된 결과를 보내느냐, 원재료를 보내느냐"의 선택이며, CUBRID 코디네이터가 이미 apply 측에서 판단하는 구조이므로 conflict key 쪽(원재료 전송)이 더 자연스러운 확장이다.
+class 단위의 보수성을 넘어 정밀하게 병렬화하려면 결국 복제 로그에 의존성 정보를 실어야 한다. MySQL이 source에서 write set으로 watermark를 계산해 그 결과만 binlog에 남기는 것과 같은 맥락이다. CUBRID가 이를 한다면 추가할 정보는 네 가지로 정리되는데, 트랜잭션의 논리 순번(`sequence`)과 직렬화가 필요한 barrier 표시는 공통으로 두고, 의존성은 **둘 중 하나**를 택한다 — source가 미리 계산한 결과인 watermark를 싣거나(MySQL식), 아니면 바꾼 키 집합(conflict key)이라는 원재료를 실어 applier가 직접 충돌을 계산하게 하거나다. 둘 다 싣는 것이 아니라 "가공된 결과를 보내느냐, 원재료를 보내느냐"의 선택이며, CUBRID 코디네이터가 이미 apply 측에서 판단하는 구조이므로 conflict key 쪽(원재료 전송)이 더 자연스러운 확장이다. **이 "마스터가 의존성을 계산해 내려보내는" 방향의 정식 설계는 다음 장(Act E)에서 다룬다** — writeset 정의·`last_committed` 계산·슬레이브 분배·FK 처리까지 구체화한다.
 
 ---
 
-# Act E. 정확성 시나리오
+# Act E. 마스터가 의존성을 계산하는 정밀 병렬 (logical clock)
+
+Act D의 1차안은 슬레이브 코디네이터가 **변경 class 집합만 보고 보수적으로** 판단한다. 그래서 두 가지 약점이 있다 — (i) hot class·큰 fan-out에서 과도하게 직렬화되고(F.2), (ii) **applier가 FK를 알 수 없어**(D.4) cross-class 의존을 못 가린다. 특히 (ii)는 부모보다 자식을 먼저 적용하면 FK가 깨지는데, **코드상 실제 거동은 "그 자식 행만 조용히 skip되어 슬레이브에 영구 누락"되는 silent divergence**다(F.1; 추적은 `parallel_applylogdb_architecture_analysis.md` 부록 A).
+
+근본 해법은 **판단 주체를 마스터로 옮기는 것**이다. 마스터(cub_server)는 스키마·FK를 알고 트랜잭션이 무엇을 바꿨는지도 안다. 마스터가 트랜잭션마다 "무엇에 의존하는가"를 계산해 복제 로그에 실어 보내면, 슬레이브는 FK를 몰라도 그 정보만으로 병렬/직렬을 정확히 가른다. 이는 MySQL의 WRITESET + LOGICAL_CLOCK(C.3)을 차용한 것이며, **복제 로그 포맷 변경을 전제**로 한다(근거: `reference/mysql/11.writeset_fk_dependency_tracking.md`, 마스터측 코드 분석: 분석서 부록 A).
+
+## E.1 핵심 개념 — writeset과 last_committed
+
+- **conflict key** = `(class, PK)`. 트랜잭션이 건드린 행을 식별하는 최소 단위.
+- **writeset(tx)** = 그 트랜잭션의 conflict key 집합(두 부분, E.2).
+- **last_committed** = 내 writeset과 겹치는 **가장 최근 선행 트랜잭션의 위치**. 슬레이브는 이 값으로 "여기까지 끝났으면 나는 병렬로 돌아도 된다"를 판단한다.
+
+중요한 분리: **writeset(충돌키)은 마스터 내부 충돌 검사용일 뿐 슬레이브로 보내지 않는다.** 슬레이브로 가는 건 그 계산 결과인 **`last_committed` 하나**다. (MySQL이 writeset을 binlog에 안 싣고 `last_committed`/`sequence_number`만 싣는 것과 동일)
+
+## E.2 writeset의 두 부분과 의존성 예시
+
+```
+writeset(tx) = { 그 tx가 바꾼 (class, PK) }  ∪  { 그 tx가 참조한 FK 부모 (class, PK) }
+```
+예시 스키마: `orders`(부모) ← `order_items`(자식, FK `order_id` → `orders.id`).
+
+**부분 1 — 바꾼 (class, PK)** (원천: `repl_records[]`). 같은 행을 건드리는 write-write 충돌(lost update)을 잡는다.
+```
+Tx_A: UPDATE orders WHERE id=100  → {(orders,100)}
+Tx_C: UPDATE orders WHERE id=100  → {(orders,100)}
+→ (orders,100) 겹침 → Tx_C는 Tx_A 뒤로 직렬
+```
+
+**부분 2 — 참조한 FK 부모 (class, PK)** (원천: 서버 FK 검사 경로). 이게 없으면 부모-자식이 안 겹쳐 FK가 깨진다.
+```
+Tx_P: INSERT orders(id=100)                       → 부분1 {(orders,100)}
+Tx_C: INSERT order_items(order_id=100, FK→orders) → 부분1 {(order_items,X)}   ← orders와 안 겹침!
+   → 부분1만 쓰면 "독립"으로 오판 → 병렬 → 자식 먼저 → 부모 없음 → silent skip
+부분2 추가:  Tx_C writeset = {(order_items,X)} ∪ {(orders,100)}   ← 참조한 부모
+   → Tx_P의 {(orders,100)}과 겹침 → Tx_C가 Tx_P 뒤로 직렬 → 자식이 부모 commit 후 적용 → FK 만족
+```
+핵심: **cross-table FK 관계를 "writeset 겹침"으로 번역**한다. 그러면 슬레이브는 FK를 전혀 몰라도 평범한 의존 비교만으로 부모→자식 순서를 보장한다. 방향은 비대칭이다 — **부모 키는 자식 writeset에만** 더하므로(부모는 자기 PK를 부분1로 이미 가짐) 자식이 부모를 기다리지, 부모가 자식을 기다리지 않는다.
+
+## E.3 순서를 어떻게 표현하나 — `sequence_number` 없이 `commit_lsa` 재사용
+
+MySQL은 트랜잭션마다 `sequence_number`(단조 순번)와 `last_committed`(의존 watermark)를 매긴다. CUBRID에서는 **순번을 따로 만들 필요가 없다** — commit 순서가 이미 공짜이기 때문이다:
+
+- 마스터는 commit을 `prior_lsa_mutex` 아래에서 직렬 append하므로 **`commit_lsa`가 단조 증가**하고, 슬레이브 LogReader는 commit 레코드를 **`commit_lsa` 순서(=commit 순서)로 만난다.** 즉 `commit_lsa` 자체가 단조 트랜잭션 식별자다.
+
+그래서 `sequence_number`를 `commit_lsa`로 대체하고, **트랜잭션당 `last_committed_lsa`(LSA) 하나만** 복제 로그에 싣는다.
+
+- 마스터 history: `conflict_key → 그 키를 마지막으로 쓴 트랜잭션의 commit_lsa`.
+- **`last_committed_lsa` = 내 writeset 각 키의 history 값 중 최댓값**(없으면 baseline).
+
+**단, commit "순서"는 공짜지만 "의존"은 공짜가 아니다.** commit 순서만으로는 "누가 독립이라 병렬 가능한가"를 알 수 없으므로 `last_committed`만은 반드시 보낸다. 이 `commit_lsa` watermark 방식이 MySQL의 `sequence_number` watermark와 등가임은 시나리오로 확인된다:
+```
+commit 순서: T1(L1)  T2(L2, 독립: last_committed=L0)  T3(L3, T2에 의존: last_committed=L2)
+T1이 느려 아직 적용 안 됨.
+- T2: last_committed(L0) ≤ committed_lsa  →  참(L0는 이미 적용됨) → T1과 병렬 ✅
+- T3: last_committed(L2) ≤ committed_lsa  →  거짓(committed_lsa<L1<L2) → 대기
+       (T1까지 기다림 — MySQL의 "seq ≤ last_committed 모두 commit" 규칙과 동일, 등가)
+```
+즉 `sequence_number`를 빼도 병렬도·정확성 손실이 없다. **전제는 `committed_lsa`가 gap-free**라는 것 — 이는 G.2의 A안(워커 commit 순서 강제)이 보장한다(둘은 한 쌍).
+
+## E.4 슬레이브 분배 — LOGICAL_CLOCK 규칙
+
+```
+트랜잭션 T 분배 가능 조건:   T.last_committed_lsa ≤ committed_lsa(슬레이브 진도)
+```
+`committed_lsa`는 슬레이브가 이미 추적 중인 watermark(B.4)다. "내가 의존하는 마지막 선행이 이미 적용됐으면 → 나는 병렬로 돌려도 됨". 워커가 commit 완료를 보고하면 `committed_lsa`가 전진하고 pending 트랜잭션을 재평가한다. **새 전역 카운터 없이 기존 `committed_lsa` 비교만 추가**된다. 그리고 logical clock은 "누가 병렬 가능"을, A안(G.2)은 "durable commit을 순서대로"를 담당해 **서로 한 쌍으로 맞물린다**(MySQL의 LOGICAL_CLOCK ↔ SPCO 분리와 동일).
+
+## E.5 FK가 자동으로 풀리는 이유 (silent-skip 근본 해결)
+
+자식 writeset에 부모 키가 들어가므로(E.2 부분2) → 자식 `last_committed_lsa ≥ 부모 commit_lsa` → 슬레이브가 **자식을 부모 commit 이후에만 분배** → 자식 FK 검사가 commit된 부모를 본다 → **조용한 누락(F.1)이 원천적으로 안 생긴다.** applier가 FK를 못 가린다는 D.4의 한계를, 마스터가 부모 키를 writeset에 심어 메우는 것이다.
+
+## E.6 한계와 설계 결정 포인트
+
+- **FK 과직렬화** — 같은 부모를 참조하는 서로 다른 자식 둘은 부모 키를 공유해 서로도 직렬될 수 있다(MySQL Bug#111146). 완화: conflict key에 "write" vs "fk-참조(read)" 태그를 둬 read-read는 충돌로 안 보고 fk-read는 write에만 의존시킨다.
+- **보조 unique 제약** — `(class, PK)`만으론 *같은 class·다른 PK인데 같은 unique 값* 충돌(Q7 재검토)을 못 잡는다. 정확히 하려면 writeset에 **unique 키도 포함**(`(class, PK + 모든 unique 키)`).
+- **cascade FK** — ON DELETE/UPDATE CASCADE로 서버가 자식까지 바꾸면, 그 변경이 `repl_records[]`에 남으면 부분1이 자동 커버. 안 남으면 별도 처리 필요(확인 항목).
+- **DDL/sysop** — writeset 계산 불가 → **barrier(전체 직렬)**. MySQL도 FK/DDL은 COMMIT_ORDER로 fallback한다.
+- **history 크기** — 상한 N + baseline. 작으면 prune된 키가 baseline 의존이 되어 과직렬(안전 방향). MySQL `binlog_transaction_dependency_history_size`(기본 25000) 대응.
+- **롱 트랜잭션** — 부모가 롱tx면 자식 `last_committed_lsa`가 그 commit_lsa라, 자식은 부모 전체가 적용·commit될 때까지 대기한다. 정확하지만 FK 본질상 불가피한 비용(대신 silent skip은 사라짐).
+
+## E.7 마스터 측 구현 지점 (요약)
+
+- **writeset 원천 = `tdes->repl_records[]`** — 트랜잭션이 바꾼 `(class, PK)`를 이미 담고 있어 별도 추적이 불필요(분석서 A.3).
+- **계산 자리 = commit 직렬화 구간** `log_append_repl_info_and_commit_log`의 `prior_lsa_mutex`(분석서 A.4) — 이미 `repl_records[]`를 순회(A.5)하므로 그 자리에서 writeset 수집·`last_committed_lsa` 계산·history 갱신.
+- **FK 부모 키 수집** — `locator_check_foreign_key`(분석서 A.6c)에서 참조 부모 `(class, PK)`를 보조 리스트로 모음.
+- **싣는 곳** — `last_committed_lsa`(LSA) 1개를 commit 복제 레코드 **페이로드**에 → 디스크 헤더 불변, 슬레이브 디코드만 추가.
+- **신규 자료구조** — 전역 `writeset_history`(키→commit_lsa, 상한 N) + tdes 보조 필드. (전역 순번 카운터는 `commit_lsa` 재사용으로 불필요)
+- 변경/재사용 전체 표·최소 변경 경로는 분석서 부록 A.7·A.8.
+
+---
+
+# Act F. 정확성 시나리오
 
 이 설계가 모든 경우에 올바르게 동작하는지(correctness), 그리고 병렬성을 얼마나 살리는지(성능)를 시나리오로 점검한다. 특수 테이블별 상세는 `cubrid_special_table_scenarios.md`에 있다.
 
-## E.1 commit 순서를 강제해야 하는 이유 — FK 시나리오
+## F.1 commit 순서를 강제해야 하는 이유 — FK 시나리오
 
 서버가 FK를 검사하므로(A.2), 순서를 지키지 않은 병렬 적용은 복제를 깬다. 마스터에서 `T1`이 `orders(100)`을 넣고 그다음 `T2`가 이를 참조하는 `order_items(order_id=100)`을 넣었다고 하자. 마스터에서는 부모가 먼저 commit되었으므로 FK가 만족된다. 그런데 슬레이브의 코디네이터가 class 단위로만 보면 T1은 `orders`, T2는 `order_items`로 class가 달라 "독립"으로 오판하고 둘을 병렬로 보낸다. 만약 T2(자식)를 처리하는 워커가 T1(부모)보다 먼저 commit하면, 그 시점에 `orders(100)`이 아직 없으므로 서버의 FK 검사에 걸려 apply 에러가 나고 복제가 멈춘다. 고치는 방법은 부모를 먼저 commit한 뒤 자식을 적용하는 것 — 즉 commit 순서를 보존하는 것이다. applier가 FK를 못 가리므로(D.4) 이 순서 보존을 보수적으로 적용해야 하며, 뒤에서 볼 상속의 공유 unique 인덱스도 같은 종류의 문제다.
 
@@ -205,13 +295,13 @@ slave 비순차 병렬: 자식 T2가 부모 T1보다 먼저 commit → orders(10
 해결: 부모 먼저 commit → 자식 적용 → FK 통과
 ```
 
-## E.2 시나리오별 동작 정리
+## F.2 시나리오별 동작 정리
 
 여러 경우를 이 설계가 어떻게 다루는지 한눈에 보면 다음과 같다. 같은 class에서 같은 행을 바꾸는 경우(분실 갱신, PK/unique 재사용)는 same-class 직렬화로 순서가 보존되어 안전하지만 직렬일 수밖에 없다. 같은 class에서 다른 행을 바꾸는 경우도 안전하지만 보수적으로 직렬화되어 병렬 기회를 잃는다(정밀화의 여지). 서로 다른 class를 바꾸는 독립 트랜잭션은 안전하면서 최대로 병렬화된다. FK로 엮인 cross-class와 상속의 공유 unique는 Phase 1에서 commit 순서 보존으로 안전을 확보하고 Phase 2의 서버 그룹 처리로 병렬을 넓힌다. 파티션은 뒤에 설명할 스키마 규칙 덕분에 안전하게 병렬화된다. 롱 트랜잭션은 멱등 재적용을 전제로 복구 비용을 감수하며, 하나의 큰 트랜잭션은 한 워커가 처리하므로 병렬 이득은 제한적이다.
 
 class 단위 병렬화의 효과는 트랜잭션이 얼마나 여러 class로 분산되느냐에 달려 있다. 서로 다른 class를 바꾸는 트랜잭션이 연속되면 워커가 모두 가동되어 효과가 크지만(best case), 하나의 hot class에 몰리면 워커가 여러 개여도 사실상 순차 실행이 된다(worst case). 현실은 그 중간으로, class group별로는 순서를 지키되 서로 다른 group은 병렬로 도는 형태가 된다.
 
-## E.3 그 밖의 충돌·특수 테이블 점검
+## F.3 그 밖의 충돌·특수 테이블 점검
 
 여기서 판단의 기준은 한 가지다 — **applier가 자기 입력만으로 식별할 수 있는가.** 식별할 수 있는 것은 이미 처리된다. unique/PK 키 재사용(예: 같은 class에서 `DELETE pk=5` 후 `INSERT pk=5`)은 서버가 unique 인덱스로 잡아 비순차면 중복키 에러가 나지만, 같은 class라 코디네이터가 class OID로 same-class 직렬화해 막는다. 반대로 applier가 식별할 수 없는 것이 cross-class 위험인데, 앞서 본 FK와 상속이 여기 속한다. 상속은 subclass가 superclass의 unique 제약을 물려받을 때 **같은 인덱스(BTID)를 공유**하므로(`schema_manager.c:9488-9506`), 서로 다른 subclass에 같은 키를 비순차로 적용하면 공유 unique를 위반한다 — FK와 같은 가족이며 실무 빈도는 낮다.
 
@@ -219,19 +309,19 @@ class 단위 병렬화의 효과는 트랜잭션이 얼마나 여러 class로 �
 
 ---
 
-# Act F. 재시작 시 문제
+# Act G. 재시작 시 문제
 
-## F.1 병렬화가 만드는 재시작 정합 문제
+## G.1 병렬화가 만드는 재시작 정합 문제
 
 applylogdb는 논리 재실행 방식이라 재시작하면 `required_lsa`(LWM)부터 로그를 다시 읽어 적용한다. 이미 적용한 것을 또 적용해 중복이 생기는 것을 막기 위해, 코드에는 두 단계의 멱등(idempotent) skip이 있다 [C2]. 기동 시점의 진도를 baseline(`last_committed_lsa`)으로 잡아 두고, 트랜잭션의 `commit_lsa`가 baseline 이하면 그 트랜잭션을 통째로 건너뛰며(`:8754`), 항목 단위로도 baseline보다 새 것(`item.lsa > last_committed_rep_lsa`)만 적용한다(`:8775`). 이 조건은 develop과 PoC가 동일하다. 물리 redo가 페이지 LSN 비교로 자동으로 멱등이 되는 것(ARIES)을, CUBRID는 복제 진도 LSA를 baseline과 비교하는 방식으로 구현한 셈이다.
 
-그런데 여기에 **병렬화 때문에 새로 생기는 문제**가 있다. 먼저 한 가지 구분을 분명히 해야 한다. "commit 순서를 보존한다"에는 두 층위가 있다 — 진도(`committed_lsa`)를 순서대로 전진시키는 **외부 가시성·진도 층위**와, 워커가 디스크에 **물리적으로 durable commit하는 순서까지 강제하는 층위**다. PoC처럼 워커가 독립적으로 commit하면 앞 층위만 맞고 뒤 층위는 강제되지 않는데(MySQL SPCO가 물리 commit 직전에 차례를 기다리는 것과 대비된다, C.3), 그때 아래의 문제가 생긴다. 본 설계는 F.2에서 뒤 층위까지 강제하기로 정해 이 문제를 원천 차단한다. 재시작 시 재적용 자체는 병렬일 필요가 없고 직렬로 해도 된다. 문제는 그 전에 **병렬 운영이 남긴 out-of-order durable commit**이다. 워커들이 독립적으로 commit하므로, commit 순서상 뒤에 있는 트랜잭션이 앞 트랜잭션보다 먼저 슬레이브에 durable하게 commit될 수 있다. 그런데 진도(`committed_lsa`)는 commit 순서대로만 전진하므로, 그렇게 먼저 커밋된 트랜잭션은 `commit_lsa > committed_lsa`인 상태가 된다. 이 상태에서 크래시가 나면, 재시작 시 `required_lsa`부터 (직렬로) 다시 읽을 때 그 트랜잭션은 `commit_lsa ≤ baseline` 조건에 걸리지 않아 **건너뛰어지지 않고 다시 적용되어 중복**이 된다. 직렬로만 운영하면 `committed_lsa`가 곧 실제 durable 경계라서 생기지 않는, **오직 병렬화 때문에 생기는 문제**다. poc_design.md가 §34에서 "정교한 오류 복구"를 PoC 범위에서 제외했는데, 바로 이 영역이 아직 비어 있다.
+그런데 여기에 **병렬화 때문에 새로 생기는 문제**가 있다. 먼저 한 가지 구분을 분명히 해야 한다. "commit 순서를 보존한다"에는 두 층위가 있다 — 진도(`committed_lsa`)를 순서대로 전진시키는 **외부 가시성·진도 층위**와, 워커가 디스크에 **물리적으로 durable commit하는 순서까지 강제하는 층위**다. PoC처럼 워커가 독립적으로 commit하면 앞 층위만 맞고 뒤 층위는 강제되지 않는데(MySQL SPCO가 물리 commit 직전에 차례를 기다리는 것과 대비된다, C.3), 그때 아래의 문제가 생긴다. 본 설계는 G.2에서 뒤 층위까지 강제하기로 정해 이 문제를 원천 차단한다. 재시작 시 재적용 자체는 병렬일 필요가 없고 직렬로 해도 된다. 문제는 그 전에 **병렬 운영이 남긴 out-of-order durable commit**이다. 워커들이 독립적으로 commit하므로, commit 순서상 뒤에 있는 트랜잭션이 앞 트랜잭션보다 먼저 슬레이브에 durable하게 commit될 수 있다. 그런데 진도(`committed_lsa`)는 commit 순서대로만 전진하므로, 그렇게 먼저 커밋된 트랜잭션은 `commit_lsa > committed_lsa`인 상태가 된다. 이 상태에서 크래시가 나면, 재시작 시 `required_lsa`부터 (직렬로) 다시 읽을 때 그 트랜잭션은 `commit_lsa ≤ baseline` 조건에 걸리지 않아 **건너뛰어지지 않고 다시 적용되어 중복**이 된다. 직렬로만 운영하면 `committed_lsa`가 곧 실제 durable 경계라서 생기지 않는, **오직 병렬화 때문에 생기는 문제**다. poc_design.md가 §34에서 "정교한 오류 복구"를 PoC 범위에서 제외했는데, 바로 이 영역이 아직 비어 있다.
 
-## F.2 해결을 위해 바꿔야 할 부분
+## G.2 해결을 위해 바꿔야 할 부분
 
 해결의 방향으로는 셋을 검토했다. ① 진도 watermark 하나만 두지 말고 그 위에 이미 적용된 트랜잭션들을 따로 추적해 영속화하는 방법(applied-set), ② 워커가 watermark에서 너무 멀리 앞서 commit하지 못하도록 out-of-order commit 윈도우에 상한을 두는 방법(window bound), ③ 아예 **워커의 durable commit 순서 자체를 source 순서로 강제**해 문제를 원천 차단하는 방법이다.
 
-**본 설계는 ③(commit 순서 강제)을 채택한다.** 이는 곧 **MySQL이 택한 길(SPCO)**과 같다 — 워커가 물리 commit 직전에 자기 차례가 올 때까지 대기하게 만들어 durable commit 순서를 source와 일치시키고, 그 결과 복구 좌표가 항상 gap-free가 되어 F.1의 문제 자체를 만들지 않는다(MySQL이 commit 순서를 물리층에서 강제하는 둘째 이유가 바로 이것이다, C.3). 구현상으로도 ③이 가장 깔끔하다. 이미 설계에 있는 **순서 정리 단계**가 결과를 commit 순서대로 모아 `committed_lsa`를 전진시키고 있으므로, 거기에 "자기 차례가 될 때까지 물리 commit을 대기"하는 게이트 한 단계만 더하면 된다(등록→차례 대기→commit→다음 워커 grant). 이러면 **재시작 멱등 skip은 지금의 단일 watermark 그대로** 두어도 되고, 추가로 영속화할 자료구조가 없다. ①·②는 out-of-order durable commit을 허용한 채 skip 판정만 정확히 만들어 commit 단계의 병렬을 더 살리는 대안이지만, applied-set의 크래시-세이프 영속화·복구·GC(또는 윈도우 관리)라는 새 실패 표면을 떠안는다.
+**본 설계는 ③(commit 순서 강제)을 채택한다.** 이는 곧 **MySQL이 택한 길(SPCO)**과 같다 — 워커가 물리 commit 직전에 자기 차례가 올 때까지 대기하게 만들어 durable commit 순서를 source와 일치시키고, 그 결과 복구 좌표가 항상 gap-free가 되어 G.1의 문제 자체를 만들지 않는다(MySQL이 commit 순서를 물리층에서 강제하는 둘째 이유가 바로 이것이다, C.3). 구현상으로도 ③이 가장 깔끔하다. 이미 설계에 있는 **순서 정리 단계**가 결과를 commit 순서대로 모아 `committed_lsa`를 전진시키고 있으므로, 거기에 "자기 차례가 될 때까지 물리 commit을 대기"하는 게이트 한 단계만 더하면 된다(등록→차례 대기→commit→다음 워커 grant). 이러면 **재시작 멱등 skip은 지금의 단일 watermark 그대로** 두어도 되고, 추가로 영속화할 자료구조가 없다. ①·②는 out-of-order durable commit을 허용한 채 skip 판정만 정확히 만들어 commit 단계의 병렬을 더 살리는 대안이지만, applied-set의 크래시-세이프 영속화·복구·GC(또는 윈도우 관리)라는 새 실패 표면을 떠안는다.
 
 ③의 비용은 "앞 트랜잭션이 늦으면 뒤 워커가 commit을 못 하고 대기"하는 commit 단계의 head-of-line 지연이다. 다만 **실행(적용) 자체는 ③에서도 그대로 병렬**이고, PoC 측정에서 병목은 commit이 아니라 slave on-CPU apply(prior_lsa·락·페이지/공간 할당)였으므로 commit 직렬화가 반납하는 병렬 이득은 작을 가능성이 크다. 실제 영향은 정식 구현에서 실측으로 확인한다.
 
@@ -241,7 +331,7 @@ applylogdb는 논리 재실행 방식이라 재시작하면 `required_lsa`(LWM)�
 
 ## 남은 설계 쟁점
 
-class 식별자는 이름의 rename·재사용 위험을 피하기 위해 **class OID로 확정**한다(applier가 이미 `ws_oid()`로 OID를 갖고 있다). 순서 대기 해제 기준은 1차에서는 워커 완료가 아니라 순서 정리 완료로 두는 것이 안전하다(병렬성은 줄지만 correctness 판단이 단순하다). 그 밖에 pending 작업이 너무 많아질 때 리더를 어떻게 멈출지, barrier 범위를 어디까지 잡을지, 나중에 row/write-set 단위로 확장할 때 기존 class 정책과 어떻게 공존시킬지가 남아 있고, 무엇보다 F.2의 **재시작 정합 보강**이 정식 구현의 필수 항목이다.
+class 식별자는 이름의 rename·재사용 위험을 피하기 위해 **class OID로 확정**한다(applier가 이미 `ws_oid()`로 OID를 갖고 있다). 순서 대기 해제 기준은 1차에서는 워커 완료가 아니라 순서 정리 완료로 두는 것이 안전하다(병렬성은 줄지만 correctness 판단이 단순하다). 그 밖에 pending 작업이 너무 많아질 때 리더를 어떻게 멈출지, barrier 범위를 어디까지 잡을지, 나중에 row/write-set 단위로 확장할 때 기존 class 정책과 어떻게 공존시킬지가 남아 있고, 무엇보다 G.2의 **재시작 정합 보강**이 정식 구현의 필수 항목이다.
 
 ## 참고문헌
 
