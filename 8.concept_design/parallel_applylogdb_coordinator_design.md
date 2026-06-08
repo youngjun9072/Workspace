@@ -209,7 +209,9 @@ REPLICA (복제본)
   ❶ source가 "병렬 가능 여부" 결정 │ ❷ replica가 병렬 실행 │ ❸ replica가 commit 순서 보존
 ```
 
-**❶ `binlog_transaction_dependency_tracking` — source가 의존성을 *무슨 기준으로* 계산하나.** source는 트랜잭션마다 `(sequence_number, last_committed)`를 binlog에 적는데(❶), 그중 `last_committed`(= 이 트랜잭션이 기다려야 할 가장 최근 선행)를 어떤 기준으로 정할지가 이 옵션이다 [M3][M5].
+그림의 흐름 **❶(의존성 계산) → ❷(병렬 분배) → ❸(commit 순서 보존)** 이 핵심이고, 이는 우리 설계와 1:1로 대응한다 — **❶ = Act E(마스터 writeset 계산), ❷ = 코디네이터/LogReader, ❸ = G.2의 A안.** 아래에서 셋을 차례로 본다.
+
+**❶ 의존성 계산 (source).** source는 트랜잭션마다 `sequence_number`(binlog 안의 논리 순번)와 `last_committed`(이 트랜잭션이 기다려야 하는 가장 최근 선행 트랜잭션 = watermark)를 binlog에 적는다 [M2][M4]. 이 `last_committed`를 *무슨 기준으로* 정하느냐가 `binlog_transaction_dependency_tracking`이다 [M3][M5].
 
 | 값 | 의존성 판단 기준 | 병렬 폭 |
 |---|---|---|
@@ -217,13 +219,13 @@ REPLICA (복제본)
 | `WRITESET` | 트랜잭션이 **바꾼 행/키 집합(write set)의 충돌 여부**로 판단 — 키가 안 겹치면 독립(실행 순서 무관) | 넓음(가장 정밀) |
 | `WRITESET_SESSION` | `WRITESET` + **같은 세션의 트랜잭션끼리는 원래 순서 유지** | 넓되 세션 단위 안전 |
 
-> 핵심: **write set 자체는 binlog에 실리지 않는다.** source가 `last_committed`를 계산하는 내부 입력으로만 쓰고, replica엔 결과(`sequence_number`/`last_committed`)만 전달된다 [M3]. (우리 Act E도 동일 — writeset은 마스터 내부, `last_committed`만 전송)
+여기서 핵심은 **write set 자체는 binlog에 실리지 않는다**는 점이다 — source가 `last_committed` 계산에만 쓰는 내부 입력이고, replica엔 결과(`sequence_number`/`last_committed`)만 전달된다 [M3]. (우리 Act E도 동일 — writeset은 마스터 내부, `last_committed`만 전송)
 
-그리고 ❶(의존성 계산)은 우리 Act E(마스터 writeset 계산), ❷(병렬 분배)는 코디네이터/LogReader, ❸(SPCO)는 G.2의 A안에 1:1로 대응한다. 우리 설계와 가장 비슷한 점은 **병렬 실행과 commit 순서 보존을 분리**한다는 점이고, 나아가 **마스터가 writeset으로 의존성을 계산해 내려보내는 방식(WRITESET + LOGICAL_CLOCK)까지 차용할 예정**이다(정식 설계는 Act E). 즉 "의존성 판단(분배)"과 "commit 순서 보존(집행)"을 나누는 큰 틀과, 그 의존성을 마스터가 미리 계산하는 방식 둘 다 MySQL 모델에 직접 닿는다.
+**❷ 병렬 분배 (replica).** replica의 coordinator(`replica_parallel_type=LOGICAL_CLOCK`)가 relay log를 순서대로 읽어, 트랜잭션의 `last_committed` 이하가 모두 끝났으면 워커에 병렬로 보낸다(워커 수 = `replica_parallel_workers`) [M2][M4]. 한편 binary log group commit은 병렬 복제의 필수 조건은 아니고, 여러 트랜잭션의 commit window를 겹치게 해 LOGICAL_CLOCK의 병렬 폭을 넓혀 주는 보조 요소다 [M3].
 
-병렬 여부의 판단은 의존성을 기준으로 한다. source가 트랜잭션마다 `sequence_number`(binlog 안의 논리 순번)와 `last_committed`(이 트랜잭션이 기다려야 하는 가장 최근 선행 트랜잭션, 일종의 watermark)를 binlog에 적어 두고, replica의 coordinator(`replica_parallel_type=LOGICAL_CLOCK`)가 이를 읽어 `last_committed` 이하의 트랜잭션이 모두 끝났으면 병렬로 실행한다 [M2][M4]. 이 의존성을 *어떻게 계산하는지*는 `binlog_transaction_dependency_tracking`으로 정한다(세 모드 `COMMIT_ORDER`/`WRITESET`/`WRITESET_SESSION`의 차이는 위 그림 설명의 표 참조) [M3][M5]. 여기서 중요한 사실은, **write set 자체는 binlog에 실리지 않고** source가 `last_committed`를 계산하는 내부 입력으로만 쓰이며 replica에는 계산 결과(`sequence_number`/`last_committed`)만 전달된다는 점이다.
+**❸ commit 순서 보존 (replica).** 병렬로 실행한 트랜잭션의 최종 commit 순서는 `replica_preserve_commit_order`(SPCO, 8.0.27부터 기본 ON, LOGICAL_CLOCK 전제)가 source 순서로 강제한다. 워커들이 동시에 실행해도 commit만큼은 원본 순서대로 외부에 보여, 뒤 트랜잭션이 앞보다 먼저 보이는 "gap"이 방지된다 [M2][M6].
 
-병렬로 실행한 트랜잭션의 최종 commit 순서는 `replica_preserve_commit_order`(SPCO, 8.0.27부터 기본 ON이며 LOGICAL_CLOCK이 전제)가 source 순서로 강제한다. 그래서 워커들이 동시에 실행하더라도 commit만큼은 원본 순서대로 외부에 보이며, 뒤 트랜잭션이 앞보다 먼저 보이는 "gap"이 방지된다 [M2][M6]. 한편 binary log group commit은 병렬 복제의 필수 조건은 아니고, 여러 트랜잭션의 commit window를 겹치게 만들어 LOGICAL_CLOCK의 병렬 폭을 넓혀 주는 보조 요소다 [M3]. 정리하면 MySQL의 "source가 의존성을 계산해 내려보내고, replica coordinator가 병렬 실행하되 commit 순서는 따로 보존한다"는 구조가 CUBRID의 "코디네이터가 분배하고 순서 정리 단계가 committed_lsa를 순서대로 갱신한다"와 1:1로 대응하여, 우리는 MySQL 모델을 차용하기로 했다(상세는 `reference/mysql/`).
+**정리.** MySQL은 **"의존성 판단(분배)"과 "commit 순서 보존(집행)"을 분리**하고, 그 의존성을 **source가 미리 계산해(writeset) 내려보낸다.** 이 두 축이 CUBRID의 "코디네이터가 분배(Act E) ↔ 순서 정리·A안이 commit 순서 보존(G.2)"과 1:1로 대응하여, 우리는 MySQL 모델(병렬↔commit순서 분리 + WRITESET·LOGICAL_CLOCK)을 차용하기로 했다(상세는 `reference/mysql/`, 정식 설계는 Act E).
 
 한 가지 더 짚을 점은 **MySQL이 commit 순서를 보존하는 "층위"와 그 이유**인데, 이는 뒤의 Act G(재시작 문제)와 직접 맞닿아 있다. SPCO는 단순히 진도 표시만 순서대로 맞추는 게 아니라, 워커가 **물리적으로 commit하기 직전에 자기 차례가 올 때까지 대기**시켜 durable commit 자체를 source 순서로 직렬화한다(코드상 `Commit_order_manager`가 책임지며, ordered_commit의 첫 단계에서 차례 대기로 진입한다 — `sql/rpl_replica_commit_order_manager.h`, `sql/binlog.cc`의 ordered_commit) [M7]. MySQL이 *왜* 여기까지 하는지는 두 가지로 확인된다. 첫째, replica가 **source에 존재한 적 없는 중간 상태를 외부에 노출하지 않게** 하기 위해서다 — 뒤 트랜잭션이 앞보다 먼저 보이는 gap이 생기면 read scale-out에서 일관성이 깨지며, 이것이 이 기능의 원 설계 동기다("the slave database can be in a state that never existed on the master") [M8]. 둘째, **크래시 복구 좌표가 gap-free여야 유효**하기 때문이다 — commit이 순서대로면 단일 복구 위치 앞은 전부 적용 완료가 보장되지만, out-of-order commit은 그 위치 뒤에 이미 durable한 트랜잭션을 남겨 복구를 어긋나게 한다(매뉴얼이 multithreaded replica의 gap을 복구 실패 요인으로 명시) [M6]. **이 둘째 이유가 바로 CUBRID에서 Act G가 다루는 재시작 정합 문제와 정확히 같은 동기**다. MySQL은 commit 순서를 진도층이 아니라 물리 commit 단계에서 강제함으로써 그 문제를 애초에 만들지 않는다.
 
