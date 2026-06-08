@@ -224,6 +224,8 @@ REPLICA (복제본)
 | `WRITESET` | 8.0에서는 선택값. 8.4+에서는 선택지가 아니라 source 내부 기본 동작. |
 | `WRITESET_SESSION` | 8.0에서 선택 가능. 8.4+에서는 제거됨. |
 
+**스토리 요약 (한눈).** `last_committed`(병렬 watermark)를 *타이밍으로 채우면* **COMMIT_ORDER**(공짜·baseline·원본 동시성에 묶여 좁음), *행 키 충돌로 채우면* **WRITESET**(정밀·원본 commit 순서와 무관하게 병렬). 둘은 대체가 아니라 **합성** — WRITESET이 COMMIT_ORDER baseline을 `min`으로 낮춰 병렬만 넓힌다(정확성은 commit-order가 보장). → **CUBRID는 `(class,PK)` 충돌 기반(WRITESET식, Act E)을 택하고 commit-order/LSA는 안전 backstop으로** 둔다. (원리 상세 → `reference/mysql/03` "두 방법", 코드 → `reference/mysql/04` §5.1·§5.3)
+
 여기서 핵심은 **write set 자체는 binlog에 실리지 않는다**는 점이다 — source가 `last_committed` 계산에만 쓰는 내부 입력이고, replica엔 결과(`sequence_number`/`last_committed`)만 전달된다 [M3]. (우리 Act E도 동일 — writeset은 마스터 내부, `last_committed`만 전송)
 
 > **혼동 주의 (예전 조사 교정).** ① **COMMIT_ORDER와 WRITESET은 *동시 기준이 아니라 택1 모드*** 였다(예전 노트가 "충돌 없음"+"같이 commit"을 동시 조건처럼 적었으나 실제론 8.0의 모드 선택). 8.4+는 WRITESET 내부 동작. ② **group commit은 ON/OFF가 아니라 항상 동작하는 binlog 배칭**이고, COMMIT_ORDER에서만 병렬 폭을 좌우했다(WRITESET은 무관). ③ **`innodb_flush_log_at_trx_commit`(내구성)은 병렬화 메커니즘이 아니다** — commit마다의 redo flush/fsync 빈도(0/1/2)를 정하는 *내구성* 설정으로, 병렬 판단과 무관하다. 다만 완화하면 apply가 빨라져 *복제 지연(lag)* 을 크게 줄이는 **별개 레버**라 병렬 파라미터와 자주 혼동된다(JFG 실측: CPU-bound에선 내구성 완화가 병렬화보다 효과가 컸음 — `reference/mysql/13`). ④ **Logical Clock ≠ GTID** — 병렬을 정하는 logical clock은 binlog의 `(last_committed, sequence_number)` 쌍이고 GTID는 별개의 전역 ID다(binlog 한 줄에 `Anonymous_GTID`와 `last_committed`/`sequence_number`가 따로 찍힘). 병렬 기준도 "같은 Logical Clock 값"이 아니라 **"같은 `last_committed`"** 다. 상세·binlog 예시는 `reference/mysql/03`.
