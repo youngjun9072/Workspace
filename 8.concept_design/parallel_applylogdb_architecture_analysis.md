@@ -588,3 +588,176 @@ result queue backpressure 부재다.
 현재 계측은 병목을 찾기에는 충분히 풍부하다. 다음 단계는 계측 결과를 바탕으로
 정말 병목이 worker apply인지, server RPC인지, flush인지, ordered retire인지
 분리하고, correctness gap부터 닫는 것이다.
+
+---
+
+# 부록 A. 마스터(cub_server) 측 복제 로그 생성 경로 — (Phase 2) 의존성 부여 지점 분석
+
+위 본문은 **슬레이브(applylogdb)** 측 PoC 구조다. 여기서는 MySQL WRITESET처럼 **마스터가 트랜잭션별 의존성(logical clock / conflict key)을 미리 계산해 repl 로그에 실어 보내는** Phase 2 방향을 위해, 마스터(`cub_server`, `SERVER_MODE`)의 repl 로그 생성 경로를 코드로 분석한다. (배경·근거는 `reference/mysql/11.writeset_fk_dependency_tracking.md`)
+
+브랜치 `feature/parallel_applylogdb_poc` 기준.
+
+## A.1 repl 레코드 — 메모리 구조와 디스크 구조
+
+행이 바뀌면 마스터는 먼저 **tdes 안의 in-memory repl 레코드 배열**에 쌓고, commit 시 디스크 WAL로 append한다. 두 구조가 다르다.
+
+메모리 구조 `LOG_REPL_RECORD` — `src/transaction/replication.h:78-89`:
+
+```c
+struct log_repl
+{
+  LOG_RECTYPE repl_type;   /* LOG_REPLICATION_DATA / ..._SCHEMA */
+  LOG_RCVINDEX rcvindex;   /* INSERT / DELETE / UPDATE_START/END (operation) */
+  OID inst_oid;            /* ← 바뀐 행의 OID */
+  LOG_LSA lsa;
+  char *repl_data;         /* 직렬화 페이로드: [packed_key_len][class_name][PK value] */
+  int length;
+  LOG_REPL_FLUSH must_flush;
+  bool tde_encrypted;
+};
+```
+
+디스크에 실제 append되는 헤더 `LOG_REC_REPLICATION` — `src/transaction/log_record.hpp:227-233`:
+
+```c
+struct log_rec_replication
+{
+  LOG_LSA lsa;
+  int length;     /* 뒤따르는 가변 페이로드(repl_data) 길이 */
+  int rcvindex;
+};
+```
+
+> 즉 **개별 repl 레코드는 (class + PK + operation + 행 OID)를 이미 보유**한다. 새 의존성 필드(`seqno`/`last_committed` 또는 conflict key)는 **헤더에 넣으면**(`log_rec_replication`에 `INT64` 추가) 디스크 포맷·applier 파서를 같이 바꿔야 하고, **페이로드(`repl_data`)에 넣으면** 헤더는 불변이고 applier 디코드만 바꾸면 된다.
+
+## A.2 repl 레코드 생성·직렬화 — `repl_log_insert` (`replication.c:293`)
+
+호출자는 `locator_sr.c:8086`(INSERT/DELETE)·`8849/8859`(UPDATE)·`serial.c:980`. 페이로드 직렬화부 — `src/transaction/replication.c:391-419`:
+
+```c
+repl_rec->length  = OR_INT_SIZE;                              /* packed_key_value_size */
+repl_rec->length += or_packed_string_length (class_name, &strlen);
+repl_rec->length += OR_VALUE_ALIGNED_SIZE (key_dbvalue);
+ptr = (char *) malloc (repl_rec->length);
+...
+repl_rec->repl_data = ptr;
+ptr_to_packed_key_value_size = ptr;     /* 앞 4바이트는 PK 길이용 자리 */
+ptr += OR_INT_SIZE;
+ptr = or_pack_string_with_length (ptr, class_name, strlen);   /* class_name */
+ptr = or_pack_mem_value (ptr, key_dbvalue, &packed_key_len);  /* PK 값 */
+or_pack_int (ptr_to_packed_key_value_size, packed_key_len);
+```
+
+> 여기는 **트랜잭션 진행 중** 시점이라 commit 순번(monotonic seq)을 아직 모른다. 따라서 seq는 여기서 넣을 수 없고 A.4의 commit 직렬화 지점에서 채워야 한다. conflict key 원재료(class+PK)는 이미 이 페이로드에 다 들어 있다.
+
+## A.3 트랜잭션 단위 집계 그릇 — `LOG_TDES` (`log_impl.h:522-531`)  ★재사용 핵심
+
+```c
+int num_repl_records;          /* repl 레코드 배열 크기 */
+int cur_repl_record;           /* 지금까지 쌓인 repl 레코드 수 */
+int append_repl_recidx;        /* WAL append 진행 인덱스 */
+int fl_mark_repl_recidx;       /* flush mark 시작 인덱스 */
+struct log_repl *repl_records; /* ← 이 트랜잭션의 repl 레코드 배열 = writeset 후보 */
+LOG_LSA repl_insert_lsa;
+LOG_LSA repl_update_lsa;
+...
+int suppress_replication;      /* 세트되면 repl 로그 미작성 */
+```
+
+> **`tdes->repl_records[0..cur_repl_record-1]` 가 곧 "이 트랜잭션이 바꾼 (class, OID, PK) 목록" = writeset 그 자체다.** 별도 conflict-set 구조를 새로 만들 필요 없이 이 배열을 commit 시 훑으면 된다. seq/last_committed는 트랜잭션당 1개이므로 이 구조체에 `INT64 repl_seqno; INT64 last_committed;` 를 추가하는 게 자연스럽다.
+
+## A.4 commit 직렬화 지점 — `log_append_repl_info_and_commit_log` (`log_manager.c:4643-4661`)  ★순번 채번 자리
+
+repl 레코드들은 commit 로그와 **원자적으로** append되며, 그 구간이 전역 락으로 직렬화된다:
+
+```c
+// NOTE: Atomic write of replication log and commit log is crucial for replication consistencies.
+log_Gl.prior_info.prior_lsa_mutex.lock ();            /* ← 전역 commit 직렬화 락 */
+log_append_repl_info_with_lock (thread_p, tdes, true);          /* repl 레코드들 append */
+log_append_commit_log_with_lock (thread_p, tdes, commit_lsa);   /* commit 레코드 append */
+log_Gl.prior_info.prior_lsa_mutex.unlock ();
+```
+
+> 이 `prior_lsa_mutex` 구간이 **트랜잭션 commit이 전역적으로 한 줄로 직렬화되는 유일 지점**이다. MySQL의 "commit 순서 = logical clock 부여"에 정확히 대응하므로, **여기서 전역 atomic 카운터로 `seqno`를 채번하고, 직전 충돌 트랜잭션의 seqno로 `last_committed`를 산출**하는 것이 가장 자연스럽다.
+> (추측) commit_lsa 자체가 단조 증가값이라 seqno로 재사용도 고려할 수 있으나, LSA는 (pageid, offset) 2워드라 의존성 비교용 64bit 단조 순번이 더 단순하다 — 검증 필요.
+
+## A.5 repl → 디스크 append 루프 (`log_manager.c:4565-4601`)  ★conflict key 수집 자리
+
+A.4의 `log_append_repl_info_with_lock` 내부는 이미 `repl_records[]`를 순회한다:
+
+```c
+while (tdes->append_repl_recidx < tdes->cur_repl_record)
+  {
+    repl_rec = &tdes->repl_records[tdes->append_repl_recidx];
+    if ((repl_rec->repl_type == LOG_REPLICATION_DATA || ...STATEMENT) && (... must_flush ...))
+      {
+        node = prior_lsa_alloc_and_copy_data (..., repl_rec->length, repl_rec->repl_data, ...);
+        ...
+        log = (LOG_REC_REPLICATION *) node->data_header;
+        ...
+        log->length   = repl_rec->length;
+        log->rcvindex = repl_rec->rcvindex;
+        ...
+      }
+    ...
+  }
+```
+
+> **이 루프가 이미 락 안에서 repl 레코드를 한 번 순회**하므로, 같은 자리에서 각 `repl_rec`의 `inst_oid`(또는 페이로드의 PK)를 모아 트랜잭션 conflict key 집합을 만들면 **추가 순회·자료구조 없이** 끝난다. 그리고 `node->data_header`(=`LOG_REC_REPLICATION`)나 페이로드에 seqno를 1회 실으면 된다.
+
+## A.6 구분(의존성)에 재사용 가능한 기존 자료구조
+
+### (a) `tdes->repl_records[]` = writeset  ★가장 직접적
+A.3·A.5 그대로. (class + OID + PK)를 정확한 입도로 이미 보유하고, read 락 잡음이 없다.
+
+### (b) lock manager 트랜잭션별 락 목록 — `LK_TRAN_LOCK` (`lock_manager.c:322-333`)
+
+```c
+struct lk_tran_lock
+{
+  ...
+  LK_ENTRY *inst_hold_list;   /* 인스턴스 락 보유 리스트 */
+  LK_ENTRY *class_hold_list;  /* 클래스 락 보유 리스트 */
+  ...
+  int inst_hold_count;
+  int class_hold_count;
+  ...
+};
+```
+
+`lk_Gl.tran_lock_table[tran_index]`로 접근하며, `LK_ENTRY.tran_next` 링크 → `res_head->key.oid / key.class_oid`로 **트랜잭션이 잡은 (OID, class OID)** 를 순회할 수 있다. 단 입도가 행 OID 단위(논리 PK 아님)이고 **read 락도 섞여 있어** `granted_mode` 필터가 필요하다 → repl_records보다 거칠다.
+
+### (c) FK 부모 PK — `locator_check_foreign_key` (`locator_sr.c:4134-4146`)
+
+```c
+BTID_COPY (&local_btid, &index->fk->ref_class_pk_btid);   /* 부모 PK 인덱스 */
+COPY_OID (&part_oid,   &index->fk->ref_class_oid);        /* 부모 클래스 */
+...
+ret = xbtree_find_unique (thread_p, &local_btid, S_SELECT_WITH_LOCK,
+                          key_dbvalue, &part_oid, &unique_oid, true);  /* key_dbvalue = 참조 부모 PK */
+```
+
+> `repl_records[]`는 자식이 *바꾼* 행(자식 PK)만 담고 *참조한* 부모 PK는 담지 않는다. 부모-자식 의존성을 conflict key로 표현하려면 **이 지점에서 (부모 class OID, 부모 PK 값)을 tdes 보조 리스트로 수집**해 conflict key 집합에 더해야 한다. FK 메타는 `OR_FOREIGN_KEY`(`object_representation_sr.h:130-141`: `ref_class_oid`, `ref_class_pk_btid`, `del/upd_action`).
+
+## A.7 변경 분류표
+
+| 구분 | 항목 | 위치 |
+|---|---|---|
+| **새로** | 전역 atomic 단조 카운터(`seqno`) (+선택: writeset history) | `log_Gl.prior_info` 부근 |
+| 새로 | `tdes->repl_seqno`, `tdes->last_committed` | `log_impl.h` LOG_TDES |
+| **변경** | commit 락 구간에서 seq 채번 + conflict key 수집 | `log_manager.c:4565~4661` |
+| 변경 | seqno/conflict key를 로그에 실음 | 페이로드(`replication.c:391~419`) 권장 / 헤더(`log_record.hpp:227~233`)는 디스크포맷 변경 동반 |
+| 변경 | repl 디코드 → 의존 그래프 | `log_applier.c` repl 파싱부(슬레이브) |
+| **재사용** | `tdes->repl_records[]` = writeset | `log_impl.h:522`, `replication.h:78-89` |
+| 재사용 | lock 보유 목록(거침) | `lock_manager.c:322-333` |
+| 재사용 | FK 부모 PK | `locator_sr.c:4134-4146`, `object_representation_sr.h:130-141` |
+
+## A.8 최소 변경 경로 (권장)
+
+1. 전역 atomic `seqno` 카운터 + `tdes`에 `repl_seqno`/`last_committed` 2필드 추가.
+2. `log_append_repl_info_with_lock`의 기존 `repl_records[]` 순회(A.5)에서 `(class, PK)` conflict key를 모음 + FK 자식이면 `locator_check_foreign_key`(A.6c)에서 수집한 부모 PK를 합침.
+3. 같은 `prior_lsa_mutex` 구간(A.4)에서 `seqno` 채번, (옵션 a면) 전역 writeset history와 비교해 `last_committed` 산출.
+4. `seqno`(+옵션 b면 conflict key 원재료)를 **repl 페이로드에 1회** 실음 → 디스크 헤더 불변.
+5. 슬레이브 `log_applier.c`가 디코드해 코디네이터가 `last_committed`(또는 conflict key 교집합) 기준으로 병렬/직렬 판단.
+
+> 옵션 a(가공된 `last_committed`만 전송, 슬레이브 단순) vs 옵션 b(conflict key 원재료 전송, 슬레이브가 비교, 마스터 가벼움)는 `coordinator_design.md` D.5의 두 갈래와 동일한 선택이다.
