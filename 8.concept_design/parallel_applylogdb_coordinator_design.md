@@ -175,7 +175,7 @@ EDB PGD(구 BDR)는 상용 멀티마스터 제품으로, 구독당 여러 writer
 
 ## C.3 MySQL — 가장 유사하여 채택
 
-MySQL 복제는 source가 변경을 binary log에 기록하고, replica의 I/O 스레드가 이를 relay log로 받은 뒤, 병렬 적용 시 **coordinator 스레드가 relay log를 순서대로 읽어 워커 스레드에 배정**하는 구조다 [M1]. 구조를 그림으로 보면 다음과 같다(조사 문서 `reference/mysql/01.replication_overview.md`에서 가져옴).
+MySQL 복제는 source가 변경을 binary log에 기록하고, replica의 I/O 스레드가 이를 **relay log**로 받아 둔 뒤, 병렬 적용 시 **coordinator 스레드가 relay log를 순서대로 읽어 워커 스레드에 배정**하는 구조다 [M1]. relay log는 복제를 위해 replica 로컬에 쌓는 수신 로그이며, 데이터 이벤트 포맷은 source의 binary log와 같다. 차이는 relay log 앞머리에 붙는 replica-local 헤더/bookkeeping 이벤트이고, 이후 실제 데이터 이벤트는 source binary log와 같은 `Log_event` 포맷으로 기록되어 수신과 적용을 분리하는 버퍼 역할을 한다 [M12]. 구조를 그림으로 보면 다음과 같다(조사 문서 `reference/mysql/01.replication_overview.md`에서 가져옴).
 
 ```text
 SOURCE (원본)
@@ -211,6 +211,8 @@ REPLICA (복제본)
 
   ❶ source가 "병렬 가능 여부" 결정 │ ❷ replica가 병렬 실행 │ ❸ replica가 commit 순서 보존
 ```
+
+여기서 **relay log는 "복제를 위한 별도 형식의 논리 로그"가 아니다.** MySQL 공식 문서와 소스 분석 기준으로 relay log는 binary log와 같은 이벤트 포맷을 쓰며 `mysqlbinlog`로 읽을 수 있다. 코드 분석상 둘 다 같은 `MYSQL_BIN_LOG`/`Log_event` 계열을 쓰고, relay log 파일 앞머리에만 relay 자신의 format description, source 위치를 가리키는 rotate, source format description 같은 bookkeeping 이벤트가 붙는다. 그 뒤 실제 데이터 이벤트는 source binary log 이벤트와 같은 형식이다 [M12].
 
 그림의 흐름 **❶(의존성 계산) → ❷(병렬 분배) → ❸(commit 순서 보존)** 이 핵심이고, 이는 우리 설계와 1:1로 대응한다 — **❶ = Act E(마스터 writeset 계산), ❷ = 코디네이터/LogReader, ❸ = G.2의 A안.** 아래에서 셋을 차례로 본다.
 
@@ -466,6 +468,7 @@ class 식별자는 이름의 rename·재사용 위험을 피하기 위해 **clas
 - [M9] MySQL 8.4.0 Release Notes — `binlog_transaction_dependency_tracking` removed; source uses writesets internally for binary log dependency information. https://dev.mysql.com/doc/relnotes/mysql/8.4/en/news-8-4-0.html
 - [M10] MySQL 8.4 Manual — `replica_parallel_type` valid values `DATABASE`/`LOGICAL_CLOCK`, default `LOGICAL_CLOCK`, deprecated; `LOGICAL_CLOCK` to be used exclusively later. https://dev.mysql.com/doc/refman/8.4/en/replication-options-replica.html
 - [M11] MySQL 9.5.0 Release Notes — `replica_parallel_type` removed. https://docs.oracle.com/cd/E17952_01/mysql-9.7-relnotes-en/news-9-5-0.html
+- [M12] MySQL 8.0 Manual — The Relay Log; relay log has the same format as binary log and can be read by `mysqlbinlog`. https://dev.mysql.com/doc/refman/8.0/en/relay-log.html ; local source/code analysis: `reference/mysql/02.binlog_vs_relaylog_format.md`
 - (초기 구축) Clone Plugin / GTID auto-positioning. https://dev.mysql.com/doc/refman/8.0/en/clone-plugin.html , https://dev.mysql.com/doc/refman/8.0/en/replication-gtids-auto-positioning.html
 
 **PostgreSQL**
