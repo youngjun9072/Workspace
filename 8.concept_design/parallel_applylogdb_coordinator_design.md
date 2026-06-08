@@ -130,6 +130,16 @@ PostgreSQL 논리 복제는 **publish/subscribe(발행/구독)** 모델이다. p
 | `two_phase` | SUBSCRIPTION | `false` | 2단계 커밋을 PREPARE 시점에 전송 |
 | `connect`·`create_slot`·`enabled` | SUBSCRIPTION | `true` | 등록 시 접속·슬롯 생성·즉시 시작 여부 |
 
+위 WITH 옵션이 "구독 단위"라면, 논리 복제 자체를 켜고 병렬도를 정하는 건 **서버 구성(GUC)** 이다(한쪽 노드에만 적용). 우선 publisher는 **`wal_level`** 이 핵심인데, 값에 따라 가능한 복제가 갈린다.
+
+| `wal_level` | 가능한 것 |
+|---|---|
+| `minimal` | crash recovery만. 스트리밍 복제·logical decoding **불가** |
+| `replica`(기본) | 아카이빙 + **물리** 스트리밍 복제 + standby 읽기. logical decoding **불가** |
+| `logical` | `replica`의 모든 것 + **logical decoding(논리 복제)** 가능 |
+
+→ 논리 복제는 publisher가 **`wal_level=logical`** 이어야 성립한다. 다만 **병렬도 자체는 `wal_level`이 아니라** subscriber의 워커 GUC가 정한다 — `max_logical_replication_workers`(leader apply·tablesync·parallel apply 워커가 모두 이 풀에서 나옴, 그 상위는 `max_worker_processes`), 초기 COPY 병렬은 `max_sync_workers_per_subscription`, 진행 중 대형 tx 병렬은 `streaming=parallel`+`max_parallel_apply_workers_per_subscription`. (전체 GUC 목록·기본값은 `reference/pgsql/logical_replication_pubsub_and_options.md` §8)
+
 여기서 우리 관심은 **병렬성**이다. PostgreSQL은 **하나의 구독 안에서는 트랜잭션을 publisher의 순서 그대로 직렬로 적용**하며, MySQL처럼 트랜잭션 간 의존성을 계산해 독립 트랜잭션을 병렬로 분배하지는 않는다. 병렬성이 나타나는 곳은 두 군데뿐이다. 하나는 구독 생성 시 기존 테이블 데이터를 복사하는 초기 동기화 단계로, 여러 tablesync worker가 병렬로 복사한다(`max_sync_workers_per_subscription`) [P1][P2]. 다른 하나는 큰 트랜잭션을 commit 전에 조각내어 보내는 streaming인데, `streaming=parallel`이면 leader apply worker가 parallel apply worker에게 조각을 넘겨 적용하고 commit 시점에 leader가 그 워커의 완료를 기다려 순서를 맞춘다(PostgreSQL 16에서 비기본으로 도입, 18부터 기본) [P3][P4][P5]. 그러나 이는 어디까지나 *한 트랜잭션의 조각*을 처리하는 것이지 여러 트랜잭션을 의존성 기준으로 병렬화하는 것이 아니다. 따라서 "독립 트랜잭션 자동 병렬 + 전역 순서 보존"을 목표로 하는 우리에게 PostgreSQL은 직접 모델로 부적합하다. 다만 구독 경계를 잘못 자르면 원자성·순서가 깨지는 사례는 "병렬 단위를 잘못 자르면 무엇이 깨지는가"를 보여주는 반면교사로 가치가 있다 [P6]. (Publisher/Subscriber 역할·구독 등록 과정·`CREATE PUBLICATION/SUBSCRIPTION` 옵션별 동작은 `reference/pgsql/logical_replication_pubsub_and_options.md`에 정리했다.)
 
 ## C.2 EDB PGD — 탈락(단, 한 측면은 선례)
