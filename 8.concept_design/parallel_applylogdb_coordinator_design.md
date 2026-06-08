@@ -158,7 +158,17 @@ subscriber 쪽 GUC는 다음과 같다(기본값은 reference §8).
 
 **그래서 publisher가 `minimal`/`replica`면 subscriber 설정으로는 못 고친다.** 유일한 해법은 **publisher의 `wal_level=logical`로 올리고 재시작**하는 것이다(슬롯·decoding의 전제라 subscriber의 어떤 GUC도 우회 불가). `WITH (connect=false)`로 구독을 만들면 그 순간 에러만 미룰 뿐, 이후 슬롯 생성·enable에서 결국 같은 검사에 걸린다. (subscriber 자신의 `wal_level`은 *수신*과 무관하므로 `replica`여도 되고, 그 노드가 *재발행*까지 하는 캐스케이딩일 때만 `logical`이 필요하다.)
 
-여기서 우리 관심은 **병렬성**이다. PostgreSQL은 **하나의 구독 안에서는 트랜잭션을 publisher의 순서 그대로 직렬로 적용**하며, MySQL처럼 트랜잭션 간 의존성을 계산해 독립 트랜잭션을 병렬로 분배하지는 않는다. 병렬성이 나타나는 곳은 두 군데뿐이다. 하나는 구독 생성 시 기존 테이블 데이터를 복사하는 초기 동기화 단계로, 여러 tablesync worker가 병렬로 복사한다(`max_sync_workers_per_subscription`) [P1][P2]. 다른 하나는 큰 트랜잭션을 commit 전에 조각내어 보내는 streaming인데, `streaming=parallel`이면 leader apply worker가 parallel apply worker에게 조각을 넘겨 적용하고 commit 시점에 leader가 그 워커의 완료를 기다려 순서를 맞춘다(PostgreSQL 16에서 비기본으로 도입, 18부터 기본) [P3][P4][P5]. 그러나 이는 어디까지나 *한 트랜잭션의 조각*을 처리하는 것이지 여러 트랜잭션을 의존성 기준으로 병렬화하는 것이 아니다. 따라서 "독립 트랜잭션 자동 병렬 + 전역 순서 보존"을 목표로 하는 우리에게 PostgreSQL은 직접 모델로 부적합하다. 다만 구독 경계를 잘못 자르면 원자성·순서가 깨지는 사례는 "병렬 단위를 잘못 자르면 무엇이 깨지는가"를 보여주는 반면교사로 가치가 있다 [P6]. (Publisher/Subscriber 역할·구독 등록 과정·`CREATE PUBLICATION/SUBSCRIPTION` 옵션별 동작은 `reference/pgsql/logical_replication_pubsub_and_options.md`에 정리했다.)
+여기서 우리 관심은 **병렬성**인데, PostgreSQL의 병렬은 **"독립 트랜잭션 자동 병렬"이 아니다.** 전제: **한 구독(subscription) 안에서는 트랜잭션을 publisher commit 순서대로 직렬 적용**하고, 트랜잭션 일관성도 *그 구독 범위 안에서만* 보장된다 [P1]. MySQL처럼 트랜잭션 간 의존성을 계산해 독립 트랜잭션을 병렬 분배하지는 않는다. 병렬이 나오는 곳은 셋뿐이다.
+
+- **① 초기 동기화(tablesync)** — 구독 시작 시 기존 데이터 COPY를 여러 tablesync worker가 병렬 복사(`max_sync_workers_per_subscription`). 일반 변경 스트림의 병렬이 아니다 [P1][P2].
+- **② 대형 트랜잭션 streaming** — `streaming=parallel`이면 진행 중(미commit) 큰 트랜잭션을 조각내 parallel apply worker가 적용하고 commit 때 순서를 맞춘다(PG16 도입, 18 기본). 단 *한 트랜잭션의 조각* 병렬이지 여러 트랜잭션 병렬이 아니다 [P3][P4][P5].
+- **③ 다중 구독(subscription splitting)** — 한 subscriber 노드에 구독을 여러 개 두면 구독당 apply worker 1개라 **구독끼리 병렬**이 된다. 테이블을 구독별로 나눠 처리량을 올리는, PG에서 현실적인 병렬화 수단이다(구독 간 발행 객체가 겹치면 안 됨 [P6]).
+
+→ 셋 다 "독립 트랜잭션 자동 병렬 + 전역 순서 보존"은 아니므로, 우리 목표엔 **직접 모델로 부적합**하다.
+
+**③의 함정 — 의존 테이블은 같은 구독에.** 트랜잭션 일관성이 *한 구독 안에서만* 보장되므로, 구독을 쪼개면 구독끼리는 독립적으로 진행해 **cross-subscription 순서·원자성이 깨진다**(한 트랜잭션이 두 구독의 테이블을 함께 바꾸면 한쪽만 적용된 중간 상태가 보일 수 있다). 특히 FK로 엮인 테이블을 다른 구독에 두면 위험한데, 공식 문서도 "TRUNCATE 대상이 같은 구독에 없는 테이블과 FK로 엮이면 적용이 실패한다"고 명시한다 [P6]. → **FK·함께 변경되는 테이블은 같은 구독에 묶어 직렬화**하고, 구독 분할은 서로 독립인 테이블 그룹 사이에만 한다(cross-subscription 깨짐 재현은 `reference/pgsql/repro_cross_subscription_atomicity.md`). 이 "병렬 단위를 잘못 자르면 무엇이 깨지나"는 우리 코디네이터가 class/트랜잭션 경계를 자를 때의 반면교사다.
+
+(Publisher/Subscriber 역할·구독 등록 과정·`CREATE PUBLICATION/SUBSCRIPTION` 옵션별 동작은 `reference/pgsql/logical_replication_pubsub_and_options.md`에 정리했다.)
 
 ## C.2 EDB PGD — 탈락(단, 한 측면은 선례)
 
