@@ -175,7 +175,7 @@ EDB PGD(구 BDR)는 상용 멀티마스터 제품으로, 구독당 여러 writer
 
 ## C.3 MySQL — 가장 유사하여 채택
 
-MySQL 복제는 source가 변경을 binary log에 기록하고, replica의 I/O 스레드가 이를 relay log로 받은 뒤, 병렬 적용 시 **coordinator 스레드가 relay log를 순서대로 읽어 워커 스레드에 배정**하는 구조다 [M1]. 우리 설계와 가장 비슷한 점은 **병렬 실행과 commit 순서 보존을 분리**한다는 점이다.
+MySQL 복제는 source가 변경을 binary log에 기록하고, replica의 I/O 스레드가 이를 relay log로 받은 뒤, 병렬 적용 시 **coordinator 스레드가 relay log를 순서대로 읽어 워커 스레드에 배정**하는 구조다 [M1]. 우리 설계와 가장 비슷한 점은 **병렬 실행과 commit 순서 보존을 분리**한다는 점이고, 나아가 **마스터가 writeset으로 의존성을 계산해 내려보내는 방식(WRITESET + LOGICAL_CLOCK)까지 차용할 예정**이다(정식 설계는 Act E). 즉 "의존성 판단(분배)"과 "commit 순서 보존(집행)"을 나누는 큰 틀과, 그 의존성을 마스터가 미리 계산하는 방식 둘 다 MySQL 모델에 직접 닿는다.
 
 병렬 여부의 판단은 의존성을 기준으로 한다. source가 트랜잭션마다 `sequence_number`(binlog 안의 논리 순번)와 `last_committed`(이 트랜잭션이 기다려야 하는 가장 최근 선행 트랜잭션, 일종의 watermark)를 binlog에 적어 두고, replica의 coordinator(`replica_parallel_type=LOGICAL_CLOCK`)가 이를 읽어 `last_committed` 이하의 트랜잭션이 모두 끝났으면 병렬로 실행한다 [M2][M4]. 이 의존성을 *어떻게 계산하는지*는 `binlog_transaction_dependency_tracking`으로 정하는데, `COMMIT_ORDER`는 group commit 묶음을 기준으로(8.0.46 기본값), `WRITESET`은 트랜잭션이 바꾼 행/키 집합의 충돌 여부를 봐서 더 정밀하게(병렬 폭이 넓다), `WRITESET_SESSION`은 거기에 같은 세션의 순서 보존을 더해 계산한다 [M3][M5]. 여기서 중요한 사실은, **write set 자체는 binlog에 실리지 않고** source가 `last_committed`를 계산하는 내부 입력으로만 쓰이며 replica에는 계산 결과(`sequence_number`/`last_committed`)만 전달된다는 점이다.
 
