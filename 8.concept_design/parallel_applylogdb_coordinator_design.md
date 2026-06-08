@@ -113,12 +113,11 @@ PostgreSQL 논리 복제는 **publish/subscribe(발행/구독)** 모델이다. p
 | **apply worker** | subscriber | 받은 변경 스트림을 로컬에 적용하는 워커. **구독당 1개**, publisher의 **commit 순서대로 직렬** 적용 |
 | **tablesync worker · origin** | subscriber | **tablesync**는 구독 시작 시 기존 데이터를 COPY로 초기 동기화하는(테이블별·일시적) 워커. **origin**은 어디까지 적용했는지(LSN)를 기록해 재시작 시 이어 적용한다 |
 
-여기서 **PUBLICATION·SUBSCRIPTION은 동작 "순서"가 아니라 설정 시 만드는 정의(기준)** 이고, 나머지는 런타임에 그 정의를 보고 움직이는 프로세스·자료구조다. 따라서 왼쪽→오른쪽 배치는 위치일 뿐 동작 순서가 아니며, **실제 동작 순서는 그림의 화살표 ①②③** 다 [P1].
+그림의 화살표 **①②③가 실제 동작 순서**다(좌→우 배치는 위치일 뿐, PUBLICATION·SUBSCRIPTION은 설정 시 만드는 정의라 이 순서에 들지 않는다) [P1].
 
-1. **등록·연결** — `CREATE SUBSCRIPTION` 시 subscriber의 apply worker가 publisher에 접속해 **replication slot을 만든다**(그림 ①).
-2. **초기 동기화** — **tablesync worker**가 published 테이블의 기존 데이터를 COPY로 복사한다(`publish` 설정과 무관하게 전부). 끝나면 정상 스트리밍으로 핸드오프한다.
-3. **정상 스트리밍** — publisher에서 변경이 생기면 WAL → logical decoding → pgoutput(PUBLICATION 필터) → walsender가 스트림을 보낸다(그림 ②).
-4. **적용·진도** — apply worker가 commit 순서대로 적용하고 origin에 적용 LSN을 남긴 뒤 feedback을 보내 slot을 전진시킨다(그림 ③).
+- **① connect + slot** — `CREATE SUBSCRIPTION` 시 subscriber가 publisher에 접속해 **replication slot을 생성**한다(이어 tablesync worker가 기존 데이터를 초기 COPY).
+- **② changes** — publisher가 변경을 **push**한다: WAL → logical decoding → pgoutput(PUBLICATION 필터) → walsender.
+- **③ feedback** — apply worker가 적용 후 **적용 LSN을 feedback**으로 보내(origin 기록) publisher의 slot을 전진시킨다.
 
 동작 세부는 아래 옵션들로 정한다(전체 카탈로그·등록 lifecycle 상세는 `reference/pgsql/logical_replication_pubsub_and_options.md`).
 
