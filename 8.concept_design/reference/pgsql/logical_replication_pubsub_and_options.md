@@ -103,7 +103,7 @@ CREATE SUBSCRIPTION 실행
 
 ### 8. 구성 설정 (서버 GUC) — publisher / subscriber
 
-§5의 WITH 옵션이 "구독 단위" 설정이라면, 아래는 논리 복제가 동작하기 위해 **양 노드의 서버 인스턴스에 두는 GUC**다. 각 GUC는 한쪽 노드에만 적용된다 [4].
+§5의 WITH 옵션이 "구독 단위" 설정이라면, 아래는 논리 복제가 동작하기 위해 **양 노드의 서버 인스턴스에 두는 GUC**다. 각 GUC는 한쪽 노드에만 적용된다 [4]. *GUC(Grand Unified Configuration)는 PostgreSQL이 서버 설정 파라미터를 부르는 용어로(소스의 `guc.c`에서 유래), `postgresql.conf`/`ALTER SYSTEM`으로 설정하는 값들이다 — CUBRID의 시스템 파라미터(`cubrid.conf`)에 해당한다.*
 
 **publisher 측**
 

@@ -130,7 +130,7 @@ PostgreSQL 논리 복제는 **publish/subscribe(발행/구독)** 모델이다. p
 | `two_phase` | SUBSCRIPTION | `false` | 2단계 커밋을 PREPARE 시점에 전송 |
 | `connect`·`create_slot`·`enabled` | SUBSCRIPTION | `true` | 등록 시 접속·슬롯 생성·즉시 시작 여부 |
 
-위 WITH 옵션이 "구독 단위"라면, 논리 복제 자체를 켜고 병렬도를 정하는 건 **서버 구성(GUC)** 이다(한쪽 노드에만 적용). 우선 publisher는 **`wal_level`** 이 핵심인데, 값에 따라 가능한 복제가 갈린다.
+위 WITH 옵션이 "구독 단위"라면, 논리 복제 자체를 켜고 병렬도를 정하는 건 **서버 구성(GUC)** 이다(한쪽 노드에만 적용). *GUC(Grand Unified Configuration)는 PostgreSQL이 서버 설정 파라미터를 부르는 용어다 — `postgresql.conf`/`ALTER SYSTEM`으로 바꾸는 그 설정값들로, CUBRID의 시스템 파라미터(`cubrid.conf`)에 해당한다.* 우선 publisher는 **`wal_level`** 이 핵심인데, 값에 따라 가능한 복제가 갈린다.
 
 | `wal_level` | 가능한 것 |
 |---|---|
