@@ -784,3 +784,45 @@ ret = xbtree_find_unique (thread_p, &local_btid, S_SELECT_WITH_LOCK,
 5. 슬레이브 `log_applier.c`가 디코드해 코디네이터가 `last_committed`(또는 conflict key 교집합) 기준으로 병렬/직렬 판단.
 
 > 옵션 a(가공된 `last_committed`만 전송, 슬레이브 단순) vs 옵션 b(conflict key 원재료 전송, 슬레이브가 비교, 마스터 가벼움)는 `coordinator_design.md` D.4의 옵션 a/b와 동일한 선택이다(설계는 옵션 a 확정).
+
+---
+
+# 부록 B. 그룹커밋(group commit) — CUBRID 로그 flush 메커니즘
+
+> 분석 시점 2026-06-09 · 소스: `src/transaction/log_page_buffer.c`, `log_manager.c`, `log_impl.h`, `base/system_parameter.c`
+> 용도: 마스터·슬레이브가 commit durability를 어떻게 배칭하는지, 그리고 본 설계(D.3 commit 게이트, D.4 writeset)와의 관계.
+
+## B.1 한 줄 요약
+CUBRID 그룹커밋은 **여러 트랜잭션의 commit 로그를 한 번의 디스크 flush(fsync)로 묶어 내구화**하는 것이다. **LSA 채번/순서가 아니라 "내구화(flush) 시점"만 배칭**한다 — commit_lsa 순서는 그룹커밋과 무관하게 `prior_lsa_mutex`에서 직렬로 정해진다(A.4).
+
+## B.2 메커니즘 (코드)
+- **파라미터** `group_commit_interval_in_msecs`(`system_parameter.c:455,2773`), **기본값 0 = OFF**. `>0`이면 `LOG_IS_GROUP_COMMIT_ACTIVE()`(`log_impl.h:124`) 참.
+- **log-flush daemon**(`log_manager.c` `log_flush_daemon_init`, looper 주기 = `log_get_log_group_commit_interval`): interval>0이면 그 주기마다, 0이면 요청 시 깨어나 `logpb_flush_pages_direct`로 append된 로그 페이지를 **한 번에 flush**하고 `group_commit_info.gc_cond`를 broadcast(`log_flush_execute:10388–10393`).
+- **commit 경로**: 트랜잭션이 commit 로그를 prior-LSA 리스트에 append(A.4) 후 `logpb_flush_pages(flush_lsa)`(`log_manager.c:4401`)로 자기 `commit_lsa`까지 내구화를 보장. `logpb_flush_pages`(`log_page_buffer.c:3974~`)는 (async_commit × group_commit) **4경우**로 분기:
+
+  | async | group | 동작 |
+  |---|---|---|
+  | ✕ | ✕ | (기본) LFT 깨우고 **대기** |
+  | ✕ | ○ | **LFT 안 깨우고 대기**(타이머 flush를 기다림) |
+  | ○ | ✕ | LFT 깨우고 즉시 반환(비동기) |
+  | ○ | ○ | 그냥 반환 |
+
+- **대기 조건**: 커밋 스레드는 `nxio_lsa`(다음 IO LSA = 내구 경계)가 자기 `flush_lsa` 이상이 될 때까지 `gc_cond`에서 timed-wait(`log_page_buffer.c:4068~4090`). daemon이 flush하고 `nxio_lsa`를 전진시키면 깨어난다.
+
+→ 그룹커밋 **ON**이면 개별 commit이 LFT를 깨우지 않고 타이머 flush를 기다려 더 많은 commit이 한 fsync로 묶인다(처리량↑, commit 지연 최대 interval↑). **OFF(기본)** 이면 commit마다 daemon을 깨우되, flush 진행 중 도착한 commit들은 자연히 한 flush로 묶인다(지연 최소).
+
+## B.3 핵심 — 그룹커밋은 "순서"가 아니라 "flush"만 배칭한다
+`commit_lsa`(=순번)는 `prior_lsa_mutex` 아래 직렬 append로 결정된다(A.4, 설계 D.4). 그룹커밋은 그 뒤 **디스크 flush를 모을 뿐** LSA 순서·writeset 계산에 개입하지 않는다. 따라서:
+- **D.4 writeset/`last_committed` 계산은 그룹커밋과 독립** — append(채번) 시점에 계산되고 flush 배칭과 무관하다. 마스터에 writeset 계산을 얹어도 그룹커밋 동작은 그대로다.
+- 마스터 `prior_lsa_mutex` 임계구간 비용(qna_v2 Q7)과 그룹커밋은 **별개 축** — 그룹커밋은 임계구간 *밖*(flush)을 배칭하므로 임계구간을 늘리지 않는다.
+
+## B.4 설계와의 관계 — 슬레이브에서 어떻게 처리하나 (D.3와 결합)
+슬레이브도 CUBRID 서버이므로 **워커의 commit은 슬레이브 서버의 prior-LSA + flush daemon을 그대로 탄다.** 본 설계 D.3의 "워커 durable commit 차례 게이트"와 그룹커밋은 **역할이 달라 서로 결합된다**:
+- **D.3 게이트 = commit 레코드 *append 순서*를 source 순서로 직렬화**(가볍고 in-memory, `commit_lsa` 순서 보장).
+- **그룹커밋 = 그 commit들의 *fsync를 한 번에* 배칭**(무거운 I/O 분할상환).
+
+→ 워커들이 순서대로 commit 레코드를 append(게이트)하고, 슬레이브 flush daemon이 그 묶음을 한 flush로 내구화한 뒤 게이트가 순서대로 풀린다. 이는 **MySQL의 ordered_commit(flush→sync→commit 3단계) + group commit과 동형**이며, qna_v2 **Q20**(게이트만 차용하고 group flush가 없으면 fsync×N로 직렬 applier만 못해질 위험)을 **정확히 해소**한다.
+
+- **권고**: 병렬 applylogdb는 **슬레이브 서버의 그룹커밋을 활용**해, D.3 게이트가 "commit당 개별 fsync"로 퇴화하지 않게 한다 — 게이트는 *append 순서*만 강제하고, *내구화*는 group flush에 맡긴다.
+- **주의(측정 항목)**: 그룹커밋 ON(interval>0)이면 commit 지연이 최대 interval만큼 늘어 D.3 게이트의 head-of-line 대기(qna_v2 Q2·Q20·Q68)와 합쳐질 수 있으므로, interval은 슬레이브 워크로드로 튜닝·실측한다. (기본 0이면 즉시 flush라 지연은 작지만 fsync 묶임도 적다.)
+- **정합성**: 그룹커밋은 내구화 *시점*만 미루므로, D.3가 요구하는 "gap-free `committed_lsa`"는 **flush가 완료된(=nxio_lsa가 넘어간) commit_lsa까지만 진도로 인정**하면 그대로 성립한다(미flush 구간을 진도로 올리지 않음 → 재시작 정합 유지, qna_v2 Q21과 연계).
