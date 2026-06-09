@@ -250,7 +250,7 @@ Tx(seq=2351): last_committed=2345
 | 값 | 버전 상태 |
 |---|---|
 | `LOGICAL_CLOCK` | 8.0.27+ 기본. 9.5+에서는 `replica_parallel_type` 제거 후 사실상 유일한 병렬 분배 방식. |
-| `DATABASE` | 스키마 단위 병렬. 8.4에서 deprecated 잔존값, 9.5+에서는 `replica_parallel_type` 제거와 함께 선택 불가. |
+| `DATABASE` | 스키마 단위 병렬. `replica_parallel_type` 변수가 8.0.29부터 deprecated되어 8.4까지 잔존, 9.5.0에서 변수 제거와 함께 선택 불가. |
 
 한편 **binary log group commit은 현재 병렬 복제의 필수 요소가 아니다.** group commit을 기준으로 의존성을 보는 건 과거 `COMMIT_ORDER` 모드뿐이었고, `WRITESET`은 의존성을 **바꾼 행/키 충돌**로 판단해 *마스터에서의 commit 시점·순서와 무관하게* 독립 여부를 정하므로(WL#9556 — "no longer dependent on any particular execution order on the master") group commit과 **무관**하다 [M5]. 즉 group commit은 옛 `COMMIT_ORDER`에서 병렬 폭을 키우는 보조 요소였을 뿐 병렬 복제의 전제가 아니며, 8.4+ source는 WRITESET 내부 동작이므로 현재 MySQL에선 group commit이 병렬 복제와 직접 묶이지 않는다.
 
@@ -258,7 +258,7 @@ Tx(seq=2351): last_committed=2345
 
 **정리.** MySQL은 **"의존성 판단(분배)"과 "commit 순서 보존(집행)"을 분리**하고, 그 의존성을 **source가 미리 계산해(writeset) 내려보낸다.** 이 두 축이 CUBRID의 "마스터 의존성 계산(D.4)·코디네이터 분배(D.5) ↔ commit 순서 보존(D.3, 재시작 정합은 G.2)"과 1:1로 대응하여, 우리는 MySQL 모델(병렬↔commit순서 분리 + WRITESET·LOGICAL_CLOCK)을 차용하기로 했다(상세는 `reference/mysql/`, 정식 설계는 D.2~D.5).
 
-**버전 연혁 요약.** 병렬 복제 의존성 추적은 `DATABASE` 단위 병렬에서 시작해, 5.7.2의 `LOGICAL_CLOCK` v1에서는 group commit 묶음이 사실상 병렬의 전제였고, 5.7.6의 v2에서 lock interval 기반으로 바뀌며 group commit 의존이 끊겼다. 8.0.1에서 `binlog_transaction_dependency_tracking`이 생기며 기본값은 `COMMIT_ORDER`였고 `WRITESET`은 사용자가 선택하는 옵션이었지만, 8.0.35/8.2.0에서 deprecated, 8.4.0에서 제거되면서 source 의존성 계산은 항상 `WRITESET` 동작이 됐다. replica 쪽은 8.4에서 `replica_parallel_type`/`DATABASE`가 deprecated 상태로 남아 있었고, 9.5.0에서 `replica_parallel_type`이 제거되며 `LOGICAL_CLOCK`만 남는 방향이 완료됐다 [M10][M11].
+**버전 연혁 요약.** 병렬 복제 의존성 추적은 `DATABASE` 단위 병렬에서 시작해, 5.7.2의 `LOGICAL_CLOCK` v1에서는 group commit 묶음이 사실상 병렬의 전제였고, 5.7.6의 v2에서 lock interval 기반으로 바뀌며 group commit 의존이 끊겼다. 8.0.1에서 `binlog_transaction_dependency_tracking`이 생기며 기본값은 `COMMIT_ORDER`였고 `WRITESET`은 사용자가 선택하는 옵션이었지만, 8.0.35/8.2.0에서 deprecated, 8.4.0에서 제거되면서 source 의존성 계산은 항상 `WRITESET` 동작이 됐다. replica 쪽은 `replica_parallel_type`이 8.0.29에서 deprecated된 뒤 8.4까지 잔존했고, 9.5.0에서 변수가 제거되며 `LOGICAL_CLOCK`만 남는 방향이 완료됐다 [M10][M11].
 
 | 시점 | 병렬 복제 의존성 추적 의미 |
 |---|---|
@@ -297,34 +297,13 @@ PoC는 가장 단순한 방식으로 병렬화했다 — commit 시점에 `trani
 
 여기서 자연스럽게 드는 의문 하나를 짚고 가자. **"commit 순서를 지킬 거면 결국 순차 적용과 뭐가 다른가? 병렬로 한 의미가 없지 않나?"** 답은 **"실행"과 "commit 순서 보존"이 서로 다른 층**이라는 데 있다. 비유하면 여러 일꾼이 **일은 동시에 하되**(병렬 적용), "완료 도장"은 **접수 순서대로** 찍는 것이다. 무거운 부분인 적용(실행)은 워커들이 동시에 처리하고, 상대적으로 가벼운 commit과 진도(`committed_lsa`)만 마스터의 commit 순서대로(연속 prefix로) 맞춘다 — 그러면 병렬 적용의 이득(여러 워커가 동시에 슬레이브 CPU·I/O를 쓰는 것)은 그대로 얻으면서, 외부에서 슬레이브를 보면 항상 마스터와 같은 순서로만 보인다. **"순서를 지킨다"가 "전부 직렬"을 뜻하지는 않는다**는 것이 핵심이다. 직렬이 강제되는 것은 FK·같은 행처럼 순서가 실제로 중요한 쌍뿐이고, 그 외 대다수 독립 트랜잭션은 온전히 병렬로 흐른다. 이 "병렬 실행 ↔ commit 순서 보존 분리"는 곧 MySQL이 `LOGICAL_CLOCK`(병렬 판단)과 `replica_preserve_commit_order`(순서 보존)를 분리한 구조와 같으며(C.3), CUBRID에서는 그 역할이 각각 코디네이터 분배와 순서 정리 단계로 나뉜다.
 
-## D.2 코디네이터 추가 이유와 역할
+## D.2 왜 판단 주체가 마스터인가 — 고려안과 결정 경위
 
-처음부터 지금 안(마스터가 의존성 계산)으로 직행한 게 아니라, 두 갈래를 거쳐 좁혀졌다. 이 경위 자체가 설계 근거라 남긴다.
+처음부터 지금 안(마스터가 의존성 계산)으로 직행한 게 아니라, *슬레이브 자체 판단 → 단계 분리 → 마스터 단일안*의 순으로 좁혀졌다. 이 경위 자체가 설계 근거라 남긴다.
 
-```text
-[고려 1] 슬레이브가 class 단위로 충돌 판단 (복제 로그 포맷 무변경)
-   │   같은 class 겹치면 직렬, 아니면 병렬. 구현 단순.
-   │
-   ├─ 약점 A (병렬성): row까지 안 보니 같은 class·다른 행도 충돌로 오판
-   │        → 변경이 한 class(재고·집계·카운터 등)에 몰리면 사실상 순차
-   │
-   └─ 약점 B (치명, correctness): applier는 FK를 모른다
-            복제 로그(la_make_repl_item)=class+PK+op 뿐, FK는 서버 SM_CLASS에만
-            → 부모/자식을 "독립"으로 오판 → 자식 먼저 적용 → 서버 FK 검사 실패
-            → 코드상 실제 거동 = 그 자식 행만 "조용히 skip"(silent divergence, F.1)
-   │
-   ▼
-[고려 2] 그럼 단계를 나눌까? (Phase 1=class안 먼저 / Phase 2=정밀 나중)
-   │   → 그러나 Phase 1만으로는 약점 B(FK)를 못 푼다. 단계를 나눠도 결국
-   │     "마스터가 의존성을 줘야" FK가 풀리므로, 단계 분리의 실익이 없다.
-   ▼
-[결정] 단계 분리 없이 마스터-사이드 단일안으로 직행
-       마스터(cub_server)는 스키마·FK를 알고 무엇이 바뀌었는지도 안다
-       → 마스터가 트랜잭션별 의존성을 계산해 last_committed로 내려보냄
-       → 슬레이브는 FK를 몰라도 그 값만으로 정확히 병렬/직렬을 가른다 (D.3~D.5)
-```
+먼저 **슬레이브가 스스로 충돌을 판단하는 안**을 고려했다 — 복제 로그 포맷은 그대로 두고, 같은 class를 건드리면 직렬·아니면 병렬로 가르는 구현이 단순한 방식이다. 그러나 두 약점이 있다. 하나는 **병렬성**(약점 A)이다 — 행까지 보지 않으니 *같은 class·다른 행*도 충돌로 오판해, 변경이 한 class(재고·집계·카운터 등)에 몰리면 사실상 순차가 된다. 다른 하나가 치명적이다(약점 B, correctness) — **applier는 FK를 모른다.** 복제 로그 항목(`la_make_repl_item`)은 class·PK·operation만 담고 `log_applier.c`엔 FK·제약을 다루는 코드가 없다 — FK 관계는 서버 스키마 카탈로그(`SM_CLASS`)에만 있고, 그 검사도 서버가 한다(A.2). 그래서 부모/자식을 "독립"으로 오판해 자식을 먼저 적용하면 서버 FK 검사에 걸리고, 코드상 실제 거동은 그 자식 행만 *조용히 skip*된다(silent divergence, F.1). 게다가 FK 검사는 자식 INSERT **시점**에 일어나므로, commit 순서만 맞추는 것(MySQL SPCO식)으로는 부족하고 *자식이 적용되는 순간 이미 부모가 commit돼 보여야* 한다.
 
-핵심은 **약점 B(applier가 FK를 못 가림)**다. 복제 로그 항목(`la_make_repl_item`)은 class·PK·operation만 담고 `log_applier.c`엔 FK·제약을 다루는 코드가 없다 — FK 관계는 서버 스키마 카탈로그(`SM_CLASS`)에만 있고, 그 검사도 서버가 한다(A.2). 게다가 FK 검사는 자식 INSERT **시점**에 일어나므로, commit 순서만 맞추는 것(MySQL SPCO식)으로는 부족하고 *자식이 적용되는 순간 이미 부모가 commit돼 보여야* 한다. 그래서 슬레이브가 자체적으로 부모-자식을 가리려 하면 못 가리거나(또는 FK 메타를 따로 읽어와 보수적으로 과직렬화). 반면 마스터는 FK를 아니 의존을 정확히 계산할 수 있다 — 이 비대칭이 "판단 주체를 마스터로" 옮기는 단일안을 정당화한다. class 단위 판단·단계 분리는 *고려했으나 채택하지 않은* 경로로 남긴다(슬레이브의 commit 순서 보존 자체는 그대로 필요하다 — 옮겨가는 것은 *의존 판단*이지 *집행*이 아니다, D.3).
+그렇다면 단계를 나누는 안(Phase 1=class 안 판단 먼저 / Phase 2=정밀 나중)도 고려했으나, Phase 1만으로는 약점 B(FK)를 못 푼다 — 단계를 나눠도 결국 "마스터가 의존성을 줘야" FK가 풀리므로 단계 분리의 실익이 없다. 반면 마스터(`cub_server`)는 스키마·FK를 알고 무엇이 바뀌었는지도 아니, 트랜잭션별 의존성을 정확히 계산해 `last_committed`로 내려보낼 수 있다 — 이 비대칭이 **판단 주체를 마스터로 옮기는 단일안**을 정당화한다(D.3~D.5). 슬레이브가 자체적으로 부모-자식을 가리려 하면 못 가리거나, FK 메타를 따로 읽어와 보수적으로 과직렬화할 수밖에 없다. 다만 마스터로 옮겨가는 것은 *의존 판단*이지 *집행*이 아니다 — 슬레이브의 commit 순서 보존 자체는 그대로 필요하다(D.3).
 
 ## D.3 commit 순서 보존이 필요한 이유 (외부 일관성 · gap-free 복구)
 
@@ -516,7 +495,7 @@ class 식별자는 이름의 rename·재사용 위험을 피하기 위해 **clas
 - [M8] Libing Song(Oracle). "Preserve Master's Commit Order on Slave"(기능 원 설계 동기 = source에 없던 중간 상태 비노출). MySQL Server Blog Archive, 2014. https://dev.mysql.com/blog-archive/preserve-masters-commit-order-on-slave/
 - [M9] MySQL 8.4.0 Release Notes — `binlog_transaction_dependency_tracking` removed; source uses writesets internally for binary log dependency information. https://dev.mysql.com/doc/relnotes/mysql/8.4/en/news-8-4-0.html
 - [M10] MySQL 8.4 Manual — `replica_parallel_type` valid values `DATABASE`/`LOGICAL_CLOCK`, default `LOGICAL_CLOCK`, deprecated; `LOGICAL_CLOCK` to be used exclusively later. https://dev.mysql.com/doc/refman/8.4/en/replication-options-replica.html
-- [M11] MySQL 9.5.0 Release Notes — `replica_parallel_type` removed. https://docs.oracle.com/cd/E17952_01/mysql-9.7-relnotes-en/news-9-5-0.html
+- [M11] MySQL 9.5.0 Release Notes — `replica_parallel_type` removed(WL#16019). https://dev.mysql.com/doc/relnotes/mysql/9.5/en/news-9-5-0.html
 - [M12] MySQL 8.0 Manual — The Relay Log; relay log has the same format as binary log and can be read by `mysqlbinlog`. https://dev.mysql.com/doc/refman/8.0/en/relay-log.html ; local source/code analysis: `reference/mysql/02.binlog_vs_relaylog_format.md`
 - [M13] AWS Database Blog — Overview and best practices of multithreaded replication in Amazon RDS for MySQL, Amazon RDS for MariaDB, and Amazon Aurora MySQL(`mysqlbinlog`의 `last_committed`/`sequence_number` 예시). https://aws.amazon.com/blogs/database/overview-and-best-practices-of-multithreaded-replication-in-amazon-rds-for-mysql-amazon-rds-for-mariadb-and-amazon-aurora-mysql/
 - (초기 구축) Clone Plugin / GTID auto-positioning. https://dev.mysql.com/doc/refman/8.0/en/clone-plugin.html , https://dev.mysql.com/doc/refman/8.0/en/replication-gtids-auto-positioning.html
