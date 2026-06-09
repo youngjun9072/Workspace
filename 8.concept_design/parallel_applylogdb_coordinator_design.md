@@ -517,55 +517,230 @@ T1이 느려 미적용일 때:
 
 # Act F. 정확성 시나리오
 
-이 설계가 모든 경우에 올바르게 동작하는지(correctness), 그리고 병렬성을 얼마나 살리는지(성능)를 시나리오로 점검한다. 특수 테이블별 상세는 `cubrid_special_table_scenarios.md`에 있다.
+이 절은 설계가 실제로 안전한지와 병렬성을 얼마나 살리는지를 다시 점검한다. 기준은 세 단계다.
 
-## F.1 commit 순서를 강제해야 하는 이유 — FK 시나리오
+1. **마스터 계산(D.5)** — 마스터가 각 트랜잭션에 `last_committed_lsa`를 정확히 붙이는가.
+2. **슬레이브 분배(D.6)** — 코디네이터가 `last_committed_lsa ≤ committed_lsa` 조건만으로 dispatch해도 되는가.
+3. **durable commit 게이트(D.4)** — 워커가 병렬 실행하더라도 최종 commit과 `committed_lsa`가 gap-free로 유지되는가.
 
-서버가 FK를 검사하므로(A.2), 순서를 지키지 않은 병렬 적용은 복제를 깬다. 마스터에서 `T1`이 `orders(100)`을 넣고 그다음 `T2`가 이를 참조하는 `order_items(order_id=100)`을 넣었다고 하자. 마스터에서는 부모가 먼저 commit되었으므로 FK가 만족된다. 그런데 슬레이브가 T1·T2를 "독립"으로 보고 병렬로 보내 T2(자식)가 T1(부모)보다 먼저 commit하면, 그 시점에 `orders(100)`이 아직 없으므로 서버 FK 검사에 걸려 그 자식 행이 적용되지 못한다(코드상 silent skip → divergence). 고치는 방법은 부모를 먼저 commit한 뒤 자식을 적용하는 것 — 즉 commit 순서 보존이다. **본 설계의 COMMIT_ORDER가 이를 자동으로 만족한다**(D.3·D.5): 자식은 마스터에서 부모 commit 뒤에 commit됐으므로 `자식.last_committed_lsa ≥ 부모.commit_lsa`가 되어, 슬레이브 코디네이터가 자식을 부모 commit 이후에만 분배한다. 뒤에 볼 상속의 공유 unique 인덱스도 같은 종류의 문제이며 같은 원리로 덮인다.
+핵심 결론은 이렇다. **1차 COMMIT_ORDER는 정확성 측면에서는 보수적으로 안전하다.** 슬레이브가 FK·unique·상속 관계를 몰라도, 마스터 commit 순서에서 이미 직렬화된 의존성을 `last_committed_lsa`가 보존하기 때문이다. 대신 병렬성은 **마스터에서 실제로 겹쳐 commit된 구간만큼**으로 제한된다. 마스터가 직렬로 commit한 독립 트랜잭션까지 슬레이브에서 다시 병렬화하려면 v2 WRITESET이 필요하다.
+
+## F.1 안전성의 전제 — 어떤 값이 무엇을 보장하는가
+
+이 설계에서 정확성을 만드는 값은 하나가 아니라 역할이 나뉜 세 값이다.
+
+| 값 | 누가 만드나 | 역할 |
+|---|---|---|
+| `last_committed_lsa` | 마스터 | 이 트랜잭션이 반드시 기다려야 하는 마지막 선행 commit. 슬레이브 분배의 유일한 의존성 토큰 |
+| `committed_lsa` | 슬레이브 리더/순서 정리 | 슬레이브에서 중간 gap 없이 durable commit된 연속 prefix의 끝 |
+| 로컬 대기 순번 | 슬레이브 코디네이터 | 워커가 durable commit 직전에 source commit 순서대로 줄 서기 위한 로컬 큐 순번 |
+
+따라서 correctness 조건은 다음처럼 정리된다.
 
 ```text
-master:  T1 commit INSERT orders(100)  →  T2 commit INSERT order_items(100, FK→orders)
-slave 비순차 병렬: 자식 T2가 부모 T1보다 먼저 commit → orders(100) 없음 → FK 위반 → 복제 중단
-해결: 부모 먼저 commit → 자식 적용 → FK 통과
+dispatch 안전 조건:
+  T.last_committed_lsa <= committed_lsa
+
+의미:
+  T가 반드시 기다려야 하는 선행 commit은 슬레이브에서 이미 durable commit됐다.
 ```
 
-## F.2 시나리오별 동작 정리
+여기서 중요한 점은 슬레이브가 **충돌을 다시 계산하지 않는다**는 것이다. 슬레이브는 class·PK·FK·unique를 보고 판단하지 않고, 마스터가 내려준 `last_committed_lsa`를 `committed_lsa`와 비교한다. 이 비교가 안전하려면 `committed_lsa`가 gap-free여야 한다. 그래서 D.4의 durable commit 게이트가 필수다.
 
-COMMIT_ORDER 1차 설계에서는 **마스터 commit 순서가 곧 의존성**이므로, 마스터에서 실제로 일어난 모든 의존(같은 행 write-write, PK/unique 재사용, FK 부모→자식, 상속 공유 unique)이 자동으로 보존된다 — 슬레이브는 그 순서를 거스르지 않게 `last_committed_lsa`로 분배만 한다. 따라서 **correctness는 commit 순서가 일괄 보장**하고, 슬레이브가 class나 행을 따로 식별할 필요가 없다.
+## F.2 FK 시나리오 — silent skip을 막는 방식
 
-병렬성은 **마스터의 commit 동시성만큼** 난다. 마스터에서 commit 구간이 겹쳤던(서로 안 막고 동시에 commit된) 트랜잭션들은 같은(또는 더 작은) `last_committed_lsa`를 받아 슬레이브에서 병렬로 흐르고, 마스터에서 직렬로 이어 commit된 트랜잭션들은 — 데이터가 서로 독립이더라도 — 그 순서로 직렬된다. 즉 best case는 마스터가 고동시성으로 돌던 구간(워커 다 가동), worst case는 마스터가 사실상 직렬로 돌던 구간이다. **이 "마스터 동시성 상한"을 넘어 독립 트랜잭션까지 행 단위로 병렬화하는 것이 v2 WRITESET의 역할**이다(D.5). 롱 트랜잭션은 멱등 재적용을 전제로 복구 비용을 감수하며, 하나의 큰 트랜잭션은 한 워커가 처리하므로 병렬 이득은 제한적이다.
+FK는 이 설계가 왜 슬레이브 자체 판단이 아니라 마스터 계산을 필요로 하는지 보여 주는 대표 시나리오다. 서버가 FK를 검사하므로(A.2), 자식이 부모보다 먼저 적용되면 applier가 아니라 슬레이브 서버의 force 경로에서 FK 위반이 난다. 현재 코드 경로에서는 이것이 조용한 누락(silent skip)으로 이어질 수 있어 복제 정합성을 깬다.
 
-## F.3 그 밖의 충돌·특수 테이블 점검
+```text
+master:
+  T1 commit INSERT orders(100)
+  T2 commit INSERT order_items(100, FK -> orders)
 
-COMMIT_ORDER에서는 **FK·상속 공유 unique·unique 재사용처럼 "applier가 자기 입력만으로 식별할 수 없는" 위험이 전부 commit 순서로 자동 덮인다** — 마스터에서 그 의존이 commit 순서로 이미 드러났고 슬레이브가 그 순서를 지키기 때문이다(F.1·F.2). 그래서 1차에서는 cross-class 식별 로직이 따로 필요 없다.
+잘못된 슬레이브 병렬화:
+  T2를 T1보다 먼저 적용
+  -> orders(100)이 아직 없음
+  -> FK 위반
+  -> 자식 행 누락 또는 복제 실패
+```
 
-특수 테이블도 commit 순서 보존을 깨지 않는다 — 뷰는 데이터를 저장하지 않아 비복제이고, LOB는 행에 ELO locator만 들어가고 실데이터는 트랜잭션 로그로 복제되지 않는다. 다만 **v2 WRITESET으로 갈 때**는 이들이 충돌 키 설계의 관심사가 된다: 상속은 subclass가 superclass의 unique 인덱스(BTID)를 공유하므로(`schema_manager.c:9488-9506`) 충돌 키에 그 공유 인덱스를 반영해야 하고, 파티션은 "파티션 키가 모든 인덱스 키에 포함"(msg 1169) 규칙 덕에 같은 unique 값이 한 파티션에만 있어 파티션 간 병렬이 안전하다. 특수 테이블별 상세는 `cubrid_special_table_scenarios.md`.
+1차 COMMIT_ORDER에서는 이 문제가 자동으로 닫힌다.
+
+```text
+마스터:
+  T1이 먼저 commit 완료
+  T2가 그 뒤 commit 진입
+  -> T2.last_committed_lsa >= T1.commit_lsa
+
+슬레이브:
+  T1이 durable commit되어 committed_lsa가 T1.commit_lsa 이상이 되기 전까지
+  T2는 dispatch 불가
+```
+
+즉 FK 안전성은 슬레이브가 FK 관계를 알아서 생기는 것이 아니다. **부모 commit 뒤에 자식 commit이 가능했던 마스터의 순서가 `last_committed_lsa`로 전달되고, 슬레이브가 그 토큰을 집행해서 생긴다.**
+
+## F.3 같은 행·unique·상속 unique — commit 순서가 덮는 위험
+
+1차 COMMIT_ORDER는 행 키를 비교하지 않지만, correctness를 잃지 않는다. 이유는 마스터에서 실제 충돌이 이미 lock·constraint·index 경로를 통해 유효한 commit 순서로 직렬화되기 때문이다.
+
+| 시나리오 | 마스터에서 일어나는 일 | 슬레이브에서 안전한 이유 |
+|---|---|---|
+| 같은 행 update/delete | 같은 행 write-write는 마스터 lock으로 직렬화 | 뒤 트랜잭션의 `last_committed_lsa`가 앞 commit 이후를 가리켜 뒤로 밀림 |
+| PK/unique 재사용 | unique 검사와 index 변경이 마스터 순서에서 성립 | 슬레이브가 같은 순서로 dispatch/commit하므로 중간에 다른 unique 상태를 만들지 않음 |
+| FK 부모→자식 | 자식은 commit된 부모를 기준으로 FK 통과 | 자식 `last_committed_lsa`가 부모 commit 이후라 부모 durable 전 dispatch 불가 |
+| 상속 공유 unique | superclass/subclass가 공유 unique 인덱스로 충돌 | 마스터에서 공유 index 충돌이 commit 순서에 반영되고, COMMIT_ORDER가 그 순서를 보존 |
+
+이 표의 공통점은 **슬레이브가 위험을 식별하지 않는다는 점**이다. 1차 설계에서는 applier가 FK·상속·unique의 세부 구조를 알 필요가 없다. 마스터가 만든 commit-order 의존성이 더 보수적인 경계로 작동하기 때문이다.
+
+다만 이 안전성은 `last_committed_lsa` 계산이 올바르다는 전제 위에 있다. 특히 COMMIT_ORDER에서 전역 watermark는 "이미 durable commit된 마지막 commit"이어야 한다. 아직 durable하지 않은 commit을 완료된 것으로 잘못 포함하면 슬레이브가 필요한 선행을 기다리지 않을 수 있고, 반대로 너무 낮게 잡으면 correctness는 유지되지만 병렬성만 줄어든다.
+
+## F.4 dispatch와 commit 게이트가 분리되어야 하는 이유
+
+`last_committed_lsa` 조건은 **워커에 보내도 되는가**를 결정한다. 이것만으로 durable commit 순서까지 보장되는 것은 아니다. 같은 `last_committed_lsa`를 가진 트랜잭션들은 동시에 실행될 수 있고, 뒤 commit_lsa를 가진 트랜잭션이 먼저 실행을 끝낼 수 있다.
+
+```text
+commit 순서:
+  T1(L1, last=L0)
+  T2(L2, last=L0)
+
+분배:
+  둘 다 L0 <= committed_lsa 이므로 병렬 dispatch 가능
+
+실행:
+  T2가 먼저 apply 완료 가능
+
+commit:
+  durable commit은 로컬 대기 순번으로 T1 -> T2 순서 강제
+```
+
+이 분리가 핵심이다.
+
+- **분배 게이트(D.6)** 는 의존성이 만족된 트랜잭션을 워커로 보내 병렬성을 만든다.
+- **commit 게이트(D.4)** 는 durable commit과 `committed_lsa`를 source commit 순서의 gap-free prefix로 유지한다.
+
+commit 게이트가 없으면 F의 correctness 일부는 여전히 맞을 수 있어도, G의 재시작 정합이 깨진다. 뒤 트랜잭션이 먼저 durable commit된 뒤 crash가 나면 단일 watermark skip으로는 중복 재적용을 구분할 수 없기 때문이다(G.1).
+
+## F.5 병렬성은 얼마나 살아나는가
+
+1차 COMMIT_ORDER의 병렬성 상한은 명확하다. **마스터에서 commit 구간이 겹쳤던 트랜잭션만 슬레이브에서 병렬 후보가 된다.**
+
+```text
+마스터에서 겹쳐 commit:
+  T1(last=L0), T2(last=L0), T3(last=L0)
+  -> 슬레이브에서 L0 이후 모두 dispatch 가능
+
+마스터에서 직렬 commit:
+  T1(last=L0), T2(last=L1), T3(last=L2)
+  -> 슬레이브도 T1 -> T2 -> T3 순서로만 dispatch
+```
+
+따라서 기대 병렬성은 workload에 따라 달라진다.
+
+| workload | 1차 COMMIT_ORDER 병렬성 |
+|---|---|
+| 여러 클라이언트가 동시에 commit하는 OLTP | 마스터 동시성만큼 살아남. 워커를 늘릴 실익 있음 |
+| 단일 클라이언트 또는 commit이 거의 직렬인 부하 | 거의 순차. 데이터가 독립이어도 COMMIT_ORDER는 병렬화하지 못함 |
+| 긴 단일 트랜잭션 | 한 트랜잭션은 한 워커가 처리하므로 내부 병렬성 없음. 뒤 트랜잭션의 commit도 HOL 대기 가능 |
+| 백로그를 마스터보다 더 빠르게 재생해야 하는 상황 | COMMIT_ORDER 상한에 막힐 수 있음. v2 WRITESET 필요 |
+
+즉 1차 설계는 PoC가 보여 준 "슬레이브 적용이 병목이고 마스터는 동시 쓰기 부하"인 상황에는 효과가 있다. 반면 마스터에서 이미 직렬로 생성된 로그를 슬레이브에서 데이터 독립성만 보고 더 넓게 병렬화하는 능력은 없다. 그 역할은 v2 WRITESET이다.
+
+## F.6 남은 허점과 검증 포인트
+
+현재 설계에서 correctness상 가장 중요한 허점 후보는 다음이다.
+
+| 항목 | 위험 | 판단 |
+|---|---|---|
+| `last_committed_lsa` watermark 갱신 시점 | durable 전 commit을 완료된 것으로 watermark에 포함하면 선행 대기가 빠질 수 있음 | 마스터 구현에서 "durable commit 완료 후 전진" 불변식 필요 |
+| `committed_lsa` 의미 혼동 | 워커 하나가 끝낸 최신 LSA로 갱신하면 gap이 생김 | D.4 commit 게이트와 순서 정리로 gap-free prefix만 전진해야 함 |
+| DDL/스키마 변경 | row-level 의존성 토큰으로 의미를 표현하기 어려움 | barrier 처리 필요. DDL 앞뒤 트랜잭션은 전체 직렬화 |
+| long transaction | 한 워커를 오래 점유하고 뒤 commit의 HOL 대기 유발 | correctness 문제는 아니지만 병렬성 저하. 별도 streaming/chunking 없이는 한계 |
+| v2 WRITESET history prune | floor 불변식이 깨지면 충돌을 놓칠 수 있음 | floor는 prune된 모든 키의 마지막 commit 이상이어야 함. 작게 잡으면 과직렬은 가능하나 순서 위반은 금지 |
+| v2 FK/unique/상속 키 누락 | COMMIT_ORDER와 달리 writeset이 의존성을 직접 표현해야 함 | FK 부모 키, 모든 unique 키, 상속 공유 index 키를 writeset에 포함해야 함 |
+
+정리하면, **1차 COMMIT_ORDER의 correctness 허점은 알고리즘보다 구현 불변식에 있다.** 마스터 watermark와 슬레이브 `committed_lsa`가 정확히 "durable 완료된 연속 prefix"를 뜻하면 안전하다. 반대로 이 둘 중 하나라도 느슨해지면 `last_committed_lsa` 비교가 거짓 안전을 만들 수 있다.
+
+## F.7 결론
+
+1차 COMMIT_ORDER 설계는 올바르게 구현되면 보수적으로 안전하다. 슬레이브가 FK·unique·상속 관계를 몰라도 되는 것이 장점이고, 새로 로그에 싣는 메타도 `last_committed_lsa` 하나로 작다. 대신 병렬성은 마스터 commit 동시성에 묶인다. 따라서 1차 목표는 **마스터 동시 쓰기 부하를 슬레이브가 따라잡게 하는 것**이고, **마스터에서 직렬로 쌓인 독립 트랜잭션까지 재병렬화하는 것**은 v2 WRITESET의 목표로 분리하는 것이 맞다.
 
 ---
 
 # Act G. 재시작 시 문제
 
-## G.1 병렬화가 만드는 재시작 정합 문제
+## G.1 재시작 기준 — 기존 gap-free progress 모델 유지
 
-applylogdb는 논리 재실행 방식이라 재시작하면 `required_lsa`(LWM)부터 로그를 다시 읽어 적용한다. 이미 적용한 것을 또 적용해 중복이 생기는 것을 막기 위해, 코드에는 두 단계의 멱등(idempotent) skip이 있다 [C2]. 기동 시점의 진도를 baseline(`last_committed_lsa`)으로 잡아 두고, 트랜잭션의 `commit_lsa`가 baseline 이하면 그 트랜잭션을 통째로 건너뛰며(`:8754`), 항목 단위로도 baseline보다 새 것(`item.lsa > last_committed_rep_lsa`)만 적용한다(`:8775`). 이 조건은 develop과 PoC가 동일하다. 물리 redo가 페이지 LSN 비교로 자동으로 멱등이 되는 것(ARIES)을, CUBRID는 복제 진도 LSA를 baseline과 비교하는 방식으로 구현한 셈이다.
+applylogdb는 논리 재실행 방식이라 재시작하면 `required_lsa`(LWM)부터 로그를 다시 읽어 적용한다. 이미 적용한 것을 또 적용해 중복이 생기는 것을 막기 위해, 코드에는 두 단계의 멱등(idempotent) skip이 있다 [C2]. 기동 시점의 진도를 baseline(`last_committed_lsa`)으로 잡아 두고, 트랜잭션의 `commit_lsa`가 baseline 이하면 그 트랜잭션을 통째로 건너뛰며(`:8754`), 항목 단위로도 baseline보다 새 것(`item.lsa > last_committed_rep_lsa`)만 적용한다(`:8775`). 이 조건은 develop과 PoC가 동일하다.
 
-그런데 여기에 **병렬화 때문에 새로 생기는 문제**가 있다. 먼저 한 가지 구분을 분명히 해야 한다. "commit 순서를 보존한다"에는 두 층위가 있다 — 진도(`committed_lsa`)를 순서대로 전진시키는 **외부 가시성·진도 층위**와, 워커가 디스크에 **물리적으로 durable commit하는 순서까지 강제하는 층위**다. PoC처럼 워커가 독립적으로 commit하면 앞 층위만 맞고 뒤 층위는 강제되지 않는데(MySQL SPCO가 물리 commit 직전에 차례를 기다리는 것과 대비된다, C.3), 그때 아래의 문제가 생긴다. 본 설계는 G.2에서 뒤 층위까지 강제하기로 정해 이 문제를 원천 차단한다. 재시작 시 재적용 자체는 병렬일 필요가 없고 직렬로 해도 된다. 문제는 그 전에 **병렬 운영이 남긴 out-of-order durable commit**이다. 워커들이 독립적으로 commit하므로, commit 순서상 뒤에 있는 트랜잭션이 앞 트랜잭션보다 먼저 슬레이브에 durable하게 commit될 수 있다. 그런데 진도(`committed_lsa`)는 commit 순서대로만 전진하므로, 그렇게 먼저 커밋된 트랜잭션은 `commit_lsa > committed_lsa`인 상태가 된다. 이 상태에서 크래시가 나면, 재시작 시 `required_lsa`부터 (직렬로) 다시 읽을 때 그 트랜잭션은 `commit_lsa ≤ baseline` 조건에 걸리지 않아 **건너뛰어지지 않고 다시 적용되어 중복**이 된다. 직렬로만 운영하면 `committed_lsa`가 곧 실제 durable 경계라서 생기지 않는, **오직 병렬화 때문에 생기는 문제**다. poc_design.md가 §34에서 "정교한 오류 복구"를 PoC 범위에서 제외했는데, 바로 이 영역이 아직 비어 있다.
+정식 병렬 설계에서도 재시작 기준은 이 모델을 유지한다. 차이는 운영 중 적용이 병렬이라는 점뿐이고, **durable commit 자체는 D.4의 worker commit gate가 source commit 순서대로 보장**한다. 따라서 crash 시점에 영속화된 `committed_lsa`는 develop과 마찬가지로 "그 LSA까지는 중간 gap 없이 durable commit 완료"라는 의미를 유지한다.
 
-## G.2 해결을 위해 바꿔야 할 부분
+```text
+운영 중:
+  worker들은 병렬 apply
+  durable commit 직전에는 source commit 순서대로 대기
+  commit 완료 후 committed_lsa는 gap-free prefix로만 전진
 
-해결의 방향으로는 셋을 검토했다. ① 진도 watermark 하나만 두지 말고 그 위에 이미 적용된 트랜잭션들을 따로 추적해 영속화하는 방법(applied-set), ② 워커가 watermark에서 너무 멀리 앞서 commit하지 못하도록 out-of-order commit 윈도우에 상한을 두는 방법(window bound), ③ 아예 **워커의 durable commit 순서 자체를 source 순서로 강제**해 문제를 원천 차단하는 방법이다.
+재시작:
+  required_lsa부터 다시 읽음
+  commit_lsa <= persisted committed_lsa 인 트랜잭션은 skip
+  그 뒤는 로그에서 다시 구성해 적용
+```
 
-**본 설계는 ③(commit 순서 강제)을 채택한다.** 이는 곧 **MySQL이 택한 길(SPCO)**과 같다 — 워커가 물리 commit 직전에 자기 차례가 올 때까지 대기하게 만들어 durable commit 순서를 source와 일치시키고, 그 결과 복구 좌표가 항상 gap-free가 되어 G.1의 문제 자체를 만들지 않는다(MySQL이 commit 순서를 물리층에서 강제하는 둘째 이유가 바로 이것이다, C.3). 구현상으로도 ③이 가장 깔끔하다. 이미 설계에 있는 **순서 정리 단계**가 결과를 commit 순서대로 모아 `committed_lsa`를 전진시키고 있으므로, 거기에 "자기 차례가 될 때까지 물리 commit을 대기"하는 게이트 한 단계만 더하면 된다(등록→차례 대기→commit→다음 워커 grant). 이러면 **재시작 멱등 skip은 지금의 단일 watermark 그대로** 두어도 되고, 추가로 영속화할 자료구조가 없다. ①·②는 out-of-order durable commit을 허용한 채 skip 판정만 정확히 만들어 commit 단계의 병렬을 더 살리는 대안이지만, applied-set의 크래시-세이프 영속화·복구·GC(또는 윈도우 관리)라는 새 실패 표면을 떠안는다.
+즉 현재 설계에서는 병렬화를 이유로 applied-set, out-of-order window, 별도 worker별 progress를 영속화할 필요가 없다. 마지막으로 영속화된 gap-free `committed_lsa` 이후부터 기존 방식대로 다시 수행하면 된다.
 
-③의 비용은 "앞 트랜잭션이 늦으면 뒤 워커가 commit을 못 하고 대기"하는 commit 단계의 head-of-line 지연이다. 다만 **실행(적용) 자체는 ③에서도 그대로 병렬**이고, PoC 측정에서 병목은 commit이 아니라 slave on-CPU apply(prior_lsa·락·페이지/공간 할당)였으므로 commit 직렬화가 반납하는 병렬 이득은 작을 가능성이 크다. 실제 영향은 정식 구현에서 실측으로 확인한다.
+## G.2 왜 out-of-order 재시작 문제가 남지 않는가
 
-①·②(out-of-order durable commit 허용)는 commit 단계의 병렬을 더 살리는 길이라 **완화책으로도 검토했으나 채택하지 않는다.** out-of-order로 굳은 트랜잭션을 재시작 시 정확히 가려내려면 applied-set의 크래시-세이프 영속화·복구·GC(또는 윈도우 관리)가 필요한데, 이 재시작 정합 복잡도와 그로 인한 새 실패 표면이 commit 병렬에서 얻을 이득보다 크다고 판단했다. 따라서 **1차 COMMIT_ORDER든 v2 WRITESET이든 어느 쪽에서나 워커가 commit 순서를 제어하는 ③(commit 게이트)을 유지**한다 — 적용은 병렬, durable commit은 마스터 순서.
+문제가 되는 경우는 worker가 독립적으로 durable commit할 때다. 예를 들어 source commit 순서는 `T1 → T2`인데, worker 실행 시간이 달라 `T2`가 먼저 durable commit되면 슬레이브 DB에는 `T2`가 들어갔지만 `committed_lsa`는 `T1` 이전에 머무를 수 있다. 이 상태에서 crash가 나면 단일 watermark만으로는 `T2`를 이미 적용했는지 알 수 없어 재적용 위험이 생긴다. 이것은 PoC처럼 worker가 독립 commit하는 구조에서 생기는 병렬화 고유 문제다.
+
+정식 설계는 이 상태를 만들지 않는다.
+
+```text
+source commit 순서:
+  T1(L1) -> T2(L2)
+
+worker 실행:
+  T2 apply가 먼저 끝날 수는 있음
+
+worker commit:
+  T2는 commit gate에서 T1 durable commit 완료까지 대기
+  T1 commit -> committed_lsa = L1
+  T2 commit -> committed_lsa = L2
+```
+
+따라서 durable commit된 뒤 트랜잭션이 앞 트랜잭션보다 먼저 DB에 남는 상태가 없다. crash가 어느 시점에 나도 영속화된 progress는 source commit 순서의 prefix이고, 그 이후 작업은 commit 전이면 롤백/미반영으로, commit 후면 그 앞 commit들도 이미 완료된 상태로 해석할 수 있다.
+
+## G.3 develop에도 있던 crash window는 별도 문제
+
+DB 반영 commit과 apply-info/progress 영속화 사이의 crash window는 병렬화 고유 문제가 아니다. develop의 직렬 applylogdb에서도 "데이터는 commit됐지만 progress 갱신 전에 crash"가 가능하다면 같은 종류의 재적용 위험이 있다. 이 영역은 기존 applylogdb의 재시작/멱등 모델이 이미 감당해야 하는 문제다.
+
+따라서 이 설계에서는 다음처럼 경계를 둔다.
+
+| 구분 | 병렬화 고유 문제인가 | 본 설계의 입장 |
+|---|---|---|
+| 뒤 트랜잭션이 앞 트랜잭션보다 먼저 durable commit | 예 | commit gate로 원천 차단 |
+| DB commit과 progress 영속화 사이 crash | 아니오. develop에도 있을 수 있음 | 기존 재시작/멱등 모델의 검증 항목 |
+| dispatch됐지만 commit 전 crash | 아니오 | DB 트랜잭션이 abort/rollback되고 로그에서 재구성 |
+| worker별 개별 progress 필요성 | commit 순서가 없으면 필요 | 본 설계에서는 불필요 |
+
+즉 G의 결론은 "병렬화 때문에 새 applied-set을 만들어야 한다"가 아니다. **worker commit gate가 source 순서를 보장하므로, 재시작은 기존 단일 gap-free progress 모델을 유지한다**가 결론이다.
+
+## G.4 구현에서 지켜야 할 불변식
+
+재시작 설계를 단순하게 유지하려면 아래 불변식은 반드시 지켜야 한다.
+
+| 불변식 | 이유 |
+|---|---|
+| worker는 durable commit 직전 source commit 순서 게이트를 반드시 통과해야 한다 | out-of-order durable commit을 원천 차단 |
+| `committed_lsa`는 durable commit 완료된 연속 prefix로만 전진해야 한다 | D.6의 dispatch 조건과 재시작 skip의 기준 |
+| crash 후 in-memory worker queue, pending queue, 로컬 대기 순번은 버린다 | 복구 기준은 메모리가 아니라 영속화된 progress와 로그 |
+| 재시작 후 병렬 재적용은 선택 사항이다 | correctness는 직렬 재적용으로도 충분. 병렬 재적용 시에도 같은 gate를 다시 적용 |
+
+정리하면, 정식 설계에서 재시작은 마지막으로 영속화된 `committed_lsa` 이후부터 다시 수행하면 된다. 병렬 실행 자체는 재시작 모델을 바꾸지 않는다. 재시작 모델을 바꾸는 것은 out-of-order durable commit인데, 본 설계는 그 상태를 만들지 않도록 worker commit gate를 둔다.
 
 ---
 
 ## 남은 설계 쟁점
 
-1차 COMMIT_ORDER에서 남는 쟁점은 다음과 같다. 순서 대기 해제 기준은 1차에서는 워커 완료가 아니라 순서 정리 완료로 두는 것이 안전하다(병렬성은 줄지만 correctness 판단이 단순하다). 그 밖에 pending 작업이 너무 많아질 때 리더를 어떻게 멈출지, DDL 등 barrier 범위를 어디까지 잡을지, 그리고 무엇보다 G.2의 **재시작 정합 보강**(durable commit 순서 게이트)이 정식 구현의 필수 항목이다. v2 WRITESET으로 확장할 때의 쟁점(rename·재사용에 안전한 **class OID + PK**로 conflict key 잡기 — applier가 이미 `ws_oid()`로 OID 보유, unique·FK 키 수집, history 크기)은 같은 `last_committed_lsa` 인터페이스 위에서 마스터 계산만 바꾸므로 슬레이브 측 변경 없이 더해진다.
+1차 COMMIT_ORDER에서 남는 쟁점은 다음과 같다. 순서 대기 해제 기준은 1차에서는 워커 완료가 아니라 순서 정리 완료로 두는 것이 안전하다(병렬성은 줄지만 correctness 판단이 단순하다). 그 밖에 pending 작업이 너무 많아질 때 리더를 어떻게 멈출지, DDL 등 barrier 범위를 어디까지 잡을지, 그리고 G.4의 **durable commit 순서 게이트 불변식**을 구현에서 절대 우회하지 않게 하는 것이 정식 구현의 필수 항목이다. v2 WRITESET으로 확장할 때의 쟁점(rename·재사용에 안전한 **class OID + PK**로 conflict key 잡기 — applier가 이미 `ws_oid()`로 OID 보유, unique·FK 키 수집, history 크기)은 같은 `last_committed_lsa` 인터페이스 위에서 마스터 계산만 바꾸므로 슬레이브 측 변경 없이 더해진다.
 
 ## 참고문헌
 
