@@ -1,0 +1,22 @@
+task mode: create
+primary deck-profile: engineering-platform
+secondary gates: technical design narrative, implementation roadmap
+required proof objects:
+- CUBRID HA/applylogdb architecture map
+- PoC before/after workflow
+- DBMS comparison and selected model
+- Coordinator dispatch and commit gate workflow
+- Correctness/restart invariants
+source/asset requirements:
+- Source document: 8.concept_design/parallel_applylogdb_coordinator_design.md
+- Existing figures: 8.concept_design/images/*.png
+brand authenticity constraints:
+- No external logos or vendor identity assets in this first draft
+- Vendor names are text labels only
+profile-specific QA gates:
+- Each slide has a technical claim, not generic marketing copy
+- Architecture labels preserve source terminology: LogReader, Coordinator, ApplyWorker, commit_seq, dependency_seq, committed_lsa
+- Connector direction and ordering semantics are explicit
+known missing inputs:
+- Audience, presentation duration, and preferred design template are not specified yet
+- This first draft is an editable structure deck, intended for iterative slide additions

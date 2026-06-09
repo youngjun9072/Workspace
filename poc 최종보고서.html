@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>final_report</title>
+<style>
+@page { size: A4; margin: 18mm 16mm; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans CJK KR", "Malgun Gothic", sans-serif;
+  color: #1f2933;
+  font-size: 10.5pt;
+  line-height: 1.58;
+}
+h1 { font-size: 25pt; margin: 0 0 10mm; border-bottom: 2px solid #111827; padding-bottom: 5mm; }
+h2 { font-size: 17pt; margin: 12mm 0 4mm; break-after: avoid; }
+h3 { font-size: 13pt; margin: 8mm 0 3mm; break-after: avoid; }
+p { margin: 0 0 3.5mm; }
+blockquote { margin: 0 0 5mm; padding: 3mm 4mm; border-left: 4px solid #9ca3af; background: #f6f8fa; }
+ul, ol { margin: 0 0 4mm 6mm; padding-left: 5mm; }
+li { margin: 1.2mm 0; }
+table { width: 100%; border-collapse: collapse; margin: 4mm 0 6mm; font-size: 9.5pt; }
+th, td { border: 1px solid #cbd5e1; padding: 2.3mm 2.5mm; vertical-align: top; }
+th { background: #eef2f7; font-weight: 700; }
+.num { text-align: right; }
+pre { background: #111827; color: #f9fafb; padding: 4mm; overflow-wrap: anywhere; white-space: pre-wrap; font-size: 8.3pt; line-height: 1.35; }
+code { font-family: "SFMono-Regular", Consolas, monospace; font-size: 0.92em; }
+p code, li code, blockquote code, td code { background: #eef2f7; padding: 0.2mm 0.8mm; border-radius: 2px; }
+img { max-width: 100%; display: block; margin: 5mm auto 7mm; }
+hr { border: 0; border-top: 1px solid #d0d7de; margin: 7mm 0; }
+strong { color: #111827; }
+</style>
+</head>
+<body>
+<h1>Applylogdb 병렬화 PoC</h1>
+<blockquote>최종 보고서 · 2026-06-04<br>근거: <code>2.design/poc_design.md</code>(설계), <code>7.final_test/report.md</code>(실험), 첨부 perf 콜체인/플레임그래프(병목 분석)</blockquote>
+<hr>
+<h2>I. 개요</h2>
+<h3>1. PoC 목적</h3>
+<p>현재 <code>applylogdb</code>는 복제 로그를 <strong>순차적으로</strong> 처리한다. 이 방식은 다음 두 요인으로 슬레이브 반영 지연(lag)을 키운다.</p>
+<ol>
+<li><strong>마스터 동시성에 비례한 지연 누적</strong> — 마스터에서 다수 클라이언트가 병렬 작업을 수행하거나 병렬 연산 수가 증가할수록, 슬레이브에 모든 데이터가 반영되기까지의 지연이 커진다.</li>
+<li><strong>flush 비용 집중</strong> — 복제 과정에서 가장 큰 수행 시간을 차지하는 작업은 아이템을 슬레이브 서버로 <strong>flush</strong>하는 단계다.</li>
+</ol>
+<p>본 PoC는 위 두 지연 요인을 <strong>applylogdb의 병렬화</strong>로 완화하여 복제 성능(특히 반영 지연)을 향상시키는 것을 목적으로 한다.</p>
+<h3>2. PoC 대상</h3>
+<ul>
+<li>마스터에서 <strong>다량의 Insert 및 Update</strong></li>
+<li><strong>Long transaction</strong> (주요 시나리오)</li>
+<li>워크로드: <strong>테이블 10개, 테이블당 10만 건</strong>, 10만 건을 <strong>하나의 트랜잭션</strong>으로 처리(= long transaction)</li>
+<li>그 외 시나리오(SBR 등)는 본 PoC 범위에서 제외</li>
+</ul>
+<blockquote>설계 문서 원안은 Insert 연산만 명시했으나, 본 PoC에서는 <strong>Update 연산을 추가</strong>하여 Insert/Update 두 워크로드 모두를 측정 대상으로 한다.</blockquote>
+<h3>3. PoC 스펙 및 제약사항</h3>
+<p>병렬화의 기본 전제와 제약:</p>
+<ul>
+<li><strong>순서 완화</strong>: 마스터의 커밋 순서와 슬레이브의 apply 완료 순서가 완전히 동일할 필요는 없다. dependency가 있는 작업에 대해서도 마스터 커밋 순서와 슬레이브 반영 순서를 (이번 PoC에서는) 고려하지 않는다.</li>
+<li><strong>커밋 단위 보장</strong>: 커밋의 단위는 보장해야 하므로, PoC 대상 long transaction에서 commit은 <strong>한 번만</strong> 발생하도록 한다.</li>
+<li><strong>처리 단위 = transaction</strong>: 마스터 복제 로그에서 하나의 commit 단위로 식별되는 작업을 transaction으로 보고, item이 아니라 <strong>transaction 단위</strong>로 병렬 처리한다.</li>
+<li><strong>범위 제외</strong>: transaction 간 dependency 판별, 정교한 병렬 스케줄링, 정교한 오류 복구는 본 PoC 범위에서 제외한다.</li>
+<li><strong>구현 단순화</strong>: PoC이므로 가장 간단한 구현을 우선하며, 일부 하드코딩·임시 주석을 허용한다.</li>
+<li><strong>전제 구조</strong>: 향후 실제 구현에서도 복제 데이터는 마스터에서 <strong>transaction boundary 기준</strong>으로 묶여 전달되는 구조를 전제로 한다.</li>
+</ul>
+<hr>
+<h2>II. 설계 및 구현</h2>
+<h3>1. 모듈</h3>
+<p>병렬화를 위해 기존 단일 흐름을 <strong>LogReader(Reader)</strong> 와 <strong>ApplyWorker(Worker)</strong> 로 분리한다.</p>
+<p><strong>LogReader</strong></p>
+<ul>
+<li>Active/Archive에서 복제 로그를 읽어 <code>LA_ITEM</code>을 생성하고 transaction 단위로 묶는다.</li>
+<li>commit log를 만나면 해당 transaction의 apply 단위를 확정하고 worker 작업 큐에 등록한다.</li>
+<li>long transaction은 전체 item list를 유지하지 않고 <strong>anchor item(head) + log range metadata</strong>만 유지한다.</li>
+<li>worker 완료 결과를 수집하고 <strong>commit LSA 순서 기준</strong>으로 전역 완료를 판정한다.</li>
+<li>전역 완료가 확인된 transaction에 대해 <code>global committed_lsa</code>를 갱신하고 <code>_db_ha_apply_info</code> 갱신 및 reclaim을 수행한다.</li>
+</ul>
+<p><strong>ApplyWorker</strong></p>
+<ul>
+<li>전달받은 transaction을 슬레이브에 반영한다. 설정 파라미터(<code>ha_worker=[n]</code>)에 따라 N개 생성되어 병렬 apply를 수행한다.</li>
+<li>각 worker는 <strong>개별 작업 큐 / worker-local workspace / 슬레이브와 연결된 개별 세션</strong>을 가진다.</li>
+<li>row item은 worker-local workspace에 적재 후 flush, statement/DDL은 슬레이브에 직접 실행한다.</li>
+<li>flush·commit을 worker 단위로 독립 수행하고, 성공 시 완료 상태와 <code>last_completed_lsa</code>를 LogReader에 보고한다.</li>
+<li>long transaction은 log range를 순차 재탐색하여 replication item을 재구성한 뒤 적재·flush·commit 한다.</li>
+</ul>
+<h3>2. 설계 (AS-IS → TO-BE)</h3>
+<p><strong>AS-IS</strong></p>
+<pre><code class="language-bash">
++----------------------+
+| ApplyLog Main        |
++----------------------+
+| data                 |
+| - LA_ITEM            |
+| - LA_APPLY           |
+| - final_lsa          |
+| - committed_lsa      |
+| - workspace          |
+| function             |
+| - read active/arv log|
+| - decode log record  |
+| - build LA_ITEM      |
+| - build LA_APPLY     |
+| - process repl items |
+| - flush row items    |
+| - execute stmt       |
+|   directly           |
+| - commit             |
+| - update             |
+|   _db_ha_apply_info  |
++----------+-----------+
+           |
+           v
+    Slave DB / Server
+</code></pre>
+<p><strong>TO-BE</strong></p>
+<pre><code class="language-bash">
+     +----------------------------+
+     |         LogReader          |
+     +----------------------------+
+     | data                       |
+     | - LA_ITEM                  |
+     | - LA_APPLY                 |
+     | - final_lsa                |
+     | - committed_lsa            |
+     | function                   |
+     | - read active/arv log      |
+     | - build LA_ITEM            |
+     | - build LA_APPLY           |
+     | - detect long trans        |
+     | - enqueue committed tx     |
+     | - collect results          |
+     | - update apply info        |
+     | - reclaim items            |
+     +-------------+--------------+
+                   |
+                   | enqueue committed tx
+                   v
+
+  +----------------------+  +----------------------+       +----------------------+
+  |       Worker 0       |  |       Worker 1       |  ...  |       Worker N       |
+  +----------------------+  +----------------------+       +----------------------+
+  | data                 |  | data                 |       | data                 |
+  | - queue              |  | - queue              |       | - queue              |
+  | - session            |  | - session            |       | - session            |
+  | - workspace          |  | - workspace          |       | - workspace          |
+  | function             |  | function             |       | function             |
+  | - process repl items |  | - process repl items |       | - process repl items |
+  | - flush row items    |  | - flush row items    |       | - flush row items    |
+  | - execute stmt       |  | - execute stmt       |       | - execute stmt       |
+  |   directly           |  |   directly           |       |   directly           |
+  | - commit             |  | - commit             |       | - commit             |
+  | - report completed   |  | - report completed   |       | - report completed   |
+  |   lsa                |  |   lsa                |       |   lsa                |
+  +----------+-----------+  +----------+-----------+       +----------+-----------+
+             |                         |                                |
+             +-------------------------+--------------------------------+
+                                       |
+                                       v
+                              Slave DB / Server
+</code></pre>
+<p>핵심 원칙:</p>
+<ul>
+<li>처리 단위는 item이 아니라 <strong>transaction</strong>.</li>
+<li>각 worker는 자기 흐름에서 <strong>queue → flush → commit</strong> 순서를 지킨다.</li>
+<li><code>global committed_lsa</code>와 <code>_db_ha_apply_info</code>는 <strong>LogReader가 단독 관리</strong>한다.</li>
+<li>item reclaim은 worker가 아니라 <strong>LogReader가 완료 결과 수집 후</strong> 수행한다.</li>
+<li>long transaction은 head + log metadata만 유지하고 worker가 재구성한다.</li>
+</ul>
+<h3>3. 구현 요구사항</h3>
+<ul>
+<li>LogReader는 로그에서 replication log를 읽어 <code>LA_ITEM</code>을 만들고 transaction 단위로 <code>LA_APPLY</code>를 구성하며, commit log를 만나면 committed transaction으로 확정해 worker queue에 등록한다.</li>
+<li>worker는 작업 큐에서 transaction을 꺼내 apply 상태를 참조하여 slave apply를 수행한다. insert item은 worker-local workspace에 추가하고, SBR item은 슬레이브에 직접 요청한다.</li>
+<li><strong>전역 변수 분리</strong>: <code>ws_Repl_objs</code>, <code>ws_Repl_error_link</code>는 전역에서 제거하고 worker별로 분리한다. flush threshold·commit interval도 worker별 관리.</li>
+<li>flush·commit은 worker 단위로 수행하고, 완료 시 <code>last_completed_lsa</code>를 LogReader에 보고한다.</li>
+<li>LogReader는 worker 완료 결과를 수집해 <code>global committed_lsa</code>를 갱신하고 그 시점에 <code>_db_ha_apply_info</code>를 업데이트하며, 완료 확정 transaction의 item을 정리·reclaim 한다.</li>
+<li>long transaction은 LogReader가 head + log range metadata를 유지하고 worker가 재탐색하여 item을 재구성할 수 있어야 한다.</li>
+<li>worker 개수는 파라미터(<code>cubrid_ha.conf</code>의 <code>ha_worker=[n]</code>, default 1)로 설정 가능해야 한다.</li>
+</ul>
+<blockquote>변수 소유권은 <strong>Reader-owned / Shared(lock) / Worker-local</strong> 3분류로 정리됨(상세: <code>2.design/poc_design.md</code> 변수 정리). 핵심은 row decode scratch buffer·workspace·apply 통계·flush 상태를 worker-local로 분리하고, transaction registry(<code>repl_lists</code>, <code>LA_APPLY</code>, <code>committed_lsa</code>)는 lock으로 공유.</blockquote>
+<hr>
+<h2>III. 테스트</h2>
+<h3>1. 실험 환경</h3>
+<ul>
+<li><strong>토폴로지</strong>: 마스터 1 + 슬레이브 1 (<code>cub_server testdb</code>)</li>
+<li><strong>워크로드</strong>: 테이블 10개, 테이블당 10만 건. <strong><code>csql</code>로 부하를 생성</strong>하며, 테이블당 10만 건 연산을 <strong>하나의 트랜잭션으로 발생시킨 long transaction</strong>(테이블당 commit 1회)이다. 10개 테이블이 <strong>서로 다른 테이블</strong>이므로 <strong>트랜잭션 간 종속(dependency)이 없다</strong> → 병렬 적용에 이상적인 조건. Insert / Update 각각 측정.</li>
+<li><strong>비교 축</strong>: 동일 config에서 <strong>develop(순차) vs POC(병렬)</strong> 직접 비교</li>
+<ul>
+<li><code>#2 dev_tuned</code> = develop 빌드(순차 적용)</li>
+<li><code>#6 poc_buf5g_dwb0</code> = POC 빌드(병렬 적용)</li>
+<li><strong>공통 config</strong> (두 실험 동일):</li>
+</ul>
+</ul>
+<table><thead><tr>
+<th>항목</th>
+<th>값</th>
+</tr></thead><tbody>
+<tr>
+<td><code>double_write_buffer_size</code></td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>data_buffer_size</code></td>
+<td>5G</td>
+</tr>
+<tr>
+<td><code>log_buffer_size</code></td>
+<td>5G</td>
+</tr>
+<tr>
+<td><code>log_volume_size</code></td>
+<td>1G</td>
+</tr>
+<tr>
+<td><code>checkpoint_interval</code></td>
+<td>30min (csql에서 checkpoint 수행)</td>
+</tr>
+<tr>
+<td><code>addvoldb</code></td>
+<td>100G + temp</td>
+</tr>
+</tbody></table>
+<blockquote>지표 정의: <code>Slave/worker = Slave Sum / 10</code>(테이블당 평균 적용 시간), <code>Eff. Parallelism = Slave Sum / Slave Elapsed</code>(동시 활성 워커 수 근사), <code>Lag = 마스터 마지막 commit → 슬레이브 마지막 apply</code>.</blockquote>
+<h3>2. 테스트 결과</h3>
+<p><strong>Insert</strong></p>
+<table><thead><tr>
+<th>지표</th>
+<th class="num">#2 dev_tuned (순차)</th>
+<th class="num">#6 poc_buf5g_dwb0 (병렬)</th>
+<th>변화</th>
+</tr></thead><tbody>
+<tr>
+<td>Master Elapsed (s)</td>
+<td class="num">154.60</td>
+<td class="num">162.20</td>
+<td>≈ 동일</td>
+</tr>
+<tr>
+<td>Slave Elapsed (s)</td>
+<td class="num">87.80</td>
+<td class="num"><strong>25.85</strong></td>
+<td><strong>3.4× 단축</strong></td>
+</tr>
+<tr>
+<td>Slave/worker (s)</td>
+<td class="num">8.05</td>
+<td class="num">16.10</td>
+<td>2.0× 증가</td>
+</tr>
+<tr>
+<td>Eff. Parallelism</td>
+<td class="num">0.92</td>
+<td class="num"><strong>6.23</strong></td>
+<td>순차 → 병렬</td>
+</tr>
+<tr>
+<td>Lag M→S (s)</td>
+<td class="num">83.05</td>
+<td class="num"><strong>14.25</strong></td>
+<td><strong>5.8× 단축</strong></td>
+</tr>
+</tbody></table>
+<p><img src="insert.png" alt="Insert 테스트 결과"></p>
+<p><strong>Update</strong></p>
+<table><thead><tr>
+<th>지표</th>
+<th class="num">#2 dev_tuned (순차)</th>
+<th class="num">#6 poc_buf5g_dwb0 (병렬)</th>
+<th>변화</th>
+</tr></thead><tbody>
+<tr>
+<td>Master Elapsed (s)</td>
+<td class="num">192.27</td>
+<td class="num">179.21</td>
+<td>≈ 동일</td>
+</tr>
+<tr>
+<td>Slave Elapsed (s)</td>
+<td class="num">111.84</td>
+<td class="num"><strong>32.59</strong></td>
+<td><strong>3.4× 단축</strong></td>
+</tr>
+<tr>
+<td>Slave/worker (s)</td>
+<td class="num">10.85</td>
+<td class="num">16.32</td>
+<td>1.5× 증가</td>
+</tr>
+<tr>
+<td>Eff. Parallelism</td>
+<td class="num">0.97</td>
+<td class="num"><strong>5.01</strong></td>
+<td>순차 → 병렬</td>
+</tr>
+<tr>
+<td>Lag M→S (s)</td>
+<td class="num">92.28</td>
+<td class="num"><strong>23.71</strong></td>
+<td><strong>3.9× 단축</strong></td>
+</tr>
+</tbody></table>
+<p><img src="update.png" alt="Update 테스트 결과"></p>
+<p><strong>관찰</strong></p>
+<ul>
+<li><strong>병렬화 확인</strong>: develop은 <code>Eff. Parallelism ≈ 1</code>(순차 — 한 번에 한 테이블), POC는 약 <strong>5–6 워커</strong>가 동시 활성. 슬레이브 전체 반영 시간(Slave Elapsed)은 Insert·Update 모두 약 <strong>3.4배 단축</strong>, 복제 lag은 약 <strong>4–6배 단축</strong>.</li>
+<li><strong>마스터는 무관</strong>: Master Elapsed는 빌드/설정과 무관(±6%) — 모든 성능 차이는 <strong>슬레이브 applier 단계</strong>에서 발생.</li>
+<li>(참고) 전체 7개 실험에서 <code>data_buffer_size=5G</code> + <code>addvoldb temp</code> 조합이 워커당 처리 속도·lag 모두 가장 우수했다(상세: <code>7.final_test/report.md</code>).</li>
+</ul>
+<h3>3. 특이사항</h3>
+<p><strong>병렬성은 확보됐으나, 단일 테이블(워커당) 복제 시간은 오히려 증가</strong></p>
+<p>위 표에서 보이듯 전체 반영 시간은 크게 단축됐지만, <strong>테이블 1개를 적용하는 시간(Slave/worker)은 순차 대비 늘었다</strong>:</p>
+<ul>
+<li>Insert: 8.05s → 16.10s (<strong>약 2배</strong>)</li>
+<li>Update: 10.85s → 16.32s (<strong>약 1.5배</strong>)</li>
+</ul>
+<p>즉 &quot;여러 테이블을 동시에 처리해 전체는 빨라졌지만, 각 워커가 자기 테이블 하나를 처리하는 속도 자체는 느려진&quot; trade-off가 나타난다.</p>
+<p><strong>원인 분석 — 네트워크가 아니라 실제 apply 로직이 병목</strong></p>
+<p>슬레이브 <code>cub_server</code>의 on-CPU perf를 측정한 결과, 수행 비중은 <strong>네트워크 전송이 아니라 실질적인 Insert/Update 로직</strong>에 집중되어 있었다. (복제 적용 경로 <code>slocator_repl_force→xlocator_repl_force→locator_insert_force/locator_update_force</code>가 on-CPU의 큰 분모를 차지) 측정한 콜체인/플레임그래프는 본 보고서에 <strong>함께 첨부</strong>한다.</p>
+<ul>
+<li>Insert: <code>slave_cub_server_insert_callchain.html</code> (또는 <code>slave_cub_server_insert_flame_full.svg</code>)</li>
+<li>Update: <code>slave_cub_server_update_callchain.html</code> (또는 <code>slave_cub_server_update_flame_full.svg</code>)</li>
+</ul>
+<p>콜체인 기준 <strong>병목 예상 지점</strong>(상세는 위 첨부 파일):</p>
+<ul>
+<li><strong>Insert</strong> (<code>locator_insert_force</code> → <code>heap_insert_logical</code> 86%) — 세 갈래:</li>
+<ol>
+<li><strong>free space 탐색/페이지 할당</strong>: <code>heap_stats_find_best_page</code>(33.8%) → <code>heap_vpid_alloc</code>(23.1%) → <code>file_alloc</code>(18.2%)</li>
+<li><strong>lock 획득</strong>: <code>lock_object</code>(20.9%) → <code>lock_internal_perform_lock_object</code> → lock-free hashmap(<code>lf_hash_insert_internal</code> 등 약 12%)</li>
+<li><strong>로그 생성</strong>: <code>log_append_undoredo_crumbs</code>(27.8%) → <code>prior_lsa_alloc_and_copy_crumbs</code>/<code>prior_lsa_next_record_internal</code>(약 14–15%)</li>
+</ol>
+<ul>
+<li>부가: malloc 체인(<code>cub_alloc→__libc_malloc→_int_malloc→sysmalloc</code>)이 로그 레코드 복사에 반복 매달림.</li>
+</ul>
+</ul>
+<ul>
+<li><strong>Update</strong> (<code>locator_update_force</code> → <code>heap_update_logical</code> 71.6%) — <strong>로그 경로가 지배적</strong>:</li>
+<ol>
+<li><strong>로그 생성/diff</strong>: <code>heap_log_update_physical</code>(47.3%) → <code>log_append_undoredo_recdes/crumbs</code>(45%) → <code>prior_lsa_alloc_and_copy_crumbs</code>(39.1%), 그리고 update 고유의 <code>log_diff</code>(23.3%)</li>
+<li><strong>대상 row lock + escalation</strong>: <code>locator_lock_and_get_object_with_evaluation</code>(23.0%) + <code>lock_escalate_if_needed</code>(8.5%) / <code>lock_remove_all_inst_locks</code>(8.3%)</li>
+<li><strong>페이지 compaction</strong>: <code>spage_update</code>(15.1%) → <code>spage_update_record_after_compact</code>(13.0%) → <code>spage_compact</code>(8.5%)</li>
+</ol>
+</ul>
+<ul>
+<li><strong>공통</strong>: <code>prior_lsa_*</code>(로그 레코드 생성) + malloc 체인이 insert·update 양쪽 모두 두껍다.</li>
+</ul>
+<p><strong>병렬화 시 워커당 둔화의 추정 메커니즘</strong></p>
+<p>위 병목 지점들은 대부분 <strong>워커 간 공유 자원</strong>에 닿아 있다 — <code>prior_lsa_next_record_internal</code>의 prior LSA append(mutex), lock 매니저의 lock-free hashmap, page buffer/<code>file_alloc</code>(공간 할당), 그리고 malloc(<code>_int_malloc</code>/<code>sysmalloc</code>). 워커 수가 늘면 이 공유 경로들에서 <strong>경합(mutex 대기, 캐시·메모리 경합, 공간 할당 경합)</strong> 이 증가하여, 전체 처리량은 늘어도 <strong>개별 워커의 단일 테이블 처리 시간은 늘어나는</strong> 것으로 추정된다.</p>
+<blockquote>후속 과제(설계 문서 TODO와 연결): 파일 동시 접근 시 I/O 병목, 캐시·버퍼 페이지 참조 시 lock 필요성 검토 → 위 공유 자원(prior LSA append, lock hashmap, page/space 할당, allocator) 경합 완화가 워커당 성능 회복의 핵심 지점이다.</blockquote>
+</body>
+</html>
