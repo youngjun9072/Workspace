@@ -12,10 +12,10 @@
   </defs>
   <rect x="0" y="0" width="820" height="612" fill="#ffffff"/>
 
-  <!-- master input (D.3) -->
+  <!-- master input (D.4) -->
   <rect x="95" y="10" width="630" height="44" rx="6" fill="#fff1cc" stroke="#e07b00" stroke-width="2.5"/>
   <text x="120" y="28" font-size="12" fill="#5c4209"><tspan font-weight="bold" fill="#8a4b00">★ Master (cub_server):</tspan>  compute writeset / conflict check (conflict keys)</text>
-  <text x="138" y="46" font-size="12" fill="#5c4209">→ emit only <tspan font-weight="bold">last_committed_lsa</tspan> to repl log  (D.3)</text>
+  <text x="138" y="46" font-size="12" fill="#5c4209">→ emit only <tspan font-weight="bold">last_committed_lsa</tspan> to repl log  (D.4)</text>
   <line x1="410" y1="54" x2="410" y2="64" stroke="#555" stroke-width="1.5" marker-end="url(#p)"/>
 
   <!-- LogReader -->
@@ -56,7 +56,7 @@
     <text x="54" y="377" font-size="11" fill="#33414f">• process repl items</text>
     <text x="54" y="394" font-size="11" fill="#33414f">• flush row items</text>
     <text x="54" y="411" font-size="11" fill="#33414f">• execute stmt</text>
-    <text x="54" y="428" font-size="11" font-weight="bold" fill="#b45309">• commit tx  ★D.6 gate</text>
+    <text x="54" y="428" font-size="11" font-weight="bold" fill="#b45309">• commit tx  ★D.3 gate</text>
     <text x="54" y="445" font-size="11" fill="#33414f">• report completed lsa</text>
   </g>
   <g>
@@ -67,7 +67,7 @@
     <text x="334" y="377" font-size="11" fill="#33414f">• process repl items</text>
     <text x="334" y="394" font-size="11" fill="#33414f">• flush row items</text>
     <text x="334" y="411" font-size="11" fill="#33414f">• execute stmt</text>
-    <text x="334" y="428" font-size="11" font-weight="bold" fill="#b45309">• commit tx  ★D.6 gate</text>
+    <text x="334" y="428" font-size="11" font-weight="bold" fill="#b45309">• commit tx  ★D.3 gate</text>
     <text x="334" y="445" font-size="11" fill="#33414f">• report completed lsa</text>
   </g>
   <text x="550" y="394" text-anchor="middle" font-size="18" fill="#999">· · ·</text>
@@ -79,7 +79,7 @@
     <text x="614" y="377" font-size="11" fill="#33414f">• process repl items</text>
     <text x="614" y="394" font-size="11" fill="#33414f">• flush row items</text>
     <text x="614" y="411" font-size="11" fill="#33414f">• execute stmt</text>
-    <text x="614" y="428" font-size="11" font-weight="bold" fill="#b45309">• commit tx  ★D.6 gate</text>
+    <text x="614" y="428" font-size="11" font-weight="bold" fill="#b45309">• commit tx  ★D.3 gate</text>
     <text x="614" y="445" font-size="11" fill="#33414f">• report completed lsa</text>
   </g>
 
@@ -99,6 +99,6 @@
 
   <!-- contrast caption -->
   <text x="20" y="566" font-size="11.5" fill="#333"><tspan font-weight="bold" fill="#8a4b00">★ = new vs PoC.</tspan>  PoC: LogReader dispatches by tranid % worker (ignores conflict/order).</text>
-  <text x="20" y="583" font-size="11.5" fill="#333">To-be (★): master computes writeset→last_committed_lsa · Coordinator dispatches · worker D.6 commit-order gate.</text>
+  <text x="20" y="583" font-size="11.5" fill="#333">To-be (★): master computes writeset→last_committed_lsa · Coordinator dispatches · worker D.3 commit-order gate.</text>
   <text x="20" y="602" font-size="11" fill="#666"><tspan font-weight="bold">SBR</tspan> = statement-based path, incl. DDL (CREATE/ALTER/DROP, CREATE INDEX).  <tspan font-weight="bold">unknown change-set</tspan> = sysop · partial-decode · unsupported ops.  (no row writeset → serialized)</text>
 </svg>

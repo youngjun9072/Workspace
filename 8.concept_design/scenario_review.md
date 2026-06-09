@@ -1,6 +1,6 @@
 # 시나리오 리뷰 (🟣 5년차 DB 엔지니어)
 
-> 대상: `parallel_applylogdb_coordinator_design.md` 재구성된 Act D.1~D.6 (마스터-사이드 단일안, 옵션 a). 페르소나 정의 → `review_personas.md`.
+> 대상: `parallel_applylogdb_coordinator_design.md` 재구성된 Act D.1~D.5 (마스터-사이드 단일안, 옵션 a). 페르소나 정의 → `review_personas.md`.
 > **판정 메타 원리**: 슬레이브 서버가 강제하는 cross-row 제약 = {PK 유일성, 각 보조 unique, FK 부모, 상속 공유 unique(+ CUBRID OID/SET 참조 — 2차 발견)}. writeset이 이 제약 변(邊)마다 conflict key를 담아야 정확. 누락 변은 out-of-order 적용 시 서버 검사 위반.
 > 판정: ✅통과 / ⚠️위험(성능·운영) / ❌갭(correctness) / 🔎확인필요.
 
@@ -37,7 +37,7 @@
 | S25 | 생성/가상 컬럼 | virtual+비결정 | 🔎 | 비저장 비결정 시 발산 위험 |
 | S26 | 복합 FK | 다중컬럼 FK | ✅ | part2가 부모 복합키 전체 담으면 OK |
 | S27 | 순환 FK | A→B,B→A deferred | ⚠️🔎 | 양방향 부모키 → 과직렬/순환 의존 |
-| S28 | failover | 승격 시 미적용 tail | ✅ | D.6 gap-free committed_lsa |
+| S28 | failover | 승격 시 미적용 tail | ✅ | D.3 gap-free committed_lsa |
 | S29 | LOB | 행+LOB | 🔎범위 | LOB 내용 비복제(범위 밖) |
 | S30 | 멀티소스 | 여러 마스터→1 슬레이브 | 🔎범위 | commit_lsa 소스별 단조성 붕괴 |
 | S31 | fan-in 과직렬 | hot 부모 1개 자식 1000 tx | ⚠️ | 자식끼리 부모키 공유 과직렬(Bug#111146) |
@@ -50,13 +50,13 @@
 
 ## 2차 배치 (S33~S85) — 🟣 엔지니어 에이전트 (opus)
 
-> 부수적으로 "commit 순서 보존(D.6)"이 잡는 것과 "writeset 의존(D.3)"이 잡는 것을 구분해 판정.
+> 부수적으로 "commit 순서 보존(D.3)"이 잡는 것과 "writeset 의존(D.4)"이 잡는 것을 구분해 판정.
 
 ### Round 6 — 다중컬럼/부분/NULL unique 처리
-**S33. 다중컬럼 보조 unique `(a,b)` 충돌** ⚠️위험 — D.5의 "unique 키 포함"이 **복합 unique 직렬화 규약(컬럼 순서·타입·길이) 미정**. same-class 백스톱으로 correctness는 살지만 cross-class(상속)에선 위험.
+**S33. 다중컬럼 보조 unique `(a,b)` 충돌** ⚠️위험 — D.4의 "unique 키 포함"이 **복합 unique 직렬화 규약(컬럼 순서·타입·길이) 미정**. same-class 백스톱으로 correctness는 살지만 cross-class(상속)에선 위험.
 **S34. 부분/NULL-다수 허용 unique** 🔎 — 비-NULL unique 값만 conflict key로 등록하는 규칙 명문화 필요.
 **S35. NULL unique 다중 허용 — false conflict** ⚠️ — "모든 unique 키"를 글자대로 하면 NULL끼리 겹침 오판 → 과직렬(안전 방향). NULL 키 제외해야 서버 의미론 일치.
-**S36. cross-subclass 공유 unique(상속 형제)** ❌갭 — `(class,unique값)`이면 subA≠subB라 안 겹침. **D.6 commit-order는 apply 단계 동시 unique 진입을 못 막음**(FK는 자식이 부모 기다리는 비대칭이지만, 상속 형제는 비대칭 없어 누가 기다릴지 미정). → unique 키를 **공유 BTID(또는 superclass OID) 단위로 정규화** 필요.
+**S36. cross-subclass 공유 unique(상속 형제)** ❌갭 — `(class,unique값)`이면 subA≠subB라 안 겹침. **D.3 commit-order는 apply 단계 동시 unique 진입을 못 막음**(FK는 자식이 부모 기다리는 비대칭이지만, 상속 형제는 비대칭 없어 누가 기다릴지 미정). → unique 키를 **공유 BTID(또는 superclass OID) 단위로 정규화** 필요.
 
 ### Round 7 — 동일 tx 내부 / 같은 PK 재사용
 **S37. 같은 tx 내 INSERT 후 DELETE 같은 PK** ✅ — 1tx=1worker, 내부 순차.
@@ -144,14 +144,14 @@
 ## 종합 메타 발견 (1·2차 통합)
 
 1. **conflict 제약 집합이 CUBRID OO 도메인을 누락 (S53·S54, 신규 ❌).** 설계 모델은 {PK, 보조 unique, FK 부모, 상속 공유 unique}만 가정하나, CUBRID는 **`OBJECT`/클래스 타입 컬럼의 직접 OID 참조, `SET/MULTISET/SEQUENCE` 안의 OID 컬렉션**을 가진다. 이 참조는 `locator_check_foreign_key`를 안 타 writeset에 안 잡힘 → dangling OID. 빈도는 낮으나(레거시 OO) 설계·특수테이블 어디에도 없는 사각. → "OID 참조 컬럼 class는 barrier/same-class 보수화" backstop 명문 필요.
-2. **상속 공유 unique를 commit-order로 못 덮음 (S36·S57, 신규 ❌).** F.3·특수테이블의 "commit 순서 보존이 커버"는 **부정확** — D.6은 durable commit 순서만, apply 단계 동시 unique 진입을 못 막음. FK식 부모키 주입(비대칭)으로 환원 불가(형제 간 비대칭 없음). → **공유 unique를 BTID/superclass OID 단위로 정규화**해 writeset에 포함해야.
+2. **상속 공유 unique를 commit-order로 못 덮음 (S36·S57, 신규 ❌).** F.3·특수테이블의 "commit 순서 보존이 커버"는 **부정확** — D.3은 durable commit 순서만, apply 단계 동시 unique 진입을 못 막음. FK식 부모키 주입(비대칭)으로 환원 불가(형제 간 비대칭 없음). → **공유 unique를 BTID/superclass OID 단위로 정규화**해 writeset에 포함해야.
 3. **cascade FK 영향 행의 writeset 포함 미확정 (S46·S47, ❌).** ON DELETE/UPDATE CASCADE 연쇄 행이 repl_records에 남는지 = 설계 자인 미결. 안 남으면 conflict key 누락. → **server cascade 경로가 repl_log_insert를 자식마다 호출하는지 코드 확인 선결.**
-4. **conflict key 정규화 규약 전반 미정 (S33·S58·S60·S85).** D.5 "unique 키 포함"만 적고 복합 unique 직렬화·collation case-fold·NULL 제외·함수/reverse/generated 인덱스 계산값을 단일 키로 만드는 규약 없음. → 불변식 **"writeset 키 = 서버 인덱스 키 표현과 동일 생성기"** 명문화(옵션 a라 마스터가 권위 보유 — 유리). NULL은 제외(false conflict 방지).
+4. **conflict key 정규화 규약 전반 미정 (S33·S58·S60·S85).** D.4 "unique 키 포함"만 적고 복합 unique 직렬화·collation case-fold·NULL 제외·함수/reverse/generated 인덱스 계산값을 단일 키로 만드는 규약 없음. → 불변식 **"writeset 키 = 서버 인덱스 키 표현과 동일 생성기"** 명문화(옵션 a라 마스터가 권위 보유 — 유리). NULL은 제외(false conflict 방지).
 5. **commit 게이트 HOL 장애 전파 (S68) + backpressure 부재 (S63).** 앞 순번 워커 영구 재시도 시 게이트 전체 정지. retry×게이트·pending backpressure 미설계. → 재시도 상한/우회 + pending 큐 한도 정책 필요.
 6. **committed_lsa 영속 ↔ durable commit 순서 불변식 (S67).** committed_lsa 영속이 durable commit보다 **앞서지 않음(≤)** 명문화 필요(앞서면 미적용 skip).
 7. **긍정 확인**: 옵션 a(마스터 단일 권위)가 롤링 스키마·collation·비결정 위험을 구조적으로 줄임(S23·S58·S69). 표준 관계형 패턴(같은 PK 재사용·다단 FK·배치·hot row·upsert·트리거·SBR·failover)은 견고하게 ✅ 수렴.
 
 ## 수렴 판단
-- **표준 관계형 패턴은 ✅로 수렴** — 핵심 메커니즘(write-write conflict key + FK 부모 주입 + barrier + 멱등 재적용 + D.6 게이트) 견고.
+- **표준 관계형 패턴은 ✅로 수렴** — 핵심 메커니즘(write-write conflict key + FK 부모 주입 + barrier + 멱등 재적용 + D.3 게이트) 견고.
 - **남은 ❌/🔎는 두 축에 집중**: (1) **conflict key 정규화 정밀도**(unique 변종 — 복합/NULL/collation/함수/generated/상속 공유 BTID), (2) **CUBRID OO 고유 참조**(OID/SET).
 - **아직 수렴 안 됨.** 네 가지(서버 인덱스 키=writeset 키 불변식 / 상속 공유 unique BTID 정규화 / OID 참조 backstop / cascade 영향 행 코드 확인)가 명문화·확인되기 전까지 정밀화 시나리오에서 갭 지속 예상. 3차 배치 권장 광맥 = **conflict key 정규화 규약 + OO 도메인(OID/SET/method/active 트리거 연쇄)**.
