@@ -442,22 +442,21 @@ PoC는 이 자리를 가장 단순하게 메웠다 — commit 시점에 `tranid 
 
 병렬도는 **마스터의 commit 동시성만큼**이다 — 마스터에서 commit 구간이 겹친(함께 in-flight였던) 트랜잭션끼리 같은 스냅샷을 받아 슬레이브에서 병렬 실행된다. 그리고 **FK가 자동으로 안전하다**(상세 D.6): 자식은 부모 commit 뒤에 commit되므로 `자식.last_committed_lsa ≥ 부모.commit_lsa`가 저절로 성립한다 — 마스터가 FK를 따로 표시하지 않아도 슬레이브가 자식을 부모 뒤로만 분배한다.
 
-CUBRID 용어로는 이 값이 `last_committed_lsa`다. MySQL의 `sequence_number`는 CUBRID의 `commit_lsa`가 대신하고, MySQL의 `last_committed`/`commit_parent`는 CUBRID의 `last_committed_lsa`가 대신한다.
+여기서 MySQL의 `sequence_number`/`last_committed`를 CUBRID 필드에 단순 1:1로 대응시키면 오해가 생긴다. 두 DBMS 모두 "의존성 계산"과 "병렬 분배"를 위해 순서 좌표가 필요하지만, **어느 단계에서 무엇을 쓰는지**가 다르다.
 
-```text
-MySQL:
-  sequence_number
-  last_committed / commit_parent
+| 단계 | MySQL | CUBRID 설계 |
+|---|---|---|
+| 마스터 의존성 계산 | `sequence_number`와 writeset/history로 `last_committed` 계산 | 1차 COMMIT_ORDER는 전역 committed-watermark(`commit_lsa`) 스냅샷으로 `last_committed_lsa` 계산. v2 WRITESET은 키→마지막 `commit_lsa` history로 계산 |
+| 복제 로그로 전달 | `sequence_number` + `last_committed` | **새로 추가하는 값은 `last_committed_lsa` 하나**. `commit_lsa`는 이미 존재하는 commit 레코드의 좌표 |
+| 슬레이브 병렬 분배 | `last_committed`가 완료됐는지 보고 worker dispatch | `T.last_committed_lsa ≤ committed_lsa`만 보고 worker dispatch. 슬레이브는 충돌을 재계산하지 않음 |
+| durable commit 순서 게이트 | source 순서대로 commit하도록 SPCO가 대기 | 코디네이터가 로컬 대기 순번을 찍고, 워커가 그 순번대로 durable commit(D.4) |
 
-CUBRID:
-  commit_lsa
-  last_committed_lsa
-```
+즉 Act D에서 복제 메타로 새로 내려보낼 핵심 값은 트랜잭션당 `last_committed_lsa` 하나다. `commit_lsa`는 마스터의 충돌 검사 결과물이 아니라 **기존 로그 좌표이자 commit 순서의 기준**이고, 슬레이브는 `last_committed_lsa`를 재계산하지 않고 "내가 기다려야 하는 선행 commit 이 어디까지인가"라는 마스터의 판단 결과로만 사용한다.
 
-즉 Act D에서 복제 메타로 새로 내려보낼 핵심 값은 트랜잭션당 `last_committed_lsa` 하나다. 슬레이브는 이 값을 재계산하지 않고, "내가 기다려야 하는 선행 commit 이 어디까지인가"라는 마스터의 판단 결과로만 사용한다.
+### 순서 표현 — `sequence_number` 로그 필드는 추가하지 않는다
+MySQL은 `sequence_number`(순번)+`last_committed`를 binlog에 함께 남기지만, CUBRID는 **복제 로그에 별도 `sequence_number`를 추가하지 않는다.** 마스터가 commit을 `prior_lsa_mutex` 아래 직렬 append하므로 `commit_lsa` 순서가 곧 마스터 commit 순서이고, 슬레이브 LogReader도 그 순서로 commit 레코드를 만난다. 따라서 로그 포맷에 새로 실어야 하는 값은 **트랜잭션당 `last_committed_lsa` 하나**다.
 
-### 순서 표현 — `sequence_number` 없이 `commit_lsa` 재사용
-MySQL은 `sequence_number`(순번)+`last_committed`를 매기지만 CUBRID는 **순번을 따로 만들 필요가 없다.** 마스터가 commit을 `prior_lsa_mutex` 아래 직렬 append → **`commit_lsa`가 단조 증가**하고 슬레이브 LogReader도 그 순서로 만난다 → `commit_lsa` 자체가 단조 식별자다. 그래서 `sequence_number`를 `commit_lsa`로 대체하고 **트랜잭션당 `last_committed_lsa` 하나만** 로그에 싣는다(commit "순서"는 공짜지만 "의존"은 공짜가 아니므로 이 값은 반드시 보낸다 — 전제: `committed_lsa` gap-free, D.4가 보장).
+다만 이것은 `commit_lsa`를 MySQL `sequence_number`처럼 모든 내부 순번으로 재사용한다는 뜻이 아니다. `commit_lsa`는 **마스터가 정한 commit 순서와 의존성 비교의 좌표**로 쓰고, 워커의 durable commit 차례 대기에는 코디네이터가 분배 시점에 찍는 **슬레이브 로컬 순번**을 쓴다(D.4). 즉 마스터는 `last_committed_lsa`를 계산해 내려보내고, 슬레이브는 그 값을 분배 조건으로 집행하며, commit 게이트 구현의 큐 인덱스는 복제 로그에 실지 않는다(전제: `committed_lsa` gap-free, D.4가 보장).
 
 `last_committed_lsa` watermark 비교가 의도대로 도는지는 시나리오로 확인된다:
 ```text
@@ -494,6 +493,8 @@ T1이 느려 미적용일 때:
 **v2 마스터 구현 지점**: writeset 원천 `tdes->repl_records[]`(바꾼 `(class,PK)` 이미 담김, 분석서 A.3), FK 부모 키는 `locator_check_foreign_key`에서 수집, 전역 `writeset_history`(키→commit_lsa, 상한 N) 추가. 전체 표는 분석서 부록 A.7·A.8.
 
 ## D.6 슬레이브 코디네이터의 병렬 방법 — LOGICAL_CLOCK
+
+여기서부터는 **슬레이브의 병렬화 집행**이다. 충돌·의존성 판단은 D.5에서 마스터가 끝내고, 슬레이브 코디네이터는 그 결과 토큰인 `last_committed_lsa`를 현재 진도와 비교해 "지금 워커에 보내도 되는가"만 결정한다.
 
 슬레이브 코디네이터는 마스터가 실어 보낸 `last_committed_lsa`만 보고 분배한다:
 ```text
