@@ -286,6 +286,8 @@ seq  바꾼 행(writeset)   겹치는 선행   last_committed
 
 새 커밋이 *시스템 첫 해시부터 전부* 비교하는 건 아니다. source는 최근 행 해시만 담는 **history 맵**(`m_writeset_history`)을 두고, 찾는 해시가 거기 없으면 **floor(`m_writeset_history_start`)** 로 떨어진다(그 이전 이력은 버려졌으니 "floor에 의존"으로 보수 처리). history는 **`binlog_transaction_dependency_history_size`(기본 25000개 행 해시)** 까지만 보관하고, 그 용량을 넘기면 **현재 트랜잭션 계산에 쓴 뒤 통째로 clear**하면서 floor를 현재 `seq`로 끌어올린다. 즉 *오래된 해시는 버려지고*, 버려진 행과 충돌하는 트랜잭션은 floor에 의존하게 되어 **항상 안전한 방향(과직렬)으로만** 보수화된다(`rpl_trx_tracking.cc:283-324`).
 
+이 점이 중요하다 — **`binlog_transaction_dependency_history_size`는 정확성 노브가 아니라 병렬성↔메모리 노브**다. 작게 잡으면 clear가 잦아 floor 의존이 늘어 그만큼 **과직렬(병렬↓)**되지만, *순서가 꼬이거나 충돌을 놓치는 일은 없다.* floor가 항상 *버려진 모든 키의 최종 commit 위치 이상*이라, 비워진 행과 충돌하는 트랜잭션도 floor까지는 기다려 — 실제 선행보다 *더* 기다리지 *덜* 기다리지 않기 때문이다. 단 이 안전성은 **floor 불변식(`floor ≥ pruned된 모든 키의 최종 commit 위치`)**이 지켜질 때만 성립한다. MySQL은 clear 시 floor를 현재 `seq`로 올려 이를 보장하며, CUBRID가 v2에서 `commit_lsa`를 클럭으로 쓸 때도 이 불변식을 반드시 유지해야 한다(어기면 과직렬이 아니라 *진짜 순서 위반* — D.5 v2 검증 포인트).
+
 여기서 핵심은 **write set 자체는 binlog에 실리지 않는다**는 점이다 — source가 `last_committed` 계산에만 쓰는 내부 입력이고, replica엔 결과(`sequence_number`/`last_committed`)만 전달된다 [M3]. (CUBRID도 동일 — 마스터가 `last_committed_lsa`만 내려보내고 계산 입력은 마스터 내부에 머문다, D.5)
 
 ### C.3.4 group commit은 어디에 영향을 주는가
