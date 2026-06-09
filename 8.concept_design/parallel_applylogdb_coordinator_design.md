@@ -233,6 +233,25 @@ Tx(seq=2351): last_committed=2345
 
 이 예시에서 `Tx(seq=2347)`, `Tx(seq=2348)`, `Tx(seq=2349)`는 모두 `2346`까지만 기다리면 되므로 서로 병렬 실행 후보가 된다. `Tx(seq=2350)`은 `2348`까지 기다려야 하므로 이 묶음과 완전히 독립은 아니다. 반면 `Tx(seq=2351)`은 기록 순서는 뒤지만 `last_committed=2345`이므로 `2346~2350`을 반드시 기다릴 필요가 없다. replica coordinator가 `Tx(seq=2351)`까지 읽었고 `2345`까지 완료되어 있으며 워커가 비어 있다면, `Tx(seq=2351)`은 `Tx(seq=2346)`과도 병렬 실행될 수 있다. 핵심은 `sequence_number`가 **기록/commit 순서**이고, `last_committed`가 **실제 대기해야 하는 dependency watermark**라는 점이다.
 
+group commit 관점으로 보면 `last_committed`가 왜 같은 값으로 묶이는지도 이해하기 쉽다. MySQL binlog에는 `Group A` 같은 라벨이 직접 남지 않는다. 대신 각 트랜잭션의 GTID/Anonymous GTID 이벤트에 `last_committed`와 `sequence_number`가 찍히고, 같은 commit parent를 공유하는 연속 트랜잭션들을 보고 "이 트랜잭션들은 같은 그룹 뒤에서 병렬 apply 가능한 후보"라고 해석한다. 예를 들어 이미 완료된 마지막 트랜잭션이 `seq=100`이고, 그 뒤 binlog group commit pipeline에 `Tx101~Tx103`이 거의 동시에 들어와 하나의 batch로 처리되면, 이 batch의 commit parent는 `100`이 된다.
+
+```text
+Group A 이전 완료 경계: seq=100
+
+Group A에 함께 들어온 tx:
+  Tx(seq=101): last_committed=100
+  Tx(seq=102): last_committed=100
+  Tx(seq=103): last_committed=100
+
+다음 Group B:
+  Tx(seq=104): last_committed=103
+  Tx(seq=105): last_committed=103
+```
+
+> **핵심.** MySQL이 "일정 개수마다" 강제로 `last_committed`를 올리는 것이 아니다. 더 정확히는 **binlog group commit pipeline에 같은 시점에 모인 트랜잭션 묶음(batch)이 있고, 그 묶음 이전의 완료 경계가 commit parent가 되어 `last_committed`로 기록된다.**
+
+batch 크기는 고정 개수가 아니라 부하, commit 도착 타이밍, `binlog_group_commit_sync_delay`, `binlog_group_commit_sync_no_delay_count`, fsync 타이밍 등에 영향을 받는다. 따라서 `last_committed`/`sequence_number`만 보면 "명시적 그룹 이름"은 없지만, 같은 `last_committed`를 공유하는 묶음과 그 병렬 가능성을 추론할 수 있다.
+
 | 값 | 버전 상태 |
 |---|---|
 | `COMMIT_ORDER` | 8.0에서 선택 가능했고 기본값. 8.4+에서는 제거됨. |
