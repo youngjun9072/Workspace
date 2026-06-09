@@ -218,6 +218,21 @@ REPLICA (복제본)
 
 **❶ 의존성 계산 (source).** source는 트랜잭션마다 `sequence_number`(binlog 안의 논리 순번)와 `last_committed`(이 트랜잭션이 기다려야 하는 가장 최근 선행 트랜잭션 = watermark)를 binlog에 적는다 [M2][M4]. 현재 기준의 핵심은 **source가 항상 WRITESET 방식으로 의존성 정보를 만든다**는 점이다. MySQL 8.4.0 릴리즈 노트는 `binlog_transaction_dependency_tracking` 변수가 제거됐고, multithreaded replica 사용 시 source `mysqld`가 항상 writeset으로 binary log 의존성 정보를 생성한다고 명시한다 [M9]. 따라서 `COMMIT_ORDER`/`WRITESET_SESSION`은 현재 설계 설명의 대상이 아니라 과거 8.0 선택지로만 표시한다.
 
+여기서 두 값은 모두 **트랜잭션 단위** 값이다. `sequence_number`는 개별 row 변경이나 SQL 문장 번호가 아니라, binlog 파일 안에서 트랜잭션마다 1, 2, 3... 증가하는 논리 순번이다. 한 트랜잭션 안에 여러 row event가 있어도 `sequence_number`는 하나만 붙는다. 반면 `last_committed`는 그 트랜잭션이 기다려야 하는 **마지막 선행 충돌 트랜잭션의 `sequence_number`**다. 즉 `sequence_number`가 더 크다고 해서 앞의 모든 트랜잭션을 기다리는 것이 아니라, 실제 대기 범위는 `last_committed`가 정한다 [M2][M13].
+
+AWS Database Blog의 `mysqlbinlog` 단순 예시는 이 관계를 잘 보여 준다 [M13].
+
+```text
+Tx(seq=2346): last_committed=2345
+Tx(seq=2347): last_committed=2346
+Tx(seq=2348): last_committed=2346
+Tx(seq=2349): last_committed=2346
+Tx(seq=2350): last_committed=2348
+Tx(seq=2351): last_committed=2345
+```
+
+이 예시에서 `Tx(seq=2347)`, `Tx(seq=2348)`, `Tx(seq=2349)`는 모두 `2346`까지만 기다리면 되므로 서로 병렬 실행 후보가 된다. `Tx(seq=2350)`은 `2348`까지 기다려야 하므로 이 묶음과 완전히 독립은 아니다. 반면 `Tx(seq=2351)`은 기록 순서는 뒤지만 `last_committed=2345`이므로 `2346~2350`을 반드시 기다릴 필요가 없다. replica coordinator가 `Tx(seq=2351)`까지 읽었고 `2345`까지 완료되어 있으며 워커가 비어 있다면, `Tx(seq=2351)`은 `Tx(seq=2346)`과도 병렬 실행될 수 있다. 핵심은 `sequence_number`가 **기록/commit 순서**이고, `last_committed`가 **실제 대기해야 하는 dependency watermark**라는 점이다.
+
 | 값 | 버전 상태 |
 |---|---|
 | `COMMIT_ORDER` | 8.0에서 선택 가능했고 기본값. 8.4+에서는 제거됨. |
@@ -503,6 +518,7 @@ class 식별자는 이름의 rename·재사용 위험을 피하기 위해 **clas
 - [M10] MySQL 8.4 Manual — `replica_parallel_type` valid values `DATABASE`/`LOGICAL_CLOCK`, default `LOGICAL_CLOCK`, deprecated; `LOGICAL_CLOCK` to be used exclusively later. https://dev.mysql.com/doc/refman/8.4/en/replication-options-replica.html
 - [M11] MySQL 9.5.0 Release Notes — `replica_parallel_type` removed. https://docs.oracle.com/cd/E17952_01/mysql-9.7-relnotes-en/news-9-5-0.html
 - [M12] MySQL 8.0 Manual — The Relay Log; relay log has the same format as binary log and can be read by `mysqlbinlog`. https://dev.mysql.com/doc/refman/8.0/en/relay-log.html ; local source/code analysis: `reference/mysql/02.binlog_vs_relaylog_format.md`
+- [M13] AWS Database Blog — Overview and best practices of multithreaded replication in Amazon RDS for MySQL, Amazon RDS for MariaDB, and Amazon Aurora MySQL(`mysqlbinlog`의 `last_committed`/`sequence_number` 예시). https://aws.amazon.com/blogs/database/overview-and-best-practices-of-multithreaded-replication-in-amazon-rds-for-mysql-amazon-rds-for-mariadb-and-amazon-aurora-mysql/
 - (초기 구축) Clone Plugin / GTID auto-positioning. https://dev.mysql.com/doc/refman/8.0/en/clone-plugin.html , https://dev.mysql.com/doc/refman/8.0/en/replication-gtids-auto-positioning.html
 
 **PostgreSQL**
