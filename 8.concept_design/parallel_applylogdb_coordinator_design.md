@@ -265,15 +265,7 @@ REPLICA (복제본)
 
 설계의 핵심은 새로운 거대한 모듈을 만드는 것이 아니라, 현재 LogReader가 commit 시점에 `tranid % worker_count`로 워커를 고르는 그 한 지점을 **충돌·순서 판단으로 바꾸는 것**이다. 전체 흐름은 다음과 같다.
 
-```text
-[마스터] writeset 계산 → last_committed를 복제 로그에 실음 (D.3)
-   │  (복제 로그)
-   ▼
- 리더 ───────→ 코디네이터 ──────────→ 워커 풀 ────────────→ 순서 정리(리더)
- 스캔·tx 구성    last_committed ≤        적용·flush·commit     committed_lsa를
- ·last_committed committed_lsa면         (D.6 차례 게이트)      commit 순서대로
-  디코드         병렬 분배·워커 선택                            갱신·apply info
-```
+![D.1 코디네이터 파이프라인 — PoC 병렬 구조(B.2)에 ★Coordinator와 워커 ★D.6 commit 차례 게이트를 추가(하이라이트). PoC의 tranid%worker 직접 분배가 last_committed 기준 분배로 바뀐 지점이 대조적으로 보인다.](images/coordinator_d1.png)
 
 각 모듈의 책임은 다음과 같다.
 
