@@ -13,8 +13,8 @@
   <rect x="0" y="0" width="820" height="588" fill="#ffffff"/>
 
   <!-- master input (D.3) -->
-  <rect x="110" y="14" width="600" height="36" rx="6" fill="#eef4fb" stroke="#9cb8d6"/>
-  <text x="410" y="37" text-anchor="middle" font-size="12.5" fill="#1a2733">[마스터=cub_server] writeset 계산 → <tspan font-weight="bold">last_committed_lsa</tspan> 를 복제 로그에 실음 (D.3)</text>
+  <rect x="95" y="14" width="630" height="36" rx="6" fill="#eef4fb" stroke="#9cb8d6"/>
+  <text x="410" y="37" text-anchor="middle" font-size="12.5" fill="#1a2733">[Master = cub_server]  writeset → emit <tspan font-weight="bold">last_committed_lsa</tspan>  (D.3)</text>
   <line x1="410" y1="50" x2="410" y2="64" stroke="#555" stroke-width="1.5" marker-end="url(#p)"/>
 
   <!-- LogReader -->
@@ -22,21 +22,21 @@
   <text x="410" y="88" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a2733">LogReader (Reader)</text>
   <line x1="210" y1="98" x2="610" y2="98" stroke="#cdd7e1"/>
   <text x="230" y="118" font-size="12" fill="#33414f">• read log → build LA_ITEM / LA_APPLY</text>
-  <text x="230" y="138" font-size="12" fill="#33414f">• decode <tspan font-weight="bold">last_committed_lsa</tspan> (마스터가 실어준 값)</text>
-  <text x="230" y="158" font-size="12" fill="#33414f">• collect results → committed_lsa 갱신(순서 정리)</text>
+  <text x="230" y="138" font-size="12" fill="#33414f">• decode <tspan font-weight="bold">last_committed_lsa</tspan> (sent by master)</text>
+  <text x="230" y="158" font-size="12" fill="#33414f">• collect results → advance committed_lsa (in order)</text>
 
   <line x1="410" y1="164" x2="410" y2="180" stroke="#555" stroke-width="1.5" marker-end="url(#p)"/>
-  <text x="420" y="176" font-size="11" fill="#777">완성된 tx</text>
+  <text x="420" y="176" font-size="11" fill="#777">completed tx</text>
 
-  <!-- Coordinator (HIGHLIGHT = 신규) -->
+  <!-- Coordinator (HIGHLIGHT = NEW) -->
   <rect x="150" y="182" width="520" height="100" rx="8" fill="#fff1cc" stroke="#e07b00" stroke-width="3"/>
   <text x="170" y="206" font-size="15" font-weight="bold" fill="#8a4b00">★ Coordinator</text>
-  <rect x="300" y="192" width="360" height="20" rx="10" fill="#e07b00"/>
-  <text x="480" y="206" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#ffffff">신규 — PoC의 tranid % worker 분배를 대체</text>
+  <rect x="298" y="192" width="362" height="20" rx="10" fill="#e07b00"/>
+  <text x="479" y="206" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#ffffff">NEW — replaces PoC's  tranid % worker  dispatch</text>
   <line x1="150" y1="216" x2="670" y2="216" stroke="#eccf93"/>
-  <text x="170" y="236" font-size="12" fill="#5c4209">• <tspan font-weight="bold">last_committed_lsa ≤ committed_lsa</tspan> → 실행 / 아니면 pending 대기</text>
-  <text x="170" y="256" font-size="12" fill="#5c4209">• DDL · SBR · 변경 class 불명 → <tspan font-weight="bold">barrier</tspan>(전체 직렬)</text>
-  <text x="170" y="276" font-size="12" fill="#5c4209">• 실행 가능 tx만 워커 선택 <tspan fill="#8a4b00">(충돌·순서는 마스터가 이미 계산)</tspan></text>
+  <text x="170" y="236" font-size="12" fill="#5c4209">• <tspan font-weight="bold">last_committed_lsa ≤ committed_lsa</tspan>  →  dispatch / else pending</text>
+  <text x="170" y="256" font-size="12" fill="#5c4209">• DDL · SBR · unknown class  →  <tspan font-weight="bold">barrier</tspan> (serialize)</text>
+  <text x="170" y="276" font-size="12" fill="#5c4209">• pick worker for runnable tx <tspan fill="#8a4b00">(conflict/order already decided by master)</tspan></text>
 
   <!-- dispatch fan-out -->
   <line x1="410" y1="282" x2="410" y2="294" stroke="#e07b00" stroke-width="1.8"/>
@@ -44,7 +44,7 @@
   <line x1="130" y1="294" x2="130" y2="312" stroke="#e07b00" stroke-width="1.8" marker-end="url(#po)"/>
   <line x1="410" y1="294" x2="410" y2="312" stroke="#e07b00" stroke-width="1.8" marker-end="url(#po)"/>
   <line x1="690" y1="294" x2="690" y2="312" stroke="#e07b00" stroke-width="1.8" marker-end="url(#po)"/>
-  <text x="422" y="290" font-size="11" fill="#b45309">병렬 분배</text>
+  <text x="422" y="290" font-size="11" fill="#b45309">parallel dispatch</text>
 
   <!-- workers -->
   <g>
@@ -54,7 +54,7 @@
     <text x="54" y="362" font-size="11" fill="#33414f">• queue · session · ws</text>
     <text x="54" y="382" font-size="11" fill="#33414f">• process repl items</text>
     <text x="54" y="402" font-size="11" fill="#33414f">• flush row items</text>
-    <text x="54" y="422" font-size="11" font-weight="bold" fill="#b45309">• apply → commit ★D.6 게이트</text>
+    <text x="54" y="422" font-size="11" font-weight="bold" fill="#b45309">• apply → commit  ★D.6 gate</text>
     <text x="54" y="442" font-size="11" fill="#33414f">• report completed lsa</text>
   </g>
   <g>
@@ -64,7 +64,7 @@
     <text x="334" y="362" font-size="11" fill="#33414f">• queue · session · ws</text>
     <text x="334" y="382" font-size="11" fill="#33414f">• process repl items</text>
     <text x="334" y="402" font-size="11" fill="#33414f">• flush row items</text>
-    <text x="334" y="422" font-size="11" font-weight="bold" fill="#b45309">• apply → commit ★D.6 게이트</text>
+    <text x="334" y="422" font-size="11" font-weight="bold" fill="#b45309">• apply → commit  ★D.6 gate</text>
     <text x="334" y="442" font-size="11" fill="#33414f">• report completed lsa</text>
   </g>
   <text x="550" y="394" text-anchor="middle" font-size="18" fill="#999">· · ·</text>
@@ -75,7 +75,7 @@
     <text x="614" y="362" font-size="11" fill="#33414f">• queue · session · ws</text>
     <text x="614" y="382" font-size="11" fill="#33414f">• process repl items</text>
     <text x="614" y="402" font-size="11" fill="#33414f">• flush row items</text>
-    <text x="614" y="422" font-size="11" font-weight="bold" fill="#b45309">• apply → commit ★D.6 게이트</text>
+    <text x="614" y="422" font-size="11" font-weight="bold" fill="#b45309">• apply → commit  ★D.6 gate</text>
     <text x="614" y="442" font-size="11" fill="#33414f">• report completed lsa</text>
   </g>
 
@@ -91,8 +91,9 @@
 
   <!-- feedback: report completed lsa -->
   <polyline points="780,400 802,400 802,128 610,128" fill="none" stroke="#2f7d4a" stroke-width="1.3" stroke-dasharray="5,4" marker-end="url(#pg)"/>
-  <text x="700" y="120" text-anchor="middle" font-size="11" fill="#2f7d4a">report completed lsa → committed_lsa 전진(commit 순서) ↑</text>
+  <text x="806" y="120" text-anchor="end" font-size="11" fill="#2f7d4a">report completed lsa → committed_lsa ↑</text>
 
   <!-- contrast caption -->
-  <text x="20" y="568" font-size="11.5" fill="#333"><tspan font-weight="bold" fill="#8a4b00">★ = PoC 대비 신규.</tspan> PoC: LogReader가 tranid % worker로 직접 분배(충돌·순서 무시) → To-be: Coordinator가 last_committed 기준 분배 + 워커 D.6 commit 차례 게이트</text>
+  <text x="20" y="562" font-size="11.5" fill="#333"><tspan font-weight="bold" fill="#8a4b00">★ = new vs PoC.</tspan>  PoC: LogReader dispatches by tranid % worker (ignores conflict/order).</text>
+  <text x="20" y="579" font-size="11.5" fill="#333">To-be: Coordinator dispatches by last_committed_lsa, + worker D.6 commit-order gate.</text>
 </svg>
