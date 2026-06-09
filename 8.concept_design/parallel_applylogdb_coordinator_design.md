@@ -179,7 +179,13 @@ EDB PGD(구 BDR)는 상용 멀티마스터 제품으로, 구독당 여러 writer
 
 ## C.3 MySQL — 가장 유사하여 채택
 
-MySQL 복제는 source가 변경을 binary log에 기록하고, replica의 I/O 스레드가 이를 **relay log**로 받아 둔 뒤, 병렬 적용 시 **coordinator 스레드가 relay log를 순서대로 읽어 워커 스레드에 배정**하는 구조다 [M1]. relay log는 복제를 위해 replica 로컬에 쌓는 수신 로그이며, 데이터 이벤트 포맷은 source의 binary log와 같다. 차이는 relay log 앞머리에 붙는 replica-local 헤더/bookkeeping 이벤트이고, 이후 실제 데이터 이벤트는 source binary log와 같은 `Log_event` 포맷으로 기록되어 수신과 적용을 분리하는 버퍼 역할을 한다 [M12]. 구조를 그림으로 보면 다음과 같다(조사 문서 `reference/mysql/01.replication_overview.md`에서 가져옴).
+MySQL은 CUBRID 병렬 applylogdb 설계와 가장 잘 맞는 선례다. 이유는 단순하다. **의존성 판단은 source가 미리 계산해 로그에 싣고, replica coordinator는 그 값을 보고 워커에 분배하며, 최종 commit 순서는 별도 게이트로 보존한다.** 이 세 축이 CUBRID의 D.5(마스터 의존성 계산)·D.6(코디네이터 분배)·D.4/G.2(commit 순서 보존·재시작 정합)과 1:1로 대응한다.
+
+### C.3.1 전체 구조 — binlog, relay log, coordinator
+
+MySQL 복제는 source가 변경을 binary log에 기록하고, replica의 I/O 스레드가 이를 **relay log**로 받아 둔 뒤, 병렬 적용 시 **coordinator 스레드가 relay log를 순서대로 읽어 워커 스레드에 배정**하는 구조다 [M1]. relay log는 수신과 적용을 분리하는 replica 로컬 버퍼다. 별도 복제 전용 논리 포맷이 아니라 source binary log와 같은 이벤트 포맷을 쓰며, `mysqlbinlog`로 읽을 수 있다. 차이는 relay log 앞머리에 붙는 replica-local format description, source 위치를 가리키는 rotate, source format description 같은 bookkeeping 이벤트이고, 이후 실제 데이터 이벤트는 source binary log와 같은 `Log_event` 포맷으로 기록된다 [M12].
+
+구조를 그림으로 보면 다음과 같다(조사 문서 `reference/mysql/01.replication_overview.md`에서 가져옴).
 
 ```text
 SOURCE (원본)
@@ -216,11 +222,11 @@ REPLICA (복제본)
   ❶ source가 "병렬 가능 여부" 결정 │ ❷ replica가 병렬 실행 │ ❸ replica가 commit 순서 보존
 ```
 
-여기서 **relay log는 "복제를 위한 별도 형식의 논리 로그"가 아니다.** MySQL 공식 문서와 소스 분석 기준으로 relay log는 binary log와 같은 이벤트 포맷을 쓰며 `mysqlbinlog`로 읽을 수 있다. 코드 분석상 둘 다 같은 `MYSQL_BIN_LOG`/`Log_event` 계열을 쓰고, relay log 파일 앞머리에만 relay 자신의 format description, source 위치를 가리키는 rotate, source format description 같은 bookkeeping 이벤트가 붙는다. 그 뒤 실제 데이터 이벤트는 source binary log 이벤트와 같은 형식이다 [M12].
-
 그림의 흐름 **❶(의존성 계산) → ❷(병렬 분배) → ❸(commit 순서 보존)** 이 핵심이고, 이는 우리 설계와 1:1로 대응한다 — **❶ = D.5(마스터 의존성 계산), ❷ = D.6(코디네이터 분배), ❸ = D.4(commit 순서 보존, 재시작은 G.2).** 아래에서 셋을 차례로 본다.
 
-**❶ 의존성 계산 (source).** source는 트랜잭션마다 `sequence_number`(binlog 안의 논리 순번)와 `last_committed`(이 트랜잭션이 기다려야 하는 가장 최근 선행 트랜잭션 = watermark)를 binlog에 적는다 [M2][M4]. 현재 기준의 핵심은 **source가 항상 WRITESET 방식으로 의존성 정보를 만든다**는 점이다. MySQL 8.4.0 릴리즈 노트는 `binlog_transaction_dependency_tracking` 변수가 제거됐고, multithreaded replica 사용 시 source `mysqld`가 항상 writeset으로 binary log 의존성 정보를 생성한다고 명시한다 [M9]. 따라서 `COMMIT_ORDER`/`WRITESET_SESSION`은 현재 설계 설명의 대상이 아니라 과거 8.0 선택지로만 표시한다.
+### C.3.2 의존성 토큰 — `sequence_number`와 `last_committed`
+
+source는 트랜잭션마다 `sequence_number`(binlog 안의 논리 순번)와 `last_committed`(이 트랜잭션이 기다려야 하는 가장 최근 선행 트랜잭션 = dependency watermark)를 binlog에 적는다 [M2][M4].
 
 여기서 두 값은 모두 **트랜잭션 단위** 값이다. `sequence_number`는 개별 row 변경이나 SQL 문장 번호가 아니라, binlog 파일 안에서 트랜잭션마다 1, 2, 3... 증가하는 논리 순번이다. 한 트랜잭션 안에 여러 row event가 있어도 `sequence_number`는 하나만 붙는다. 반면 `last_committed`는 그 트랜잭션이 기다려야 하는 **마지막 선행 충돌 트랜잭션의 `sequence_number`**다. 즉 `sequence_number`가 더 크다고 해서 앞의 모든 트랜잭션을 기다리는 것이 아니라, 실제 대기 범위는 `last_committed`가 정한다 [M2][M13].
 
@@ -237,24 +243,7 @@ Tx(seq=2351): last_committed=2345
 
 이 예시에서 `Tx(seq=2347)`, `Tx(seq=2348)`, `Tx(seq=2349)`는 모두 `2346`까지만 기다리면 되므로 서로 병렬 실행 후보가 된다. `Tx(seq=2350)`은 `2348`까지 기다려야 하므로 이 묶음과 완전히 독립은 아니다. 반면 `Tx(seq=2351)`은 기록 순서는 뒤지만 `last_committed=2345`이므로 `2346~2350`을 반드시 기다릴 필요가 없다. replica coordinator가 `Tx(seq=2351)`까지 읽었고 `2345`까지 완료되어 있으며 워커가 비어 있다면, `Tx(seq=2351)`은 `Tx(seq=2346)`과도 병렬 실행될 수 있다. 핵심은 `sequence_number`가 **기록/commit 순서**이고, `last_committed`가 **실제 대기해야 하는 dependency watermark**라는 점이다.
 
-group commit 관점으로 보면 `last_committed`가 왜 같은 값으로 묶이는지도 이해하기 쉽다. MySQL binlog에는 `Group A` 같은 라벨이 직접 남지 않는다. 대신 각 트랜잭션의 GTID/Anonymous GTID 이벤트에 `last_committed`와 `sequence_number`가 찍히고, 같은 commit parent를 공유하는 연속 트랜잭션들을 보고 "이 트랜잭션들은 같은 그룹 뒤에서 병렬 apply 가능한 후보"라고 해석한다. 예를 들어 이미 완료된 마지막 트랜잭션이 `seq=100`이고, 그 뒤 binlog group commit pipeline에 `Tx101~Tx103`이 거의 동시에 들어와 하나의 batch로 처리되면, 이 batch의 commit parent는 `100`이 된다.
-
-```text
-Group A 이전 완료 경계: seq=100
-
-Group A에 함께 들어온 tx:
-  Tx(seq=101): last_committed=100
-  Tx(seq=102): last_committed=100
-  Tx(seq=103): last_committed=100
-
-다음 Group B:
-  Tx(seq=104): last_committed=103
-  Tx(seq=105): last_committed=103
-```
-
-> **핵심.** MySQL이 "일정 개수마다" 강제로 `last_committed`를 올리는 것이 아니다. 더 정확히는 **binlog group commit pipeline에 같은 시점에 모인 트랜잭션 묶음(batch)이 있고, 그 묶음 이전의 완료 경계가 commit parent가 되어 `last_committed`로 기록된다.**
-
-batch 크기는 고정 개수가 아니라 부하, commit 도착 타이밍, `binlog_group_commit_sync_delay`, `binlog_group_commit_sync_no_delay_count`, fsync 타이밍 등에 영향을 받는다. 따라서 `last_committed`/`sequence_number`만 보면 "명시적 그룹 이름"은 없지만, 같은 `last_committed`를 공유하는 묶음과 그 병렬 가능성을 추론할 수 있다.
+### C.3.3 source의 의존성 계산 — COMMIT_ORDER와 WRITESET
 
 | 값 | 버전 상태 |
 |---|---|
@@ -262,9 +251,11 @@ batch 크기는 고정 개수가 아니라 부하, commit 도착 타이밍, `bin
 | `WRITESET` | 8.0에서는 선택값. 8.4+에서는 선택지가 아니라 source 내부 기본 동작. |
 | `WRITESET_SESSION` | 8.0에서 선택 가능. 8.4+에서는 제거됨. |
 
-**스토리 요약 (한눈).** `last_committed`(병렬 watermark)를 *타이밍으로 채우면* **COMMIT_ORDER**(공짜·baseline·원본 동시성에 묶여 좁음), *행 키 충돌로 채우면* **WRITESET**(정밀·원본 commit 순서와 무관하게 병렬). 둘은 대체가 아니라 **합성** — WRITESET이 COMMIT_ORDER baseline을 `min`으로 낮춰 병렬만 넓힌다(정확성은 commit-order가 보장). → **CUBRID는 1차로 COMMIT_ORDER식(commit 순서 기반)을 택해 단순함·FK 안전을 얻고**(결정 근거 D.3), 행 단위로 더 넓히는 `(class,PK)` WRITESET은 같은 인터페이스 위의 향후 확장(D.5)으로 둔다. (원리 상세 → `reference/mysql/03` "두 방법", 코드 → `reference/mysql/04` §5.1·§5.3)
+현재 기준의 핵심은 **source가 항상 WRITESET 방식으로 의존성 정보를 만든다**는 점이다. MySQL 8.4.0 릴리즈 노트는 `binlog_transaction_dependency_tracking` 변수가 제거됐고, multithreaded replica 사용 시 source `mysqld`가 항상 writeset으로 binary log 의존성 정보를 생성한다고 명시한다 [M9]. 따라서 `COMMIT_ORDER`/`WRITESET_SESSION`은 현재 설계 설명의 대상이 아니라 과거 8.0 선택지로만 표시한다.
 
-**COMMIT_ORDER vs WRITESET — 장단점과 대비.** 같은 `last_committed` 토큰을 *무슨 기준으로 채우느냐*가 갈린다.
+`last_committed`(병렬 watermark)를 *타이밍으로 채우면* **COMMIT_ORDER**(공짜·baseline·원본 동시성에 묶여 좁음), *행 키 충돌로 채우면* **WRITESET**(정밀·원본 commit 순서와 무관하게 병렬)이다. MySQL 8.0의 사용자 설정 관점에서는 둘이 택1 모드였고, WRITESET 모드 내부에서는 commit-order floor를 함께 고려해 정확성 하한을 유지하면서 행 충돌 기준으로 병렬 폭을 넓힌다. CUBRID는 1차로 COMMIT_ORDER식(commit 순서 기반)을 택해 단순함·FK 안전을 얻고(결정 근거 D.3), 행 단위로 더 넓히는 `(class,PK)` WRITESET은 같은 인터페이스 위의 향후 확장(D.5)으로 둔다. 원리 상세는 `reference/mysql/03`, 코드는 `reference/mysql/04` §5.1·§5.3에 정리했다.
+
+같은 `last_committed` 토큰을 *무슨 기준으로 채우느냐*에 따른 차이는 다음과 같다.
 
 | | COMMIT_ORDER | WRITESET |
 |---|---|---|
@@ -280,7 +271,7 @@ batch 크기는 고정 개수가 아니라 부하, commit 도착 타이밍, `bin
 
 반대로 둘이 *같은 행*을 바꾸면 마스터 락이 이미 직렬화하므로, COMMIT_ORDER는 그 순서를 그대로 보존해 안전하다(WRITESET도 충돌로 직렬). → 정리하면 **COMMIT_ORDER는 항상 안전하지만 마스터 동시성에 묶이고, WRITESET은 그 상한을 넘겨 더 병렬화하되 복잡하고 FK 주입이 필요하다.**
 
-**writeset이 `last_committed`를 만드는 법 (예).** 위 AWS 예시는 replica가 받는 결과(`seq`/`last_committed`)만 보여 주는데, 그 `last_committed`가 *어떻게* 나오는지가 WRITESET식의 핵심이다. 규칙은 단순하다 — 트랜잭션의 `last_committed` = **내가 바꾼 행 키를 직전에 건드린 트랜잭션의 `seq` 중 최댓값**(겹침 없으면 floor=0). source가 행 키(writeset)를 history와 대조해 이 값을 계산한다.
+WRITESET이 `last_committed`를 만드는 규칙은 단순하다. 트랜잭션의 `last_committed` = **내가 바꾼 행 키를 직전에 건드린 트랜잭션의 `seq` 중 최댓값**(겹침 없으면 floor=0)이다. source가 행 키(writeset)를 history와 대조해 이 값을 계산한다.
 
 ```text
 seq  바꾼 행(writeset)   겹치는 선행   last_committed
@@ -293,28 +284,51 @@ seq  바꾼 행(writeset)   겹치는 선행   last_committed
 
 `seq 1·2·4`는 건드린 행이 안 겹쳐 `last_committed=0` → 서로 병렬. `seq3`은 `a:10`을 `seq1`과 공유 → `last_committed=1`(seq1 뒤로 직렬). `seq5`는 `b:20`을 `seq2`와 공유 → `2`. 즉 **충돌 판단의 입력은 writeset(행 키)이고, 출력은 `last_committed` 하나**다. (CUBRID가 v2 WRITESET으로 갈 때 `(class,PK)`가 이 행 키 역할 — D.5 향후 확장.)
 
-**어디서부터 보고, 언제까지 보관하나.** 새 커밋이 *시스템 첫 해시부터 전부* 비교하는 건 아니다. source는 최근 행 해시만 담는 **history 맵**(`m_writeset_history`)을 두고, 찾는 해시가 거기 없으면 **floor(`m_writeset_history_start`)** 로 떨어진다(그 이전 이력은 버려졌으니 "floor에 의존"으로 보수 처리). history는 **`binlog_transaction_dependency_history_size`(기본 25000개 행 해시)** 까지만 보관하고, 그 용량을 넘기면 **현재 트랜잭션 계산에 쓴 뒤 통째로 clear**하면서 floor를 현재 `seq`로 끌어올린다. 즉 *오래된 해시는 버려지고*, 버려진 행과 충돌하는 트랜잭션은 floor에 의존하게 되어 **항상 안전한 방향(과직렬)으로만** 보수화된다(`rpl_trx_tracking.cc:283-324`).
-
-**group commit과의 관계.** `sequence_number`는 flush 진입 순서로 단조 부여될 뿐이고, 위 writeset 충돌 계산은 *바뀐 행 키만* 보므로 **group commit 묶음과 무관**하다. group commit이 병렬도에 닿는 건 COMMIT_ORDER baseline뿐이다(*prepare 시 이미 commit돼 있던 마지막 트랜잭션*으로 스냅샷되어 같은 그룹이면 공유 → 그룹 클수록 병렬↑). → **group commit은 COMMIT_ORDER 성분에만 병렬도를 키우고, WRITESET 성분엔 영향이 없다**(9.7.0 코드: prepare 스냅샷 `binlog.cc:2537`, flush step `:2390`, commit 전진 `:7572`; writeset 충돌 `rpl_trx_tracking.cc:290-317`; 상세 `reference/mysql/04` §5.1·§6).
+새 커밋이 *시스템 첫 해시부터 전부* 비교하는 건 아니다. source는 최근 행 해시만 담는 **history 맵**(`m_writeset_history`)을 두고, 찾는 해시가 거기 없으면 **floor(`m_writeset_history_start`)** 로 떨어진다(그 이전 이력은 버려졌으니 "floor에 의존"으로 보수 처리). history는 **`binlog_transaction_dependency_history_size`(기본 25000개 행 해시)** 까지만 보관하고, 그 용량을 넘기면 **현재 트랜잭션 계산에 쓴 뒤 통째로 clear**하면서 floor를 현재 `seq`로 끌어올린다. 즉 *오래된 해시는 버려지고*, 버려진 행과 충돌하는 트랜잭션은 floor에 의존하게 되어 **항상 안전한 방향(과직렬)으로만** 보수화된다(`rpl_trx_tracking.cc:283-324`).
 
 여기서 핵심은 **write set 자체는 binlog에 실리지 않는다**는 점이다 — source가 `last_committed` 계산에만 쓰는 내부 입력이고, replica엔 결과(`sequence_number`/`last_committed`)만 전달된다 [M3]. (CUBRID도 동일 — 마스터가 `last_committed_lsa`만 내려보내고 계산 입력은 마스터 내부에 머문다, D.5)
 
-> **혼동 주의 (예전 조사 교정).** ① **COMMIT_ORDER와 WRITESET은 *동시 기준이 아니라 택1 모드*** 였다(예전 노트가 "충돌 없음"+"같이 commit"을 동시 조건처럼 적었으나 실제론 8.0의 모드 선택). 8.4+는 WRITESET 내부 동작. ② **group commit은 ON/OFF가 아니라 항상 동작하는 binlog 배칭**이고, COMMIT_ORDER에서만 병렬 폭을 좌우했다(WRITESET은 무관). ③ **`innodb_flush_log_at_trx_commit`(내구성)은 병렬화 메커니즘이 아니다** — commit마다의 redo flush/fsync 빈도(0/1/2)를 정하는 *내구성* 설정으로, 병렬 판단과 무관하다. 다만 완화하면 apply가 빨라져 *복제 지연(lag)* 을 크게 줄이는 **별개 레버**라 병렬 파라미터와 자주 혼동된다(JFG 실측: CPU-bound에선 내구성 완화가 병렬화보다 효과가 컸음 — `reference/mysql/13`). ④ **Logical Clock ≠ GTID** — 병렬을 정하는 logical clock은 binlog의 `(last_committed, sequence_number)` 쌍이고 GTID는 별개의 전역 ID다(binlog 한 줄에 `Anonymous_GTID`와 `last_committed`/`sequence_number`가 따로 찍힘). 병렬 기준도 "같은 Logical Clock 값"이 아니라 **"같은 `last_committed`"** 다. 상세·binlog 예시는 `reference/mysql/03`.
+### C.3.4 group commit은 어디에 영향을 주는가
 
-**❷ 병렬 분배 (replica).** replica의 coordinator는 relay log를 순서대로 읽어, 트랜잭션의 `last_committed` 이하가 모두 끝났으면 워커에 병렬로 보낸다(워커 수 = `replica_parallel_workers`) [M2][M4]. MySQL 8.4 LTS에서는 `replica_parallel_type`의 유효값으로 `DATABASE`와 `LOGICAL_CLOCK`이 남아 있지만, 기본값은 `LOGICAL_CLOCK`이고 변수 자체와 `DATABASE` 방식은 deprecated이며 향후 `LOGICAL_CLOCK`만 남을 예정이라고 문서화되어 있다 [M10]. 실제로 MySQL 9.5.0 릴리즈 노트는 `replica_parallel_type` 변수가 제거됐다고 명시한다 [M11]. 따라서 최신 9.5+ 기준 설명은 **LOGICAL_CLOCK만 남은 구조**로 보면 된다.
+MySQL binlog에는 `Group A` 같은 라벨이 직접 남지 않는다. 대신 각 트랜잭션의 GTID/Anonymous GTID 이벤트에 `last_committed`와 `sequence_number`가 찍히고, 같은 commit parent를 공유하는 연속 트랜잭션들을 보고 "이 트랜잭션들은 같은 그룹 뒤에서 병렬 apply 가능한 후보"라고 해석한다. 예를 들어 이미 완료된 마지막 트랜잭션이 `seq=100`이고, 그 뒤 binlog group commit pipeline에 `Tx101~Tx103`이 거의 동시에 들어와 하나의 batch로 처리되면, 이 batch의 commit parent는 `100`이 된다.
+
+```text
+Group A 이전 완료 경계: seq=100
+
+Group A에 함께 들어온 tx:
+  Tx(seq=101): last_committed=100
+  Tx(seq=102): last_committed=100
+  Tx(seq=103): last_committed=100
+
+다음 Group B:
+  Tx(seq=104): last_committed=103
+  Tx(seq=105): last_committed=103
+```
+
+핵심은 MySQL이 "일정 개수마다" 강제로 `last_committed`를 올리는 것이 아니라는 점이다. **binlog group commit pipeline에 같은 시점에 모인 트랜잭션 묶음(batch)이 있고, 그 묶음 이전의 완료 경계가 commit parent가 되어 `last_committed`로 기록된다.** batch 크기는 고정 개수가 아니라 부하, commit 도착 타이밍, `binlog_group_commit_sync_delay`, `binlog_group_commit_sync_no_delay_count`, fsync 타이밍 등에 영향을 받는다.
+
+다만 **binary log group commit은 현재 병렬 복제의 필수 요소가 아니다.** group commit을 기준으로 의존성을 보는 건 과거 `COMMIT_ORDER` 모드뿐이었고, `WRITESET`은 의존성을 **바뀐 행/키 충돌**로 판단해 *마스터에서의 commit 시점·순서와 무관하게* 독립 여부를 정하므로(WL#9556 — "no longer dependent on any particular execution order on the master") group commit과 **무관**하다 [M5]. `sequence_number`는 flush 진입 순서로 단조 부여될 뿐이고, writeset 충돌 계산은 바뀐 행 키만 본다. 즉 **group commit은 COMMIT_ORDER 성분에만 병렬도를 키우고, WRITESET 성분에는 영향이 없다**(9.7.0 코드: prepare 스냅샷 `binlog.cc:2537`, flush step `:2390`, commit 전진 `:7572`; writeset 충돌 `rpl_trx_tracking.cc:290-317`; 상세 `reference/mysql/04` §5.1·§6).
+
+### C.3.5 replica 병렬 분배 — LOGICAL_CLOCK
+
+replica의 coordinator는 relay log를 순서대로 읽어, 트랜잭션의 `last_committed` 이하가 모두 끝났으면 워커에 병렬로 보낸다(워커 수 = `replica_parallel_workers`) [M2][M4]. MySQL 8.4 LTS에서는 `replica_parallel_type`의 유효값으로 `DATABASE`와 `LOGICAL_CLOCK`이 남아 있지만, 기본값은 `LOGICAL_CLOCK`이고 변수 자체와 `DATABASE` 방식은 deprecated이며 향후 `LOGICAL_CLOCK`만 남을 예정이라고 문서화되어 있다 [M10]. 실제로 MySQL 9.5.0 릴리즈 노트는 `replica_parallel_type` 변수가 제거됐다고 명시한다 [M11]. 따라서 최신 9.5+ 기준 설명은 **LOGICAL_CLOCK만 남은 구조**로 보면 된다.
 
 | 값 | 버전 상태 |
 |---|---|
 | `LOGICAL_CLOCK` | 8.0.27+ 기본. 9.5+에서는 `replica_parallel_type` 제거 후 사실상 유일한 병렬 분배 방식. |
 | `DATABASE` | 스키마 단위 병렬. `replica_parallel_type` 변수가 8.0.29부터 deprecated되어 8.4까지 잔존, 9.5.0에서 변수 제거와 함께 선택 불가. |
 
-한편 **binary log group commit은 현재 병렬 복제의 필수 요소가 아니다.** group commit을 기준으로 의존성을 보는 건 과거 `COMMIT_ORDER` 모드뿐이었고, `WRITESET`은 의존성을 **바꾼 행/키 충돌**로 판단해 *마스터에서의 commit 시점·순서와 무관하게* 독립 여부를 정하므로(WL#9556 — "no longer dependent on any particular execution order on the master") group commit과 **무관**하다 [M5]. 즉 group commit은 옛 `COMMIT_ORDER`에서 병렬 폭을 키우는 보조 요소였을 뿐 병렬 복제의 전제가 아니며, 8.4+ source는 WRITESET 내부 동작이므로 현재 MySQL에선 group commit이 병렬 복제와 직접 묶이지 않는다.
+### C.3.6 commit 순서 보존 — SPCO
 
-**❸ commit 순서 보존 (replica).** 병렬로 실행한 트랜잭션의 최종 commit 순서는 `replica_preserve_commit_order`(SPCO, 8.0.27부터 기본 ON, LOGICAL_CLOCK 전제)가 source 순서로 강제한다. 워커들이 동시에 실행해도 commit만큼은 원본 순서대로 외부에 보여, 뒤 트랜잭션이 앞보다 먼저 보이는 "gap"이 방지된다 [M2][M6].
+병렬로 실행한 트랜잭션의 최종 commit 순서는 `replica_preserve_commit_order`(SPCO, 8.0.27부터 기본 ON, LOGICAL_CLOCK 전제)가 source 순서로 강제한다. 워커들이 동시에 실행해도 commit만큼은 원본 순서대로 외부에 보여, 뒤 트랜잭션이 앞보다 먼저 보이는 "gap"이 방지된다 [M2][M6].
 
-**정리.** MySQL은 **"의존성 판단(분배)"과 "commit 순서 보존(집행)"을 분리**하고, 그 의존성을 **source가 미리 계산해(writeset) 내려보낸다.** 이 두 축이 CUBRID의 "마스터 의존성 계산(D.5)·코디네이터 분배(D.6) ↔ commit 순서 보존(D.4, 재시작 정합은 G.2)"과 1:1로 대응하여, 우리는 MySQL 모델(병렬↔commit순서 분리 + WRITESET·LOGICAL_CLOCK)을 차용하기로 했다(상세는 `reference/mysql/`, 정식 설계는 D.2~D.6).
+SPCO는 단순히 진도 표시만 순서대로 맞추는 게 아니라, 워커가 **물리적으로 commit하기 직전에 자기 차례가 올 때까지 대기**시켜 durable commit 자체를 source 순서로 직렬화한다(코드상 `Commit_order_manager`가 책임지며, ordered_commit의 첫 단계에서 차례 대기로 진입한다 — `sql/rpl_replica_commit_order_manager.h`, `sql/binlog.cc`의 ordered_commit) [M7].
 
-**버전 연혁 요약.** 병렬 복제 의존성 추적은 `DATABASE` 단위 병렬에서 시작해, 5.7.2의 `LOGICAL_CLOCK` v1에서는 group commit 묶음이 사실상 병렬의 전제였고, 5.7.6의 v2에서 lock interval 기반으로 바뀌며 group commit 의존이 끊겼다. 8.0.1에서 `binlog_transaction_dependency_tracking`이 생기며 기본값은 `COMMIT_ORDER`였고 `WRITESET`은 사용자가 선택하는 옵션이었지만, 8.0.35/8.2.0에서 deprecated, 8.4.0에서 제거되면서 source 의존성 계산은 항상 `WRITESET` 동작이 됐다. replica 쪽은 `replica_parallel_type`이 8.0.29에서 deprecated된 뒤 8.4까지 잔존했고, 9.5.0에서 변수가 제거되며 `LOGICAL_CLOCK`만 남는 방향이 완료됐다 [M10][M11].
+MySQL이 여기까지 하는 이유는 두 가지다. 첫째, replica가 **source에 존재한 적 없는 중간 상태를 외부에 노출하지 않게** 하기 위해서다. 뒤 트랜잭션이 앞보다 먼저 보이는 gap이 생기면 read scale-out에서 일관성이 깨지며, 이것이 이 기능의 원 설계 동기다("the slave database can be in a state that never existed on the master") [M8]. 둘째, **크래시 복구 좌표가 gap-free여야 유효**하기 때문이다. commit이 순서대로면 단일 복구 위치 앞은 전부 적용 완료가 보장되지만, out-of-order commit은 그 위치 뒤에 이미 durable한 트랜잭션을 남겨 복구를 어긋나게 한다(매뉴얼이 multithreaded replica의 gap을 복구 실패 요인으로 명시) [M6]. **이 둘째 이유가 바로 CUBRID에서 Act G가 다루는 재시작 정합 문제와 정확히 같은 동기**다. MySQL은 commit 순서를 진도층이 아니라 물리 commit 단계에서 강제함으로써 그 문제를 애초에 만들지 않는다.
+
+### C.3.7 버전 연혁과 혼동 방지
+
+병렬 복제 의존성 추적은 `DATABASE` 단위 병렬에서 시작해, 5.7.2의 `LOGICAL_CLOCK` v1에서는 group commit 묶음이 사실상 병렬의 전제였고, 5.7.6의 v2에서 lock interval 기반으로 바뀌며 group commit 의존이 끊겼다. 8.0.1에서 `binlog_transaction_dependency_tracking`이 생기며 기본값은 `COMMIT_ORDER`였고 `WRITESET`은 사용자가 선택하는 옵션이었지만, 8.0.35/8.2.0에서 deprecated, 8.4.0에서 제거되면서 source 의존성 계산은 항상 `WRITESET` 동작이 됐다. replica 쪽은 `replica_parallel_type`이 8.0.29에서 deprecated된 뒤 8.4까지 잔존했고, 9.5.0에서 변수가 제거되며 `LOGICAL_CLOCK`만 남는 방향이 완료됐다 [M10][M11].
 
 | 시점 | 병렬 복제 의존성 추적 의미 |
 |---|---|
@@ -326,7 +340,11 @@ seq  바꾼 행(writeset)   겹치는 선행   last_committed
 | 8.4.0 | `binlog_transaction_dependency_tracking` 제거. source가 항상 `WRITESET` 방식으로 binary log 의존성 정보 생성. replica 쪽 `DATABASE`는 deprecated 잔존값. |
 | 9.5.0+ | `replica_parallel_type` 제거. replica 병렬 분배는 `LOGICAL_CLOCK`만 남는 방향으로 정리됨. |
 
-한 가지 더 짚을 점은 **MySQL이 commit 순서를 보존하는 "층위"와 그 이유**인데, 이는 뒤의 Act G(재시작 문제)와 직접 맞닿아 있다. SPCO는 단순히 진도 표시만 순서대로 맞추는 게 아니라, 워커가 **물리적으로 commit하기 직전에 자기 차례가 올 때까지 대기**시켜 durable commit 자체를 source 순서로 직렬화한다(코드상 `Commit_order_manager`가 책임지며, ordered_commit의 첫 단계에서 차례 대기로 진입한다 — `sql/rpl_replica_commit_order_manager.h`, `sql/binlog.cc`의 ordered_commit) [M7]. MySQL이 *왜* 여기까지 하는지는 두 가지로 확인된다. 첫째, replica가 **source에 존재한 적 없는 중간 상태를 외부에 노출하지 않게** 하기 위해서다 — 뒤 트랜잭션이 앞보다 먼저 보이는 gap이 생기면 read scale-out에서 일관성이 깨지며, 이것이 이 기능의 원 설계 동기다("the slave database can be in a state that never existed on the master") [M8]. 둘째, **크래시 복구 좌표가 gap-free여야 유효**하기 때문이다 — commit이 순서대로면 단일 복구 위치 앞은 전부 적용 완료가 보장되지만, out-of-order commit은 그 위치 뒤에 이미 durable한 트랜잭션을 남겨 복구를 어긋나게 한다(매뉴얼이 multithreaded replica의 gap을 복구 실패 요인으로 명시) [M6]. **이 둘째 이유가 바로 CUBRID에서 Act G가 다루는 재시작 정합 문제와 정확히 같은 동기**다. MySQL은 commit 순서를 진도층이 아니라 물리 commit 단계에서 강제함으로써 그 문제를 애초에 만들지 않는다.
+> **혼동 주의 (예전 조사 교정).** ① **COMMIT_ORDER와 WRITESET은 *동시 기준이 아니라 택1 모드*** 였다(예전 노트가 "충돌 없음"+"같이 commit"을 동시 조건처럼 적었으나 실제론 8.0의 모드 선택). 8.4+는 WRITESET 내부 동작. ② **group commit은 ON/OFF가 아니라 항상 동작하는 binlog 배칭**이고, COMMIT_ORDER에서만 병렬 폭을 좌우했다(WRITESET은 무관). ③ **`innodb_flush_log_at_trx_commit`(내구성)은 병렬화 메커니즘이 아니다** — commit마다의 redo flush/fsync 빈도(0/1/2)를 정하는 *내구성* 설정으로, 병렬 판단과 무관하다. 다만 완화하면 apply가 빨라져 *복제 지연(lag)* 을 크게 줄이는 **별개 레버**라 병렬 파라미터와 자주 혼동된다(JFG 실측: CPU-bound에선 내구성 완화가 병렬화보다 효과가 컸음 — `reference/mysql/13`). ④ **Logical Clock ≠ GTID** — 병렬을 정하는 logical clock은 binlog의 `(last_committed, sequence_number)` 쌍이고 GTID는 별개의 전역 ID다(binlog 한 줄에 `Anonymous_GTID`와 `last_committed`/`sequence_number`가 따로 찍힘). 병렬 기준도 "같은 Logical Clock 값"이 아니라 **"같은 `last_committed`"** 다. 상세·binlog 예시는 `reference/mysql/03`.
+
+### C.3.8 CUBRID 설계로 가져올 결론
+
+MySQL은 **"의존성 판단(분배)"과 "commit 순서 보존(집행)"을 분리**하고, 그 의존성을 **source가 미리 계산해 내려보낸다.** 이 구조가 CUBRID의 "마스터 의존성 계산(D.5)·코디네이터 분배(D.6) ↔ commit 순서 보존(D.4, 재시작 정합은 G.2)"과 1:1로 대응한다. 따라서 우리는 MySQL 모델(병렬 실행과 commit 순서 보존의 분리, `last_committed` 기반 LOGICAL_CLOCK 분배, SPCO식 durable commit 순서 강제)을 차용한다. 다만 1차 CUBRID 설계의 의존성 계산은 MySQL 최신 WRITESET을 바로 구현하지 않고, 더 단순하고 FK가 자동 안전한 COMMIT_ORDER식 `last_committed_lsa`부터 적용한다. WRITESET(`(class,PK)` 충돌)은 같은 `last_committed_lsa` 인터페이스 위의 향후 확장으로 둔다(정식 설계는 D.2~D.6).
 
 ---
 
