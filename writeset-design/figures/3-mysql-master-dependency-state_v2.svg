@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="780" viewBox="0 0 1440 780">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,3 L0,6 Z" fill="#445062"/></marker>
+    <marker id="greenArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,3 L0,6 Z" fill="#3FA35B"/></marker>
+    <style>
+      .title{font:700 27px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#26303d}.sub{font:400 14px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#6b7a8d}.h{font:700 17px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#26303d}.t{font:400 14px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#445062}.small{font:400 12px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#596678}.mono{font:600 13px ui-monospace,SFMono-Regular,Consolas,monospace;fill:#26303d}.box{fill:#fff;stroke:#aab4c2;stroke-width:1.5}.stage{fill:#f8fafc;stroke:#aab4c2;stroke-width:1.5;stroke-dasharray:7 5}.normal{fill:#e8f5ec;stroke:#3FA35B;stroke-width:2}.fallback{fill:#fff3e7;stroke:#d9822b;stroke-width:2}.state{fill:#eef1f4;stroke:#8a99ab;stroke-width:1.5}.arrow{fill:none;stroke:#445062;stroke-width:2;marker-end:url(#arrow)}.green{fill:none;stroke:#3FA35B;stroke-width:2.3;marker-end:url(#greenArrow)}
+    </style>
+  </defs>
+  <rect width="1440" height="780" fill="#ffffff"/>
+  <text x="54" y="52" class="title">MySQL 마스터의 writeset 의존성 상태</text>
+  <text x="54" y="79" class="sub">트랜잭션 로컬 해시가 전역 이력과 만나는 정상 경로와, 부모 변경 시 commit-order 폴백을 분리한다</text>
+
+  <rect x="45" y="112" width="330" height="535" rx="14" class="stage"/>
+  <text x="68" y="146" class="h">트랜잭션 로컬 상태</text>
+  <rect x="68" y="172" width="284" height="150" rx="10" class="box"/>
+  <text x="88" y="202" class="h">제약 키 수집</text>
+  <text x="88" y="232" class="t">PK · UNIQUE · 자식 FK</text>
+  <text x="88" y="260" class="t">정규화한 키 표현 → hash</text>
+  <text x="88" y="290" class="mono">writeset = {h1, h2, h3}</text>
+  <rect x="68" y="350" width="284" height="118" rx="10" class="state"/>
+  <text x="88" y="381" class="h">writeset 판정 전 기준값</text>
+  <text x="88" y="413" class="mono">현재 커밋 순번 S</text>
+  <text x="88" y="442" class="mono">초기 선행 경계 C</text>
+  <text x="88" y="462" class="small">commit-order tracker가 먼저 계산</text>
+  <rect x="68" y="497" width="284" height="118" rx="10" class="box"/>
+  <text x="88" y="528" class="h">안전성 상태</text>
+  <text x="88" y="558" class="mono">can_use_writesets?</text>
+  <text x="88" y="588" class="small">부모 변경 · missing key 등 검사</text>
+
+  <path d="M375 556 H454" class="arrow"/>
+  <polygon points="456,556 532,506 608,556 532,606" fill="#f5f8fc" stroke="#3a6298" stroke-width="2"/>
+  <text x="487" y="551" class="mono">can use?</text>
+  <text x="514" y="577" class="small">분기</text>
+
+  <rect x="650" y="112" width="735" height="282" rx="14" class="stage"/>
+  <text x="674" y="146" class="h">YES · 정상 writeset 경로</text>
+  <rect x="674" y="170" width="260" height="178" rx="10" class="normal"/>
+  <text x="694" y="201" class="h">전역 history에서 선행 찾기</text>
+  <text x="694" y="232" class="mono">history[키 해시]</text>
+  <text x="694" y="259" class="t">= 마지막 기록 tx의 순번</text>
+  <text x="694" y="291" class="mono">P = 가장 늦은 선행 순번</text>
+  <text x="694" y="321" class="small">P의 최솟값은 history_start</text>
+  <rect x="972" y="170" width="185" height="178" rx="10" class="normal"/>
+  <text x="992" y="201" class="h">슬롯 갱신</text>
+  <text x="992" y="237" class="mono">history[h]</text>
+  <text x="1021" y="265" class="mono">← S</text>
+  <text x="992" y="308" class="small">현재 tx가 새 주인</text>
+  <rect x="1195" y="170" width="166" height="178" rx="10" class="normal"/>
+  <text x="1215" y="201" class="h">최종 LC</text>
+  <text x="1215" y="241" class="mono">min(C, P)</text>
+  <text x="1215" y="278" class="small">C: 초기 경계</text>
+  <text x="1215" y="305" class="small">P: 충돌 경계</text>
+  <path d="M608 532 C625 385 625 258 665 258" class="green"/>
+  <text x="615" y="425" class="small" style="fill:#2e7d44">YES</text>
+  <path d="M934 258 H964" class="green"/>
+  <path d="M1157 258 H1187" class="green"/>
+
+  <rect x="650" y="428" width="735" height="219" rx="14" class="stage"/>
+  <text x="674" y="462" class="h">NO · commit-order 폴백 경로</text>
+  <rect x="674" y="486" width="212" height="126" rx="10" class="fallback"/>
+  <text x="694" y="516" class="h">초기 선행 경계 유지</text>
+  <text x="694" y="551" class="mono">최종 LC = C</text>
+  <text x="694" y="582" class="small">해시 충돌로 낮추지 않음</text>
+  <rect x="918" y="486" width="212" height="126" rx="10" class="fallback"/>
+  <text x="938" y="516" class="h">장벽 전진</text>
+  <text x="938" y="551" class="mono">history_start ← S</text>
+  <text x="938" y="582" class="small">현재 순번이 새 하한선</text>
+  <rect x="1162" y="486" width="199" height="126" rx="10" class="fallback"/>
+  <text x="1182" y="516" class="h">이력 초기화</text>
+  <text x="1182" y="551" class="mono">history.clear()</text>
+  <text x="1182" y="582" class="small">해시별 관계 제거</text>
+  <path d="M608 580 C628 580 637 549 666 549" class="arrow"/>
+  <text x="618" y="604" class="small" style="fill:#b56517">NO</text>
+  <path d="M886 549 H910" class="arrow"/>
+  <path d="M1130 549 H1154" class="arrow"/>
+
+  <rect x="430" y="685" width="931" height="60" rx="10" fill="#efe6f7" stroke="#9b6fc4" stroke-width="1.5"/>
+  <text x="452" y="711" class="h" style="fill:#5e3a8c">binlog 계약</text>
+  <text x="600" y="711" class="mono" style="fill:#5e3a8c">sequence_number=S · last_committed=LC</text>
+  <text x="452" y="732" class="small" style="fill:#5e3a8c">슬레이브는 계산 과정을 재현하지 않고 두 라벨을 소비한다</text>
+  <path d="M1018 647 C1018 675 972 694 961 694" class="arrow"/>
+  <path d="M1361 258 H1405 V661 C1405 677 1384 685 1354 685" class="green"/>
+</svg>

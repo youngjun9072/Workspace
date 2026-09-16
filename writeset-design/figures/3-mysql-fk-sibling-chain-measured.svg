@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="322" viewBox="0 0 1080 322">
+<rect width="1080" height="322" fill="#fcfcfc"/>
+<defs><filter id="sh" x="-20%" y="-20%" width="140%" height="160%"><feDropShadow dx="0" dy="1.2" stdDeviation="1.4" flood-color="#00000026"/></filter><linearGradient id="gP" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5C82C0"/><stop offset="1" stop-color="#3F63A0"/></linearGradient><linearGradient id="gC" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#63B877"/><stop offset="1" stop-color="#468C55"/></linearGradient><linearGradient id="gS" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#D25F63"/><stop offset="1" stop-color="#B0424A"/></linearGradient></defs>
+<text x="170" y="34" style="font:700 17px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#23303a">MySQL 9.7 — 동일 프로토콜에서 parent_id 값만 다른 두 시나리오</text>
+<text x="170" y="55" style="font:12.5px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">부모행 분리는 자식 병렬, 부모행 공유는 형제 사슬로 직렬. 차이는 마스터 last_committed 판정 하나</text>
+<rect x="170" y="95" width="740" height="40" fill="#f7f9fb"/>
+<text x="156" y="119" text-anchor="end" style="font:600 12px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">W1</text>
+<text x="156" y="159" text-anchor="end" style="font:600 12px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">W2</text>
+<line x1="170.0" y1="94" x2="170.0" y2="176" stroke="#eceff2"/>
+<text x="170.0" y="190" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">0s</text>
+<line x1="247.2" y1="94" x2="247.2" y2="176" stroke="#eceff2"/>
+<text x="247.2" y="190" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">2s</text>
+<line x1="324.5" y1="94" x2="324.5" y2="176" stroke="#eceff2"/>
+<text x="324.5" y="190" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">4s</text>
+<line x1="401.7" y1="94" x2="401.7" y2="176" stroke="#eceff2"/>
+<text x="401.7" y="190" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">6s</text>
+<line x1="479.0" y1="94" x2="479.0" y2="176" stroke="#eceff2"/>
+<text x="479.0" y="190" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">8s</text>
+<line x1="556.2" y1="94" x2="556.2" y2="176" stroke="#eceff2"/>
+<text x="556.2" y="190" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">10s</text>
+<line x1="633.5" y1="94" x2="633.5" y2="176" stroke="#eceff2"/>
+<text x="633.5" y="190" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">12s</text>
+<line x1="710.7" y1="94" x2="710.7" y2="176" stroke="#eceff2"/>
+<text x="710.7" y="190" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">14s</text>
+<line x1="787.9" y1="94" x2="787.9" y2="176" stroke="#eceff2"/>
+<text x="787.9" y="190" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">16s</text>
+<line x1="865.2" y1="94" x2="865.2" y2="176" stroke="#eceff2"/>
+<text x="865.2" y="190" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">18s</text>
+<rect x="20" y="68" width="8" height="18" rx="2" fill="#2e8b57"/>
+<text x="34" y="82" style="font:700 14px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#23303a">시나리오 1 — 부모행 분리</text>
+<text x="926.0" y="131" style="font:700 14px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#2e8b57">자식 병렬</text>
+<text x="926.0" y="149" style="font:11.5px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">Tx1 lc=1 · Tx2 lc=1</text>
+<rect x="170.0" y="100" width="163.3" height="30" rx="4" fill="url(#gP)" filter="url(#sh)"/>
+<text x="251.6" y="113" text-anchor="middle" style="font:600 11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#fff">부모</text>
+<text x="251.6" y="126" text-anchor="middle" style="font:10px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#ffffffcc">seq1 lc0</text>
+<rect x="333.6" y="100" width="244.7" height="30" rx="4" fill="url(#gC)" filter="url(#sh)"/>
+<text x="455.9" y="113" text-anchor="middle" style="font:600 11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#fff">자식 Tx1</text>
+<text x="455.9" y="126" text-anchor="middle" style="font:10px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#ffffffcc">seq2 lc1</text>
+<rect x="375.3" y="140" width="289.6" height="30" rx="4" fill="url(#gC)" filter="url(#sh)"/>
+<text x="520.1" y="153" text-anchor="middle" style="font:600 11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#fff">자식 Tx2</text>
+<text x="520.1" y="166" text-anchor="middle" style="font:10px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#ffffffcc">seq3 lc1</text>
+<rect x="170" y="229" width="740" height="40" fill="#f7f9fb"/>
+<text x="156" y="253" text-anchor="end" style="font:600 12px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">W1</text>
+<line x1="170.0" y1="228" x2="170.0" y2="270" stroke="#eceff2"/>
+<text x="170.0" y="284" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">0s</text>
+<line x1="247.2" y1="228" x2="247.2" y2="270" stroke="#eceff2"/>
+<text x="247.2" y="284" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">2s</text>
+<line x1="324.5" y1="228" x2="324.5" y2="270" stroke="#eceff2"/>
+<text x="324.5" y="284" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">4s</text>
+<line x1="401.7" y1="228" x2="401.7" y2="270" stroke="#eceff2"/>
+<text x="401.7" y="284" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">6s</text>
+<line x1="479.0" y1="228" x2="479.0" y2="270" stroke="#eceff2"/>
+<text x="479.0" y="284" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">8s</text>
+<line x1="556.2" y1="228" x2="556.2" y2="270" stroke="#eceff2"/>
+<text x="556.2" y="284" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">10s</text>
+<line x1="633.5" y1="228" x2="633.5" y2="270" stroke="#eceff2"/>
+<text x="633.5" y="284" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">12s</text>
+<line x1="710.7" y1="228" x2="710.7" y2="270" stroke="#eceff2"/>
+<text x="710.7" y="284" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">14s</text>
+<line x1="787.9" y1="228" x2="787.9" y2="270" stroke="#eceff2"/>
+<text x="787.9" y="284" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">16s</text>
+<line x1="865.2" y1="228" x2="865.2" y2="270" stroke="#eceff2"/>
+<text x="865.2" y="284" text-anchor="middle" style="font:11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">18s</text>
+<rect x="20" y="202" width="8" height="18" rx="2" fill="#C44E52"/>
+<text x="34" y="216" style="font:700 14px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#23303a">시나리오 2 — 부모행 공유</text>
+<text x="926.0" y="245" style="font:700 14px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#C44E52">자식 직렬</text>
+<text x="926.0" y="263" style="font:11.5px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#6b7680">Tx1 lc=1 · Tx2 lc=2 ★사슬</text>
+<rect x="170.0" y="234" width="233.7" height="30" rx="4" fill="url(#gP)" filter="url(#sh)"/>
+<text x="286.9" y="247" text-anchor="middle" style="font:600 11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#fff">부모</text>
+<text x="286.9" y="260" text-anchor="middle" style="font:10px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#ffffffcc">seq1 lc0</text>
+<rect x="404.5" y="234" width="303.1" height="30" rx="4" fill="url(#gC)" filter="url(#sh)"/>
+<text x="556.0" y="247" text-anchor="middle" style="font:600 11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#fff">자식 Tx1</text>
+<text x="556.0" y="260" text-anchor="middle" style="font:10px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#ffffffcc">seq2 lc1</text>
+<rect x="707.7" y="234" width="202.3" height="30" rx="4" fill="url(#gS)" filter="url(#sh)"/>
+<text x="808.8" y="247" text-anchor="middle" style="font:600 11px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#fff">자식 Tx2</text>
+<text x="808.8" y="260" text-anchor="middle" style="font:10px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#ffffffcc">seq3 lc2</text>
+<rect x="170" y="302" width="13" height="13" rx="3" fill="#4C72B0"/><text x="188" y="313" style="font:11.5px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#23303a">부모</text>
+<rect x="240" y="302" width="13" height="13" rx="3" fill="#55A868"/><text x="258" y="313" style="font:11.5px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#23303a">자식(병렬 허용)</text>
+<rect x="380" y="302" width="13" height="13" rx="3" fill="#C44E52"/><text x="398" y="313" style="font:11.5px 'Helvetica Neue',Arial,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;fill:#23303a">자식(사슬로 직렬)</text>
+</svg>

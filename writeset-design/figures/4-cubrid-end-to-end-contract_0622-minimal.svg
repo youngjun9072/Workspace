@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 790" width="1600" height="790" font-family="'Pretendard','Malgun Gothic','Apple SD Gothic Neo','Droid Sans Fallback',sans-serif" role="img" aria-labelledby="title desc">
+  <title id="title">CUBRID writeset 병렬 복제 end-to-end 처리 구조</title>
+  <desc id="desc">6월 22일 원본의 마스터, 복제 로그, 슬레이브 배치를 유지하면서 WRITE와 REF 키 수집, 키별 이력, 의존성 라벨과 커밋, 완성 태스크, pending 게이트, worker 적용, 성공 결과 수거와 연속 완료 경계를 나타낸다.</desc>
+  <defs>
+    <marker id="ad" markerWidth="10" markerHeight="10" refX="7.2" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7.5,3 L0,6 z" fill="#475569"/></marker>
+    <marker id="ag" markerWidth="10" markerHeight="10" refX="7.2" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7.5,3 L0,6 z" fill="#10B981"/></marker>
+    <marker id="agr" markerWidth="10" markerHeight="10" refX="0.8" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M7.5,0 L0,3 L7.5,6 z" fill="#10B981"/></marker>
+    <marker id="ap" markerWidth="10" markerHeight="10" refX="7.2" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7.5,3 L0,6 z" fill="#8B5CF6"/></marker>
+  </defs>
+  <style>
+    text{fill:#1E293B}.h1{font-size:27px;font-weight:700}.h2{font-size:14px;fill:#6b7a8d}.panel{font-size:16px;font-weight:700}.ct{font-size:15px;font-weight:600}.cs{font-size:11px;fill:#74839a}.tag{font-size:12.5px;font-weight:600}.el{font-size:11.5px;font-weight:500;fill:#54637a}.elg{font-size:11.5px;font-weight:600;fill:#34824c}.fn{font-size:10.5px;fill:#7a8aa0;font-style:italic}
+  </style>
+  <rect width="1600" height="790" fill="#fff"/>
+  <text id="title-text" class="h1" x="800" y="50" text-anchor="middle">CUBRID writeset 병렬 복제 · end-to-end 처리 구조</text>
+  <text class="h2" x="800" y="78" text-anchor="middle">회색 = 기존 로그 흐름 · 초록 = writeset 의존성 생성 · 파랑 = 병렬 적용과 완료 관리</text>
+
+  <!-- 원본의 마스터 패널과 배치를 유지 -->
+  <rect x="36" y="120" width="820" height="624" rx="14" fill="#F7FAFD" stroke="#DCE7F2" stroke-width="1.4"/>
+  <text class="panel" x="60" y="150" fill="#3a6298">마스터 · 의존성 생성</text>
+  <rect x="60" y="168" width="200" height="66" rx="9" fill="#ECFDF5" stroke="#10B981" stroke-width="1.6"/>
+  <text class="ct" x="160" y="192" text-anchor="middle" fill="#2c7a45">상태 저장소 초기화</text><text class="cs" x="160" y="215" text-anchor="middle">전역 이력 · 트랜잭션 로컬 상태</text>
+  <rect x="292" y="166" width="230" height="62" rx="11" fill="#ECFDF5" stroke="#10B981" stroke-width="1.6"/>
+  <text class="ct" x="407" y="192" text-anchor="middle" fill="#2c7a45">트랜잭션별 writeset</text><text class="cs" x="407" y="212" text-anchor="middle">키 해시 + WRITE / REF 역할</text>
+  <rect x="576" y="166" width="256" height="62" rx="11" fill="#ECFDF5" stroke="#10B981" stroke-width="1.6"/>
+  <text class="ct" x="704" y="192" text-anchor="middle" fill="#2c7a45">키별 전역 history</text><text class="cs" x="704" y="212" text-anchor="middle">hash → write_seq · read_seq</text>
+  <line x1="262" y1="197" x2="290" y2="197" stroke="#10B981" stroke-width="1.5" marker-end="url(#ag)"/><text class="elg" x="262" y="188">준비</text>
+
+  <rect x="48" y="244" width="486" height="312" rx="12" fill="none" stroke="#aab4c2" stroke-width="1.3" stroke-dasharray="2 3"/>
+  <rect x="215" y="235" width="158" height="19" rx="6" fill="#F1F5F9" stroke="#aab4c2"/><text x="294" y="248" text-anchor="middle" font-size="11.5" font-weight="700">① 실행 단계 · 행마다</text>
+  <rect x="548" y="244" width="300" height="312" rx="12" fill="none" stroke="#aab4c2" stroke-width="1.3" stroke-dasharray="2 3"/>
+  <rect x="600" y="235" width="196" height="19" rx="6" fill="#F1F5F9" stroke="#aab4c2"/><text x="698" y="248" text-anchor="middle" font-size="11.5" font-weight="700">② 커밋 단계 · 트랜잭션당 1회</text>
+
+  <rect x="60" y="248" width="138" height="26" rx="13" fill="#F3EEFC" stroke="#8B5CF6" stroke-width="1.3"/><text class="tag" x="129" y="266" text-anchor="middle" fill="#5e3a8c">행 변경 경로</text>
+  <rect x="60" y="288" width="212" height="104" rx="9" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1.4"/>
+  <text class="ct" x="166" y="314" text-anchor="middle">DML 실행</text><text class="fn" x="166" y="340" text-anchor="middle">INSERT · UPDATE · DELETE</text><text class="cs" x="166" y="366" text-anchor="middle">변경 전·후 행과 제약 키</text>
+  <rect x="302" y="292" width="218" height="100" rx="9" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1.4"/>
+  <text class="ct" x="411" y="318" text-anchor="middle">복제 변경 레코드 생성</text>
+  <rect x="318" y="342" width="186" height="42" rx="7" fill="#ECFDF5" stroke="#10B981" stroke-width="1.3"/>
+  <text x="411" y="360" text-anchor="middle" font-size="11.5" font-weight="600" fill="#2c7a45">키 역할 수집</text><text x="411" y="378" text-anchor="middle" font-size="10.5" fill="#34824c">PK·UNIQUE = WRITE · 자식 FK = REF</text>
+  <line x1="274" y1="340" x2="300" y2="340" stroke="#475569" stroke-width="1.6" marker-end="url(#ad)"/><text class="el" x="287" y="332" text-anchor="middle">호출</text>
+  <line x1="411" y1="290" x2="411" y2="230" stroke="#10B981" stroke-width="1.6" marker-end="url(#ag)"/><text class="elg" x="420" y="262">로컬 누적</text>
+
+  <rect x="60" y="430" width="190" height="26" rx="13" fill="#F3EEFC" stroke="#8B5CF6" stroke-width="1.3"/><text class="tag" x="155" y="448" text-anchor="middle" fill="#5e3a8c">키 수집 불완전 경로</text>
+  <rect x="60" y="470" width="212" height="72" rx="9" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1.4"/>
+  <text class="ct" x="166" y="499" text-anchor="middle">키 생성 실패·한도 초과</text><text class="cs" x="166" y="523" text-anchor="middle">누락 dependency 금지</text>
+  <rect x="302" y="470" width="218" height="72" rx="9" fill="#FFF7ED" stroke="#D08B2C" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text class="ct" x="411" y="499" text-anchor="middle" fill="#9A621A">안전 정책으로 전환</text><text class="cs" x="411" y="523" text-anchor="middle">보수적 순서 또는 적용 중단 · 확정 필요</text>
+  <line x1="274" y1="506" x2="300" y2="506" stroke="#475569" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#ad)"/>
+
+  <rect x="560" y="300" width="276" height="244" rx="11" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1.6"/>
+  <text class="ct" x="698" y="328" text-anchor="middle">커밋 경계</text><text class="cs" x="698" y="351" text-anchor="middle">probe → 라벨 → COMMIT → publish</text><line x1="576" y1="366" x2="820" y2="366" stroke="#dde3ec"/>
+  <rect x="572" y="374" width="252" height="166" rx="8" fill="#ECFDF5" stroke="#10B981" stroke-width="1.6"/>
+  <text x="698" y="397" text-anchor="middle" font-size="12.5" font-weight="700" fill="#2c7a45">키별 의존성 판정</text>
+  <text x="584" y="421" font-size="10.8" fill="#3f7a52">REF: write_seq 조회 · read_seq 게시</text><text x="584" y="442" font-size="10.8" fill="#3f7a52">WRITE: write_seq·read_seq 조회 · write_seq 게시</text>
+  <line x1="584" y1="456" x2="812" y2="456" stroke="#bfe0c9"/>
+  <text x="698" y="480" text-anchor="middle" font-size="11.5" font-weight="700" fill="#2c7a45">dependency_seq + 대기 방식 확정</text><text x="698" y="503" text-anchor="middle" font-size="11" fill="#3f7a52">WS_LABEL → COMMIT 인접 기록</text><text x="698" y="524" text-anchor="middle" font-size="10.5" fill="#3f7a52">COMMIT LSA를 history에 게시</text>
+  <path d="M522,206 C552,224 552,346 560,360" fill="none" stroke="#10B981" stroke-width="1.6" marker-end="url(#ag)"/><text class="elg" x="528" y="294">커밋 시</text>
+  <path d="M520,506 C540,506 542,480 558,470" fill="none" stroke="#475569" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#ad)"/>
+  <line x1="704" y1="298" x2="704" y2="230" stroke="#10B981" stroke-width="1.7" marker-start="url(#agr)" marker-end="url(#ag)"/><text class="elg" x="712" y="268">probe·publish</text>
+
+  <line x1="66" y1="592" x2="100" y2="592" stroke="#10B981" stroke-width="1.8" marker-end="url(#ag)"/><text class="el" x="110" y="596">writeset 데이터: 키 수집 → 의존성 판정 → history 게시</text>
+  <line x1="66" y1="616" x2="100" y2="616" stroke="#475569" stroke-width="1.6" marker-end="url(#ad)"/><text class="el" x="110" y="620">기존 로그 흐름과 모듈 사이 전달</text>
+  <text class="tag" x="66" y="659">박스 색</text><rect x="66" y="670" width="22" height="15" rx="3" fill="#F1F5F9" stroke="#CBD5E1"/><text class="el" x="96" y="682">기존 로그·트랜잭션 경계</text><rect x="270" y="670" width="22" height="15" rx="3" fill="#ECFDF5" stroke="#10B981"/><text class="el" x="300" y="682">writeset 의존성</text><rect x="470" y="670" width="22" height="15" rx="3" fill="#EFF6FF" stroke="#3B82F6"/><text class="el" x="500" y="682">병렬 적용·완료 관리</text>
+
+  <!-- 원본의 중앙 복제 로그 브리지 유지 -->
+  <rect x="876" y="350" width="116" height="166" rx="10" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1.4"/>
+  <text class="ct" x="934" y="377" text-anchor="middle" font-size="14">복제 로그</text>
+  <rect x="884" y="393" width="100" height="42" rx="7" fill="#fff" stroke="#CBD5E1"/><text x="934" y="410" text-anchor="middle" font-size="10.5">변경 레코드</text><text x="934" y="427" text-anchor="middle" font-size="10.5">···</text>
+  <rect x="884" y="442" width="100" height="56" rx="7" fill="#ECFDF5" stroke="#10B981" stroke-width="1.3"/><text x="934" y="460" text-anchor="middle" font-size="10.5" font-weight="700" fill="#2c7a45">WS_LABEL</text><text x="934" y="477" text-anchor="middle" font-size="8.8" fill="#34824c">dependency_seq</text><text x="934" y="492" text-anchor="middle" font-size="9.1" fill="#34824c">대기 방식</text>
+  <text x="934" y="509" text-anchor="middle" font-size="10.5" font-weight="700">COMMIT</text>
+  <line x1="836" y1="424" x2="874" y2="424" stroke="#475569" stroke-width="1.6" marker-end="url(#ad)"/><text class="el" x="838" y="414">기록</text>
+
+  <!-- 원본의 슬레이브 패널과 위→아래 흐름 유지 -->
+  <rect x="1010" y="120" width="554" height="624" rx="14" fill="#FBF7FB" stroke="#E2D9EC" stroke-width="1.4"/>
+  <text class="panel" x="1034" y="150" fill="#8B5CF6">슬레이브 · 의존성 집행</text>
+  <rect x="1040" y="176" width="494" height="92" rx="9" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1.4"/>
+  <text class="ct" x="1287" y="202" text-anchor="middle">reader · 로그를 순서대로 해석</text><text class="cs" x="1287" y="226" text-anchor="middle">변경 목록과 WS_LABEL을 트랜잭션별로 축적</text><text class="cs" x="1287" y="249" text-anchor="middle">COMMIT 확인 → dependency·commit LSA를 가진 완성 task</text>
+  <rect x="1040" y="302" width="494" height="112" rx="9" fill="#EFF6FF" stroke="#3B82F6" stroke-width="1.6"/>
+  <text class="ct" x="1287" y="327" text-anchor="middle" fill="#2160b0">의존성 gate와 pending</text><text class="cs" x="1287" y="351" text-anchor="middle" fill="#5a7aa5">라벨의 대기 방식으로 실행 가능 여부 판정</text><text class="cs" x="1287" y="374" text-anchor="middle" fill="#5a7aa5">충족 task → worker · 미충족 task → pending</text><text x="1287" y="397" text-anchor="middle" font-size="11" font-weight="600" fill="#2160b0">막힌 task가 있어도 reader는 뒤의 로그를 계속 읽음</text>
+  <rect x="1040" y="438" width="86" height="100" rx="8" fill="#EFF6FF" stroke="#3B82F6" stroke-width="1.4"/><rect x="1142" y="438" width="86" height="100" rx="8" fill="#EFF6FF" stroke="#3B82F6" stroke-width="1.4"/><rect x="1244" y="438" width="86" height="100" rx="8" fill="#EFF6FF" stroke="#3B82F6" stroke-width="1.4"/><rect x="1448" y="438" width="86" height="100" rx="8" fill="#EFF6FF" stroke="#3B82F6" stroke-width="1.4"/>
+  <text class="ct" x="1083" y="465" text-anchor="middle" font-size="13" fill="#2160b0">worker 0</text><text class="ct" x="1185" y="465" text-anchor="middle" font-size="13" fill="#2160b0">worker 1</text><text class="ct" x="1287" y="465" text-anchor="middle" font-size="13" fill="#2160b0">worker 2</text><text class="ct" x="1491" y="465" text-anchor="middle" font-size="13" fill="#2160b0">worker N</text><text x="1389" y="478" text-anchor="middle" font-size="24" font-weight="700" fill="#7a90b8">···</text>
+  <rect x="1056" y="486" width="462" height="42" rx="9" fill="#fff" fill-opacity="0.75" stroke="#3B82F6" stroke-dasharray="6 4"/><text class="ct" x="1287" y="504" text-anchor="middle" font-size="13" fill="#2160b0">트랜잭션 단위 병렬 적용</text><text x="1287" y="520" text-anchor="middle" font-size="10.5" fill="#5a7aa5">worker별 세션 · 적용 · DB COMMIT · result 반환</text>
+  <rect x="1080" y="568" width="414" height="112" rx="12" fill="#EFF6FF" stroke="#3B82F6" stroke-width="1.5"/>
+  <text class="ct" x="1287" y="593" text-anchor="middle" fill="#2160b0">result 수거와 완료 경계</text><text class="cs" x="1287" y="617" text-anchor="middle">① DB COMMIT 성공 확인　② commit LSA를 완료 상태에 반영</text><text class="cs" x="1287" y="640" text-anchor="middle">③ 홀 없는 앞부분만 연속 완료 frontier로 전진</text><text class="cs" x="1287" y="663" text-anchor="middle">④ frontier로 committed_lsa 전진 · pending 재판정</text>
+  <path d="M992,430 C1026,430 1024,220 1038,220" fill="none" stroke="#475569" stroke-width="1.7" marker-end="url(#ad)"/><text class="el" x="996" y="318">전달</text>
+  <line x1="1287" y1="268" x2="1287" y2="300" stroke="#475569" stroke-width="1.6" marker-end="url(#ad)"/>
+  <line x1="1287" y1="414" x2="1287" y2="436" stroke="#8B5CF6" stroke-width="1.7" marker-end="url(#ap)"/><text class="el" x="1300" y="430" fill="#7a4570">배정</text>
+  <line x1="1287" y1="538" x2="1287" y2="566" stroke="#475569" stroke-width="1.6" marker-end="url(#ad)"/><text class="el" x="1300" y="557">result</text>
+  <path d="M1494,625 C1550,625 1550,359 1536,359" fill="none" stroke="#8B5CF6" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#ap)"/><text transform="translate(1552,570) rotate(-90)" font-size="10.5" fill="#8a5c80">완료 전진 → pending 재판정</text>
+  <text x="1287" y="713" text-anchor="middle" font-size="11" font-weight="600" fill="#2160b0">reader의 읽은 위치와 재시작 가능한 완료 위치는 분리</text>
+</svg>

@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="920" viewBox="0 0 1600 920">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,3 L0,6 Z" fill="#445062"/></marker>
+    <marker id="purpleArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,3 L0,6 Z" fill="#97558a"/></marker>
+    <marker id="greenArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,3 L0,6 Z" fill="#3FA35B"/></marker>
+    <marker id="orangeArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,3 L0,6 Z" fill="#d9822b"/></marker>
+    <style>
+      .title{font:700 28px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#26303d}.sub{font:400 14px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#6b7a8d}.boundaryTitle{font:700 19px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#3a6298}.h{font:700 16px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#26303d}.t{font:400 14px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#445062}.small{font:400 12px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#596678}.mono{font:600 13px ui-monospace,SFMono-Regular,Consolas,monospace;fill:#26303d}.master{fill:#f5f8fc;stroke:#9fb6d1;stroke-width:1.8}.slave{fill:#faf4f8;stroke:#d8bad0;stroke-width:1.8}.box{fill:#fff;stroke:#aab4c2;stroke-width:1.5}.write{fill:#e8f0fb;stroke:#2C7BE5;stroke-width:1.7}.history{fill:#e8f5ec;stroke:#3FA35B;stroke-width:1.7}.label{fill:#efe6f7;stroke:#9b6fc4;stroke-width:1.7}.gate{fill:#fff3e7;stroke:#d9822b;stroke-width:2}.wait{fill:#fff0f0;stroke:#c94b4b;stroke-width:1.7}.worker{fill:#e8f0fb;stroke:#2C7BE5;stroke-width:1.7}.complete{fill:#e8f5ec;stroke:#3FA35B;stroke-width:1.7}.arrow{fill:none;stroke:#445062;stroke-width:2;marker-end:url(#arrow)}.purple{fill:none;stroke:#97558a;stroke-width:2.4;marker-end:url(#purpleArrow)}.green{fill:none;stroke:#3FA35B;stroke-width:2.2;marker-end:url(#greenArrow)}.orange{fill:none;stroke:#d9822b;stroke-width:2;marker-end:url(#orangeArrow)}.feedback{fill:none;stroke:#3FA35B;stroke-width:2;stroke-dasharray:7 5;marker-end:url(#greenArrow)}
+    </style>
+  </defs>
+  <rect width="1600" height="920" fill="#fff"/>
+  <text x="48" y="48" class="title">MySQL writeset 병렬 복제의 책임 경계</text>
+  <text x="48" y="76" class="sub">마스터는 실행 순서를 계산해 라벨로 게시하고, 슬레이브는 라벨을 다시 계산하지 않고 완료 경계와 비교해 실행한다</text>
+
+  <rect x="40" y="105" width="1520" height="285" rx="16" class="master"/>
+  <text x="66" y="140" class="boundaryTitle">MASTER · 의존성 생성과 게시</text>
+
+  <rect x="70" y="170" width="260" height="150" rx="11" class="box"/>
+  <text x="92" y="202" class="h">행 연산 · 키 추출</text>
+  <text x="92" y="235" class="t">INSERT · DELETE · UPDATE</text>
+  <text x="92" y="265" class="t">PK · UNIQUE · 자식 FK</text>
+  <text x="92" y="296" class="small">변경 전·후 제약 키를 정규화</text>
+
+  <rect x="380" y="170" width="250" height="150" rx="11" class="write"/>
+  <text x="402" y="202" class="h">트랜잭션 writeset</text>
+  <text x="402" y="240" class="mono">{ H(K1), H(K2), ... }</text>
+  <text x="402" y="273" class="t">현재 트랜잭션의 충돌 후보</text>
+  <text x="402" y="299" class="small">커밋 전까지 로컬로 수집</text>
+
+  <rect x="680" y="156" width="390" height="178" rx="11" class="history"/>
+  <text x="702" y="188" class="h">전역 history</text>
+  <text x="702" y="220" class="mono">history[키 해시]</text>
+  <text x="702" y="246" class="t">= 그 키를 마지막으로 게시한 tx 순번</text>
+  <line x1="702" y1="264" x2="1046" y2="264" stroke="#b9d9c2"/>
+  <text x="702" y="290" class="h">dependency tracker</text>
+  <text x="702" y="316" class="small">writeset 충돌 선행 순번을 찾아 LC 계산</text>
+
+  <rect x="1120" y="156" width="360" height="178" rx="11" class="label"/>
+  <text x="1142" y="186" class="h">binlog · GTID 라벨 게시</text>
+  <text x="1142" y="217" class="mono">sequence_number = S</text>
+  <text x="1142" y="240" class="small">S: 현재 tx의 커밋 순번 · 별도 부여</text>
+  <text x="1142" y="271" class="mono">last_committed = LC</text>
+  <text x="1142" y="294" class="small">LC: 실행 전에 완료돼야 할 선행 경계</text>
+  <text x="1142" y="319" class="small">dependency tracker의 계산 결과를 기록</text>
+
+  <path d="M330 245 H372" class="arrow"/>
+  <path d="M630 245 H672" class="arrow"/>
+  <path d="M1070 245 H1112" class="purple"/>
+
+  <path d="M1300 334 V430 H930" class="purple"/>
+  <rect x="650" y="402" width="280" height="56" rx="9" fill="#fff" stroke="#9b6fc4" stroke-width="1.4"/>
+  <text x="670" y="425" class="h" style="fill:#5e3a8c">binlog → relay log 전송</text>
+  <text x="670" y="447" class="small" style="fill:#5e3a8c">라벨과 트랜잭션 이벤트</text>
+  <path d="M650 430 H50 V640 H70" class="purple"/>
+
+  <rect x="40" y="490" width="1520" height="370" rx="16" class="slave"/>
+  <text x="66" y="528" class="boundaryTitle" style="fill:#875079">SLAVE · 의존성 판정과 적용</text>
+
+  <rect x="70" y="565" width="270" height="150" rx="11" class="box"/>
+  <text x="92" y="597" class="h">relay-log reader</text>
+  <text x="92" y="632" class="t">GTID 라벨 읽기</text>
+  <text x="92" y="663" class="mono">S · LC</text>
+  <text x="92" y="693" class="small">로그 순서대로 coordinator에 전달</text>
+
+  <polygon points="485,565 620,640 485,715 350,640" class="gate"/>
+  <text x="423" y="626" class="h">dependency gate</text>
+  <text x="438" y="655" class="mono">LC ≤ LWM ?</text>
+  <text x="424" y="680" class="small">연속 완료 경계와 비교</text>
+
+  <rect x="690" y="550" width="250" height="112" rx="11" class="wait"/>
+  <text x="712" y="583" class="h">WAIT · 대기</text>
+  <text x="712" y="615" class="t">coordinator가 게이트에서 대기</text>
+  <text x="712" y="641" class="small">현재 이벤트 뒤의 로그도 아직 판정하지 못함</text>
+
+  <rect x="690" y="700" width="250" height="112" rx="11" class="box"/>
+  <text x="712" y="733" class="h">READY · worker 선택</text>
+  <text x="712" y="765" class="t">여유 있는 worker queue로 전달</text>
+  <text x="712" y="791" class="small">게이트를 통과한 이벤트만 배정</text>
+
+  <rect x="1000" y="700" width="220" height="112" rx="11" class="worker"/>
+  <text x="1022" y="733" class="h">worker pool</text>
+  <text x="1022" y="765" class="t">트랜잭션 적용 · commit</text>
+  <text x="1022" y="791" class="small">worker 1 ... worker N</text>
+
+  <rect x="1280" y="565" width="230" height="247" rx="11" class="complete"/>
+  <text x="1302" y="598" class="h">완료 수집 · GAQ</text>
+  <text x="1302" y="634" class="t">worker 완료 상태 기록</text>
+  <text x="1302" y="670" class="t">빈 구간 없이 완료된</text>
+  <text x="1302" y="697" class="t">연속 sequence 확인</text>
+  <rect x="1302" y="726" width="186" height="58" rx="8" fill="#fff" stroke="#3FA35B"/>
+  <text x="1321" y="750" class="h">LWM 전진</text>
+  <text x="1321" y="772" class="small">새 실행 가능 경계</text>
+
+  <path d="M340 640 H342" class="arrow"/>
+  <path d="M620 615 H682" class="orange"/>
+  <text x="638" y="603" class="small" style="fill:#b56517">NO</text>
+  <path d="M593 681 C625 720 645 756 682 756" class="green"/>
+  <text x="625" y="723" class="small" style="fill:#2e7d44">YES</text>
+  <path d="M940 756 H992" class="arrow"/>
+  <path d="M1220 756 H1272" class="green"/>
+  <path d="M1395 565 V545 C1395 536 1386 536 1370 536 H516 C498 536 485 545 485 557" class="feedback"/>
+  <text x="846" y="526" class="small" style="fill:#2e7d44">갱신된 LWM을 게이트 판정에 피드백</text>
+  <path d="M815 662 V692" class="orange"/>
+  <text x="828" y="684" class="small" style="fill:#b56517">LWM 전진 후 재판정</text>
+
+  <text x="50" y="895" class="sub">경계의 핵심: 마스터는 S·LC를 결정하고, 슬레이브는 LC ≤ LWM 조건과 완료 상태만으로 실행 시점을 결정한다.</text>
+</svg>

@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="540" viewBox="0 0 1600 540" role="img" aria-labelledby="title desc">
+  <title id="title">drain 완료 뒤 마스터 역할로 승격</title>
+  <desc id="desc">남은 작업과 COMMIT 순서 홀이 없고 안전한 committed LSA가 영속된 것을 확인한 뒤 슬레이브 적용을 종료하고 worker를 정리하여 마스터 역할로 승격한다.</desc>
+  <defs>
+    <style>
+      text{font-family:"Pretendard","Noto Sans KR",sans-serif;fill:#17212b}
+      .title{font-size:30px;font-weight:700}.sub{font-size:18px;fill:#526170}
+      .h{font-size:22px;font-weight:700}.t{font-size:17px}.small{font-size:15px;fill:#526170}
+      .check{font-size:18px;font-weight:700;fill:#27734d}
+      .drain{fill:#eaf2ff;stroke:#3569b7;stroke-width:2.5}
+      .done{fill:#e9f7ef;stroke:#2f855a;stroke-width:2.5}
+      .stop{fill:#f7f8fa;stroke:#8b98a5;stroke-width:2.5}
+      .master{fill:#fff4d9;stroke:#c98600;stroke-width:3}
+      .flow{fill:none;stroke:#526170;stroke-width:4}
+    </style>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L12,6 L0,12 z" fill="#526170"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="540" fill="#fff"/>
+  <text x="55" y="58" class="title">drain을 모두 마친 뒤 마스터 역할로 올린다</text>
+  <text x="55" y="92" class="sub">받아들인 작업의 적용과 안전한 완료 위치 저장까지 끝나야 역할 전환을 완료할 수 있다.</text>
+
+  <rect x="65" y="150" width="530" height="280" rx="18" class="drain"/>
+  <text x="330" y="192" text-anchor="middle" class="h">drain 완료 확인</text>
+  <text x="105" y="238" class="check">✓ 남은 task 없음</text>
+  <text x="105" y="275" class="check">✓ 실행 중인 worker 없음</text>
+  <text x="105" y="312" class="check">✓ 미회수 result 없음</text>
+  <text x="105" y="349" class="check">✓ COMMIT 순서 홀 없음</text>
+  <text x="105" y="386" class="check">✓ 마지막 COMMIT까지 완료 위치 저장</text>
+
+  <line x1="595" y1="290" x2="695" y2="290" class="flow" marker-end="url(#arrow)"/>
+
+  <circle cx="750" cy="290" r="55" class="done"/>
+  <text x="750" y="282" text-anchor="middle" class="h">모두</text>
+  <text x="750" y="312" text-anchor="middle" class="h">충족</text>
+
+  <line x1="805" y1="290" x2="905" y2="290" class="flow" marker-end="url(#arrow)"/>
+
+  <rect x="930" y="215" width="270" height="150" rx="16" class="stop"/>
+  <text x="1065" y="276" text-anchor="middle" class="h">슬레이브 적용 종료</text>
+  <text x="1065" y="316" text-anchor="middle" class="t">worker · queue 정리</text>
+
+  <line x1="1200" y1="290" x2="1300" y2="290" class="flow" marker-end="url(#arrow)"/>
+
+  <rect x="1325" y="215" width="220" height="150" rx="18" class="master"/>
+  <text x="1435" y="278" text-anchor="middle" class="h">마스터 역할로</text>
+  <text x="1435" y="316" text-anchor="middle" class="h">승격</text>
+
+  <text x="800" y="490" text-anchor="middle" class="small">남은 작업이 하나라도 있거나 안전한 완료 위치가 저장되지 않았다면 승격하지 않는다.</text>
+</svg>

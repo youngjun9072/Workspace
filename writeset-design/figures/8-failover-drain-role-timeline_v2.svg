@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="560" viewBox="0 0 1600 560" role="img" aria-labelledby="title desc">
+  <title id="title">역할 전환 기준점에서 drain 대상을 확정하는 과정</title>
+  <desc id="desc">역할 전환 기준점 R에 도달하면 새로운 transaction task의 유입을 차단한다. R 이전에 이미 읽어 받아들인 로그와 task는 버리지 않고 drain 대상으로 유지한다.</desc>
+  <defs>
+    <style>
+      text{font-family:"Pretendard","Noto Sans KR",sans-serif;fill:#17212b}.title{font-size:30px;font-weight:700}.sub{font-size:17px;fill:#526170}.h{font-size:20px;font-weight:700}.t{font-size:16px}.m{font-family:"D2Coding","Noto Sans Mono",monospace;font-size:17px}
+      .accepted{fill:#fff4e5;stroke:#cc7a00;stroke-width:2}.commit{fill:#f8fafc;stroke:#64748b;stroke-width:2}.cutBox{fill:#f5f0fa;stroke:#8d67a0;stroke-width:2}.blocked{fill:#fff0f0;stroke:#c53030;stroke-width:2}.axis{stroke:#526170;stroke-width:3}.cut{stroke:#8d67a0;stroke-width:3;stroke-dasharray:9 7}.bracket{stroke:#cc7a00;stroke-width:3;fill:none}.stop{stroke:#c53030;stroke-width:4}
+    </style>
+    <marker id="axisArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#526170"/></marker>
+  </defs>
+
+  <rect width="1600" height="560" fill="#fff"/>
+  <text x="55" y="52" class="title">역할 전환 시작 · 새 입력을 막고 이미 받아들인 범위를 보존한다</text>
+  <text x="55" y="84" class="sub">기준점 R 이전의 남은 로그와 task는 폐기하지 않고 drain 대상으로 유지한다.</text>
+
+  <line x1="100" y1="290" x2="1490" y2="290" class="axis" marker-end="url(#axisArrow)"/>
+  <text x="1490" y="326" text-anchor="end" class="sub">로그 진행 방향</text>
+
+  <rect x="220" y="250" width="150" height="80" rx="11" class="commit"/>
+  <text x="295" y="283" text-anchor="middle" class="h">C1</text><text x="295" y="310" text-anchor="middle" class="t">받아들임</text>
+  <rect x="500" y="250" width="150" height="80" rx="11" class="commit"/>
+  <text x="575" y="283" text-anchor="middle" class="h">C2</text><text x="575" y="310" text-anchor="middle" class="t">남은 task</text>
+  <rect x="780" y="250" width="150" height="80" rx="11" class="commit"/>
+  <text x="855" y="283" text-anchor="middle" class="h">C3</text><text x="855" y="310" text-anchor="middle" class="t">받아들임</text>
+
+  <path d="M170 365V385H1010V365" class="bracket"/>
+  <rect x="260" y="400" width="660" height="84" rx="12" class="accepted"/>
+  <text x="590" y="434" text-anchor="middle" class="h">R 이전에 이미 받아들인 범위</text>
+  <text x="590" y="464" text-anchor="middle" class="t">pending · 대기/실행 중인 task · 도착한 result를 drain 대상으로 유지</text>
+
+  <line x1="1080" y1="120" x2="1080" y2="475" class="cut"/>
+  <circle cx="1080" cy="290" r="12" class="cutBox"/>
+  <text x="1080" y="109" text-anchor="middle" class="h">역할 전환 기준점 R 도착</text>
+  <rect x="920" y="142" width="320" height="70" rx="11" class="cutBox"/>
+  <text x="1080" y="173" text-anchor="middle" class="h">RUNNING → DRAIN</text>
+  <text x="1080" y="199" text-anchor="middle" class="t">처리 범위를 R에서 고정</text>
+
+  <rect x="1230" y="238" width="250" height="104" rx="12" class="blocked"/>
+  <text x="1355" y="276" text-anchor="middle" class="h">신규 task 유입 차단</text>
+  <text x="1355" y="307" text-anchor="middle" class="t">R 이후는 받아들이지 않음</text>
+  <line x1="1210" y1="251" x2="1210" y2="329" class="stop"/>
+
+  <rect x="330" y="510" width="940" height="38" rx="8" fill="#17212b"/>
+  <text x="800" y="535" text-anchor="middle" style="font:700 15px 'Pretendard','Noto Sans KR',sans-serif;fill:#fff">입력만 닫는다. R 이전에 받아들인 작업은 그대로 남겨 다음 drain 단계에서 끝까지 처리한다.</text>
+</svg>

@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="700" viewBox="0 0 1280 700">
+  <defs>
+    <marker id="physical-next" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#16a34a"/>
+    </marker>
+    <marker id="physical-prev" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#64748b"/>
+    </marker>
+    <marker id="tx1-prev" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#2563eb"/>
+    </marker>
+    <marker id="tx2-prev" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#ea580c"/>
+    </marker>
+    <marker id="checkpoint" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#7c3aed"/>
+    </marker>
+    <style>
+      text{font-family:'Droid Sans','Noto Sans KR','Malgun Gothic',sans-serif;fill:#172033;font-size:15px}
+      .title{font-size:25px;font-weight:700}.head{font-size:18px;font-weight:700}.label{font-size:14px;font-weight:700}.small{font-size:13px}.tiny{font-size:12px}
+      .owner{fill:#fff;stroke:#cbd5e1;stroke-width:2}.header{fill:#faf5ff;stroke:#a855f7;stroke-width:2}.t1{fill:#eff6ff;stroke:#3b82f6;stroke-width:2}.t2{fill:#fff7ed;stroke:#f97316;stroke-width:2}
+      .next{fill:none;stroke:#16a34a;stroke-width:2.2;marker-end:url(#physical-next)}.prev{fill:none;stroke:#64748b;stroke-width:2;marker-end:url(#physical-prev)}
+      .tx1{fill:none;stroke:#2563eb;stroke-width:2.4;marker-end:url(#tx1-prev)}.tx2{fill:none;stroke:#ea580c;stroke-width:2.4;stroke-dasharray:7 5;marker-end:url(#tx2-prev)}
+      .checkpoint{fill:none;stroke:#7c3aed;stroke-width:2;stroke-dasharray:6 5;marker-end:url(#checkpoint)}
+    </style>
+  </defs>
+
+  <rect width="1280" height="700" fill="#f8fafc"/>
+  <text x="48" y="45" class="title">develop: 로그 헤더와 로그 레코드가 소유하는 LSA 포인터</text>
+  <text x="48" y="70" class="small" fill="#64748b">마스터 로그 생성기가 기록하고 슬레이브 reader가 소비한다. 각 포인터는 소유 구조와 사용 목적이 다르다.</text>
+
+  <!-- active log header ownership -->
+  <rect x="55" y="94" width="1170" height="116" rx="15" class="owner"/>
+  <text x="78" y="124" class="head">active LOG_HEADER · 로그 파일 전체의 메타데이터</text>
+  <rect x="435" y="141" width="410" height="48" rx="9" class="header"/>
+  <text x="640" y="163" text-anchor="middle" class="label" fill="#6d28d9">chkpt_lsa</text>
+  <text x="640" y="181" text-anchor="middle" class="tiny" fill="#5b21b6">최근 LOG_START_CHKPT 위치 · crash recovery의 analysis 시작 기준</text>
+
+  <!-- LOG_RECORD_HEADER ownership -->
+  <rect x="55" y="234" width="1170" height="400" rx="15" class="owner"/>
+  <text x="78" y="264" class="head">LOG_RECORD_HEADER · 각 로그 레코드가 보유하는 연결 포인터</text>
+
+  <!-- prev_tranlsa arcs: kept above record boxes -->
+  <path d="M550 374 C520 292 290 292 260 374" class="tx1"/>
+  <path d="M1000 374 C970 278 740 278 710 374" class="tx1"/>
+  <path d="M775 374 C745 314 515 314 485 374" class="tx2"/>
+  <text x="734" y="287" text-anchor="middle" class="label" fill="#2563eb">prev_tranlsa · 같은 트랜잭션의 이전 레코드</text>
+  <text x="734" y="307" text-anchor="middle" class="tiny" fill="#64748b">물리적으로 사이에 있는 다른 트랜잭션의 레코드는 건너뛴다</text>
+
+  <!-- checkpoint points to a log position; route beside labels -->
+  <path d="M640 189 V224 H80 V354" class="checkpoint"/>
+  <text x="386" y="216" text-anchor="middle" class="tiny" fill="#6d28d9">LOG_HEADER가 기억 · applylogdb 진행 복원 기준은 아님</text>
+  <line x1="80" y1="358" x2="80" y2="374" stroke="#7c3aed" stroke-width="2"/>
+  <text x="68" y="344" class="tiny" fill="#64748b">… 이전 로그 …</text>
+  <text x="92" y="366" class="tiny" fill="#6d28d9">checkpoint 위치 예시</text>
+
+  <!-- interleaved record tape -->
+  <rect x="100" y="374" width="160" height="92" rx="8" class="t1"/>
+  <text x="180" y="400" text-anchor="middle" class="label" fill="#1d4ed8">T1 · R1</text>
+  <text x="180" y="423" text-anchor="middle" class="small">첫 레코드</text>
+  <text x="180" y="447" text-anchor="middle" class="tiny">prev_tranlsa = NULL</text>
+
+  <rect x="325" y="374" width="160" height="92" rx="8" class="t2"/>
+  <text x="405" y="400" text-anchor="middle" class="label" fill="#c2410c">T2 · R1</text>
+  <text x="405" y="423" text-anchor="middle" class="small">첫 레코드</text>
+  <text x="405" y="447" text-anchor="middle" class="tiny">prev_tranlsa = NULL</text>
+
+  <rect x="550" y="374" width="160" height="92" rx="8" class="t1"/>
+  <text x="630" y="400" text-anchor="middle" class="label" fill="#1d4ed8">T1 · R2</text>
+  <text x="630" y="423" text-anchor="middle" class="small">복제 데이터</text>
+  <text x="630" y="447" text-anchor="middle" class="tiny">prev_tranlsa → T1 · R1</text>
+
+  <rect x="775" y="374" width="160" height="92" rx="8" class="t2"/>
+  <text x="855" y="400" text-anchor="middle" class="label" fill="#c2410c">T2 · R2</text>
+  <text x="855" y="423" text-anchor="middle" class="small">COMMIT</text>
+  <text x="855" y="447" text-anchor="middle" class="tiny">prev_tranlsa → T2 · R1</text>
+
+  <rect x="1000" y="374" width="160" height="92" rx="8" class="t1"/>
+  <text x="1080" y="400" text-anchor="middle" class="label" fill="#1d4ed8">T1 · R3</text>
+  <text x="1080" y="423" text-anchor="middle" class="small">COMMIT</text>
+  <text x="1080" y="447" text-anchor="middle" class="tiny">prev_tranlsa → T1 · R2</text>
+
+  <!-- physical forward chain: separate lane -->
+  <path d="M260 492 H319" class="next"/><path d="M485 492 H544" class="next"/>
+  <path d="M710 492 H769" class="next"/><path d="M935 492 H994" class="next"/>
+  <text x="78" y="497" class="label" fill="#15803d">forw_lsa</text>
+  <text x="1200" y="497" text-anchor="end" class="tiny" fill="#15803d">물리적 다음 레코드 →</text>
+
+  <!-- physical backward chain: separate lane -->
+  <path d="M325 535 H266" class="prev"/><path d="M550 535 H491" class="prev"/>
+  <path d="M775 535 H716" class="prev"/><path d="M1000 535 H941" class="prev"/>
+  <text x="78" y="540" class="label" fill="#475569">back_lsa</text>
+  <text x="1200" y="540" text-anchor="end" class="tiny" fill="#475569">← 물리적 이전 레코드</text>
+
+  <!-- interpretation -->
+  <rect x="102" y="570" width="1084" height="42" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <text x="644" y="588" text-anchor="middle" class="small">forw_lsa와 back_lsa는 트랜잭션과 무관하게 물리적으로 이웃한 레코드를 연결한다.</text>
+  <text x="644" y="606" text-anchor="middle" class="small">prev_tranlsa는 같은 트랜잭션의 레코드만 연결하므로 인터리브된 로그에서 T1과 T2를 각각 따라갈 수 있다.</text>
+
+  <!-- compact legend -->
+  <line x1="210" y1="665" x2="250" y2="665" stroke="#16a34a" stroke-width="2.2"/>
+  <text x="260" y="670" class="tiny">물리 다음</text>
+  <line x1="405" y1="665" x2="445" y2="665" stroke="#64748b" stroke-width="2"/>
+  <text x="455" y="670" class="tiny">물리 이전</text>
+  <line x1="600" y1="665" x2="640" y2="665" stroke="#2563eb" stroke-width="2.4"/>
+  <text x="650" y="670" class="tiny">T1의 이전</text>
+  <line x1="795" y1="665" x2="835" y2="665" stroke="#ea580c" stroke-width="2.4" stroke-dasharray="7 5"/>
+  <text x="845" y="670" class="tiny">T2의 이전</text>
+  <line x1="990" y1="665" x2="1030" y2="665" stroke="#7c3aed" stroke-width="2" stroke-dasharray="6 5"/>
+  <text x="1040" y="670" class="tiny">체크포인트 위치</text>
+</svg>

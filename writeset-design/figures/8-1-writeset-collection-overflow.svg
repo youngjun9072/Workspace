@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="980" viewBox="0 0 1400 980">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L10,3 L0,6 Z" fill="#475569"/></marker>
+    <marker id="redArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L10,3 L0,6 Z" fill="#dc2626"/></marker>
+    <style>
+      text{font-family:'Droid Sans','Noto Sans KR','Malgun Gothic',sans-serif;fill:#172033;font-size:15px}
+      .title{font-size:26px;font-weight:700}.subtitle{font-size:14px;fill:#64748b}.head{font-size:18px;font-weight:700}.label{font-size:15px;font-weight:700}.body{font-size:14px}.small{font-size:13px}.tiny{font-size:12px}
+      .box{fill:#fff;stroke:#94a3b8;stroke-width:2}.entry{fill:#f8fafc;stroke:#64748b}.collect{fill:#fff;stroke:#dc2626;stroke-width:2}.lane{fill:#f8fafc;stroke:#cbd5e1}.common{fill:#eff6ff;stroke:#3b82f6}.ok{fill:#f0fdf4;stroke:#22c55e}.overflow{fill:#fff7ed;stroke:#f97316}.addedArea{fill:#dc2626;fill-opacity:.035;stroke:#dc2626;stroke-width:3}
+      .arrow{fill:none;stroke:#475569;stroke-width:2.2;marker-end:url(#arrow)}.redArrow{fill:none;stroke:#dc2626;stroke-width:2.4;marker-end:url(#redArrow)}.rule{stroke:#cbd5e1;stroke-width:1.5}
+    </style>
+  </defs>
+
+  <rect width="1400" height="980" fill="#fff"/>
+  <text x="48" y="46" class="title">행 연산의 WRITE·REF 수집과 트랜잭션 용량 판정</text>
+  <text x="48" y="74" class="subtitle">두 인덱스 처리 함수의 실제 수집 분기가 공통 해시 추가 함수로 합류한다.</text>
+
+  <rect x="85" y="110" width="540" height="84" rx="12" class="box entry"/>
+  <text x="355" y="143" text-anchor="middle" class="head">INSERT · DELETE</text>
+  <text x="355" y="173" text-anchor="middle" class="label">locator_add_or_remove_index_internal()</text>
+  <rect x="775" y="110" width="540" height="84" rx="12" class="box entry"/>
+  <text x="1045" y="143" text-anchor="middle" class="head">UPDATE</text>
+  <text x="1045" y="173" text-anchor="middle" class="label">locator_update_index()</text>
+
+  <rect x="70" y="225" width="1260" height="684" rx="20" class="addedArea"/>
+  <rect x="94" y="211" width="196" height="28" rx="14" fill="#dc2626"/>
+  <text x="192" y="230" text-anchor="middle" class="tiny" style="fill:#fff">추가된 writeset 처리</text>
+
+  <path d="M355 194 V258" class="redArrow"/>
+  <path d="M1045 194 V258" class="redArrow"/>
+
+  <rect x="105" y="258" width="1190" height="345" rx="14" class="box collect"/>
+  <text x="700" y="291" text-anchor="middle" class="head">WRITE · REF 수집</text>
+  <line x1="700" y1="307" x2="700" y2="580" class="rule"/>
+
+  <rect x="132" y="318" width="540" height="250" rx="11" class="lane"/>
+  <text x="402" y="348" text-anchor="middle" class="label">locator_add_or_remove_index_internal() 내부</text>
+  <text x="158" y="386" class="body">UNIQUE · REVERSE UNIQUE</text>
+  <text x="340" y="386" class="small">key_dbvalue → log_writeset_add_dbvalue() [WRITE]</text>
+  <text x="158" y="432" class="body">FOREIGN KEY</text>
+  <text x="340" y="432" class="small">recdes → locator_writeset_collect_fk_ref() [REF]</text>
+  <text x="158" y="478" class="body">PRIMARY KEY</text>
+  <text x="340" y="478" class="small">repl_log_insert() 성공 뒤</text>
+  <text x="340" y="502" class="small">log_writeset_add_dbvalue() [WRITE]</text>
+  <text x="402" y="544" text-anchor="middle" class="tiny">INSERT는 new 행 이미지, DELETE는 old 행 이미지의 key_dbvalue·recdes 사용</text>
+
+  <rect x="728" y="318" width="540" height="250" rx="11" class="lane"/>
+  <text x="998" y="348" text-anchor="middle" class="label">locator_update_index() 내부</text>
+  <text x="754" y="386" class="body">UNIQUE · REVERSE UNIQUE</text>
+  <text x="954" y="386" class="small">old_key + !same_key이면 new_key [WRITE]</text>
+  <text x="754" y="432" class="body">FOREIGN KEY</text>
+  <text x="954" y="432" class="small">old 행 + !same_key이면 new 행 [REF]</text>
+  <text x="754" y="478" class="body">PRIMARY KEY 정상 경로</text>
+  <text x="954" y="478" class="small">old_key + new_key [WRITE]</text>
+  <text x="754" y="524" class="body">PRIMARY KEY 예외 경로</text>
+  <text x="954" y="524" class="small">repl_old_key만 수집 [WRITE]</text>
+  <text x="998" y="552" text-anchor="middle" class="tiny">REF는 locator_writeset_collect_fk_ref(), WRITE는 log_writeset_add_dbvalue() 호출</text>
+
+  <path d="M700 603 V637" class="redArrow"/>
+  <rect x="470" y="637" width="460" height="94" rx="14" class="box common"/>
+  <text x="700" y="670" text-anchor="middle" class="small" style="fill:#1d4ed8">WRITE·REF 공통 종단</text>
+  <text x="700" y="696" text-anchor="middle" class="head">log_writeset_push_hash()</text>
+  <text x="700" y="719" text-anchor="middle" class="small">{ hash, kind } 저장 전 LOG_WRITESET_TX_LIMIT 검사</text>
+
+  <path d="M700 731 V773" class="arrow"/>
+  <text x="700" y="763" text-anchor="middle" class="tiny">현재 LOG_TDES.ws_hashes의 size 판정</text>
+
+  <rect x="120" y="793" width="500" height="96" rx="14" class="box ok"/>
+  <text x="370" y="825" text-anchor="middle" class="head" style="fill:#166534">size &lt; limit</text>
+  <text x="370" y="860" text-anchor="middle" class="label">ws_hashes.push_back({hash, kind})</text>
+  <rect x="780" y="793" width="500" height="96" rx="14" class="box overflow"/>
+  <text x="1030" y="825" text-anchor="middle" class="head" style="fill:#c2410c">size ≥ limit</text>
+  <text x="1030" y="855" text-anchor="middle" class="label">ws_overflow=true · clear · shrink_to_fit</text>
+
+  <path d="M700 773 H370 V787" class="arrow"/>
+  <path d="M700 773 H1030 V787" class="arrow"/>
+  <text x="700" y="946" text-anchor="middle" class="small">한도 도달 뒤에는 ws_overflow 검사에서 즉시 반환하여 같은 트랜잭션의 항목을 더 수집하지 않는다.</text>
+</svg>
