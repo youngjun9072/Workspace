@@ -41,48 +41,52 @@ worker는 독립된 DB session에서 트랜잭션 task 하나를 적용하고 �
 
 *그림 8-2-2. 기존 reader 공통 상태 초기화 뒤에 dispatch·dependency gate·worker별 실행 자원 초기화와 worker thread 시작을 추가하는 호출 관계*
 
-> [!NOTE]- 호출 관계 원문
-> ```text
-> AS-IS
->
-> la_apply_log_file()
-> └─ la_init()
->    ├─ la_Info 메모리 초기화·log_path 설정
->    ├─ 로그 페이지 크기·active/archive volume descriptor 초기화
->    ├─ committed·rep·append·eof·required·final LSA 초기화
->    ├─ 기동 시 고정하는 last_committed 계열 LSA 초기화
->    ├─ 메모리 한도·시작 시각·archive 삭제 상태 초기화
->    └─ 복제 객체·복제 filter 상태 초기화
-> ```
->
-> ```text
-> TO-BE
->
-> reader thread
-> la_apply_log_file()                         [CHANGED]
-> ├─ la_init()
-> │  ├─ la_Info 메모리 초기화·log_path 설정
-> │  ├─ 로그 페이지 크기·active/archive volume descriptor 초기화
-> │  ├─ committed·rep·append·eof·required·final LSA 초기화
-> │  ├─ 기동 시 고정하는 last_committed 계열 LSA 초기화
-> │  ├─ recovery_boundary_lsa 초기화          ✓ NEW
-> │  ├─ 역할 전환 drain 대기 상태 초기화      ✓ NEW
-> │  ├─ 메모리 한도·시작 시각·archive 삭제 상태 초기화
-> │  └─ 복제 객체·복제 filter 상태 초기화
-> └─ la_start_apply_workers()                 ✓ NEW
->    ├─ la_dispatch_order_init()              ✓ NEW
->    ├─ la_gate_init()                        ✓ NEW
->    └─ worker별 반복
->       ├─ la_apply_worker_init()             ✓ NEW
->       │  ├─ task/result queue 초기화
->       │  └─ mutex·condition 초기화
->       └─ pthread_create(la_apply_worker_main) ✓ NEW
->              ↓
-> worker thread
-> la_apply_worker_main()                      ✓ NEW
-> ├─ CS sub-client·DB session 초기화
-> └─ worker 실행 context 초기화 후 task 대기
-> ```
+<details>
+<summary>호출 관계 원문</summary>
+
+```text
+AS-IS
+
+la_apply_log_file()
+└─ la_init()
+   ├─ la_Info 메모리 초기화·log_path 설정
+   ├─ 로그 페이지 크기·active/archive volume descriptor 초기화
+   ├─ committed·rep·append·eof·required·final LSA 초기화
+   ├─ 기동 시 고정하는 last_committed 계열 LSA 초기화
+   ├─ 메모리 한도·시작 시각·archive 삭제 상태 초기화
+   └─ 복제 객체·복제 filter 상태 초기화
+```
+
+```text
+TO-BE
+
+reader thread
+la_apply_log_file()                         [CHANGED]
+├─ la_init()
+│  ├─ la_Info 메모리 초기화·log_path 설정
+│  ├─ 로그 페이지 크기·active/archive volume descriptor 초기화
+│  ├─ committed·rep·append·eof·required·final LSA 초기화
+│  ├─ 기동 시 고정하는 last_committed 계열 LSA 초기화
+│  ├─ recovery_boundary_lsa 초기화          ✓ NEW
+│  ├─ 역할 전환 drain 대기 상태 초기화      ✓ NEW
+│  ├─ 메모리 한도·시작 시각·archive 삭제 상태 초기화
+│  └─ 복제 객체·복제 filter 상태 초기화
+└─ la_start_apply_workers()                 ✓ NEW
+   ├─ la_dispatch_order_init()              ✓ NEW
+   ├─ la_gate_init()                        ✓ NEW
+   └─ worker별 반복
+      ├─ la_apply_worker_init()             ✓ NEW
+      │  ├─ task/result queue 초기화
+      │  └─ mutex·condition 초기화
+      └─ pthread_create(la_apply_worker_main) ✓ NEW
+             ↓
+worker thread
+la_apply_worker_main()                      ✓ NEW
+├─ CS sub-client·DB session 초기화
+└─ worker 실행 context 초기화 후 task 대기
+```
+
+</details>
 
 `la_init()`은 기존과 같이 reader의 공통 실행 상태를 먼저 초기화해야 한다. `la_Info`를 비우고 로그 경로와 페이지 크기, 로그 볼륨 상태, 주요 LSA, 메모리 한도와 시작 시각, 복제 필터를 초기화해야 한다. 병렬 적용의 queue와 worker 상태는 이 함수에 섞지 않고, 이어서 호출하는 `la_start_apply_workers()`가 별도로 준비해야 한다.
 
@@ -105,27 +109,31 @@ la_apply_worker_main()
 
 *그림 8-2-3. worker를 깨워 join하고 worker별 queue와 동기화 객체를 해제한 뒤 기존 reader 공통 자원을 정리하는 종료 호출 관계*
 
-> [!NOTE]- 호출 관계 원문
-> ```text
-> AS-IS
->
-> la_apply_log_file()
-> └─ la_shutdown()
->    └─ reader의 기존 로그·캐시·복제 상태 정리
-> ```
->
-> ```text
-> TO-BE
->
-> la_apply_log_file()                         [CHANGED]
-> └─ la_shutdown()                            [CHANGED]
->    ├─ la_stop_apply_workers()               ✓ NEW
->    │  ├─ shutdown 설정·condition broadcast
->    │  ├─ worker thread의 session·context 정리
->    │  ├─ pthread_join()
->    │  └─ worker queue·동기화 객체 해제
->    └─ reader의 기존 로그·캐시·복제 상태 정리
-> ```
+<details>
+<summary>호출 관계 원문</summary>
+
+```text
+AS-IS
+
+la_apply_log_file()
+└─ la_shutdown()
+   └─ reader의 기존 로그·캐시·복제 상태 정리
+```
+
+```text
+TO-BE
+
+la_apply_log_file()                         [CHANGED]
+└─ la_shutdown()                            [CHANGED]
+   ├─ la_stop_apply_workers()               ✓ NEW
+   │  ├─ shutdown 설정·condition broadcast
+   │  ├─ worker thread의 session·context 정리
+   │  ├─ pthread_join()
+   │  └─ worker queue·동기화 객체 해제
+   └─ reader의 기존 로그·캐시·복제 상태 정리
+```
+
+</details>
 
 `la_shutdown()`은 기존과 같이 reader가 사용한 로그 볼륨, 캐시, 복제 객체와 필터 등의 공통 자원을 정리해야 한다. 병렬 적용에서는 이 기존 정리보다 먼저 `la_stop_apply_workers()`를 호출하여 실행 중인 worker를 깨우고 모두 join해야 한다. worker가 종료되기 전에 reader 공통 자원을 해제하면 worker가 해당 상태를 참조할 수 있으므로 순서를 바꾸면 안 된다.
 
@@ -149,48 +157,52 @@ develop의 reader는 COMMIT을 만나면 해당 트랜잭션을 직접 적용한
 
 *그림 8-2-4. `la_apply_log_file()` → `la_log_record_process()`의 LOG_COMMIT 분기 — 기존 reader 직접 적용을 `LA_APPLY_TASK` 생성과 dependency gate를 통한 queue 배정으로 바꾸는 호출 관계*
 
-> [!NOTE]- 호출 관계 원문
-> ```text
-> AS-IS
->
-> reader thread
-> la_apply_log_file()
-> └─ 로그 레코드 반복
->    ├─ LOG_GET_LOG_RECORD_HEADER()
->    └─ la_log_record_process()
->       └─ case LOG_COMMIT
->          ├─ la_retrieve_eot_time()
->          ├─ la_add_node_into_la_commit_list()
->          │  ├─ LA_COMMIT 메모리 할당
->          │  ├─ tranid·type·log_lsa·log_record_time 저장
->          │  └─ la_Info.commit_head/tail 끝에 연결
->          └─ la_apply_commit_list()
->             └─ la_apply_repl_log()
-> ```
->
-> ```text
-> TO-BE
->
-> reader/coordinator thread
-> la_apply_log_file()                              [CHANGED]
-> └─ 로그 레코드 반복
->    ├─ LOG_GET_LOG_RECORD_HEADER()
->    └─ la_log_record_process()                    [CHANGED]
->       └─ case LOG_COMMIT
->          ├─ la_retrieve_eot_time()
->          ├─ la_add_node_into_la_commit_list()
->          │  ├─ LA_COMMIT 메모리 할당
->          │  ├─ tranid·type·log_lsa·log_record_time 저장
->          │  └─ la_Info.commit_head/tail 끝에 연결
->          ├─ LA_APPLY_TASK 필드 구성              ✓ NEW
->          │  ├─ COMMIT 정보와 LA_APPLY 포인터 저장
->          │  └─ 같은 trid의 WS_LABEL 값을 dependency에 저장
->          ├─ la_gate_order_push()                 ✓ NEW
->          └─ la_gate_is_satisfied()               ✓ NEW
->             ├─ true  → la_gate_dispatch_now()
->             │           └─ worker queue enqueue
->             └─ false → la_gate_enqueue_pending()
-> ```
+<details>
+<summary>호출 관계 원문</summary>
+
+```text
+AS-IS
+
+reader thread
+la_apply_log_file()
+└─ 로그 레코드 반복
+   ├─ LOG_GET_LOG_RECORD_HEADER()
+   └─ la_log_record_process()
+      └─ case LOG_COMMIT
+         ├─ la_retrieve_eot_time()
+         ├─ la_add_node_into_la_commit_list()
+         │  ├─ LA_COMMIT 메모리 할당
+         │  ├─ tranid·type·log_lsa·log_record_time 저장
+         │  └─ la_Info.commit_head/tail 끝에 연결
+         └─ la_apply_commit_list()
+            └─ la_apply_repl_log()
+```
+
+```text
+TO-BE
+
+reader/coordinator thread
+la_apply_log_file()                              [CHANGED]
+└─ 로그 레코드 반복
+   ├─ LOG_GET_LOG_RECORD_HEADER()
+   └─ la_log_record_process()                    [CHANGED]
+      └─ case LOG_COMMIT
+         ├─ la_retrieve_eot_time()
+         ├─ la_add_node_into_la_commit_list()
+         │  ├─ LA_COMMIT 메모리 할당
+         │  ├─ tranid·type·log_lsa·log_record_time 저장
+         │  └─ la_Info.commit_head/tail 끝에 연결
+         ├─ LA_APPLY_TASK 필드 구성              ✓ NEW
+         │  ├─ COMMIT 정보와 LA_APPLY 포인터 저장
+         │  └─ 같은 trid의 WS_LABEL 값을 dependency에 저장
+         ├─ la_gate_order_push()                 ✓ NEW
+         └─ la_gate_is_satisfied()               ✓ NEW
+            ├─ true  → la_gate_dispatch_now()
+            │           └─ worker queue enqueue
+            └─ false → la_gate_enqueue_pending()
+```
+
+</details>
 
 ### `LA_APPLY_TASK` 자료구조
 
@@ -348,38 +360,42 @@ worker가 시작된 뒤 `la_apply_log_file()`은 reader 반복을 수행한다. 
 
 *그림 8-2-7. 기존 reader의 COMMIT 직접 적용을 worker 결과 수거, transaction task 생성, dependency 실행 가능 판정과 queue 전달로 분리하는 전후 호출 관계*
 
-> [!NOTE]- 호출 관계 원문
-> ```text
-> AS-IS
->
-> reader thread
-> la_apply_log_file()
-> └─ 로그 레코드 반복
->    └─ la_log_record_process()
->       └─ LOG_COMMIT
->          ├─ la_add_node_into_la_commit_list()
->          └─ la_apply_commit_list()
->             └─ la_apply_repl_log()
-> ```
->
-> ```text
-> TO-BE
->
-> reader/coordinator thread
-> la_apply_log_file()                             [CHANGED]
-> └─ 로그 레코드 반복
->    ├─ la_collect_apply_results()                ✓ NEW
->    └─ la_log_record_process()                   [CHANGED]
->       └─ LOG_COMMIT
->          ├─ LA_APPLY_TASK 구성                  ✓ NEW
->          ├─ la_gate_order_push()                ✓ NEW
->          └─ la_gate_is_satisfied()              ✓ NEW
->             ├─ 충족: la_gate_dispatch_now()     ✓ NEW
->             │  ├─ la_gate_choose_worker()       ✓ NEW
->             │  ├─ la_dispatch_order_push()      ✓ NEW
->             │  └─ la_enqueue_apply_task()       ✓ NEW
->             └─ 미충족: la_gate_enqueue_pending() ✓ NEW
-> ```
+<details>
+<summary>호출 관계 원문</summary>
+
+```text
+AS-IS
+
+reader thread
+la_apply_log_file()
+└─ 로그 레코드 반복
+   └─ la_log_record_process()
+      └─ LOG_COMMIT
+         ├─ la_add_node_into_la_commit_list()
+         └─ la_apply_commit_list()
+            └─ la_apply_repl_log()
+```
+
+```text
+TO-BE
+
+reader/coordinator thread
+la_apply_log_file()                             [CHANGED]
+└─ 로그 레코드 반복
+   ├─ la_collect_apply_results()                ✓ NEW
+   └─ la_log_record_process()                   [CHANGED]
+      └─ LOG_COMMIT
+         ├─ LA_APPLY_TASK 구성                  ✓ NEW
+         ├─ la_gate_order_push()                ✓ NEW
+         └─ la_gate_is_satisfied()              ✓ NEW
+            ├─ 충족: la_gate_dispatch_now()     ✓ NEW
+            │  ├─ la_gate_choose_worker()       ✓ NEW
+            │  ├─ la_dispatch_order_push()      ✓ NEW
+            │  └─ la_enqueue_apply_task()       ✓ NEW
+            └─ 미충족: la_gate_enqueue_pending() ✓ NEW
+```
+
+</details>
 
 worker thread는 reader와 별도로 실행된다. 입력 queue가 비어 있으면 기다리고, task가 들어오면 기존 적용 핵심인 `la_apply_repl_log()`를 실행한 뒤 DB COMMIT 결과를 result queue에 반환한다.
 

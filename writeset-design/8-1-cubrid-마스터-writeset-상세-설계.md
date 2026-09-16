@@ -116,32 +116,35 @@ descriptor 초기화
 
 *호출 관계 8-1-1. 서버 기동 시 기존 transaction descriptor 초기화 경로에 트랜잭션별 writeset 상태와 전역 history 초기화를 추가한 구조*
 
-> [!NOTE]- 호출 관계 원문
-> **호출 관계 원문**
-> ```text
-> AS-IS
->
-> boot_restart_server()
-> └─ logtb_define_trantable()
->    └─ logtb_define_trantable_log_latch()
->       └─ logtb_expand_trantable()
->          └─ logtb_allocate_tdes_area()
->             └─ logtb_initialize_tdes()
->                └─ 기존 LOG_TDES 상태 초기화
-> ```
->
-> ```text
-> TO-BE
->
-> boot_restart_server()
-> └─ logtb_define_trantable()
->    └─ logtb_define_trantable_log_latch()
->       ├─ logtb_expand_trantable()
->       │  └─ logtb_allocate_tdes_area()
->       │     └─ logtb_initialize_tdes()
->       │        └─ log_writeset_tdes_initialize(tdes)       # 설계상 추가
->       └─ log_writeset_history_initialize()     # 추가
-> ```
+<details>
+<summary>호출 관계 원문</summary>
+
+```text
+AS-IS
+
+boot_restart_server()
+└─ logtb_define_trantable()
+   └─ logtb_define_trantable_log_latch()
+      └─ logtb_expand_trantable()
+         └─ logtb_allocate_tdes_area()
+            └─ logtb_initialize_tdes()
+               └─ 기존 LOG_TDES 상태 초기화
+```
+
+```text
+TO-BE
+
+boot_restart_server()
+└─ logtb_define_trantable()
+   └─ logtb_define_trantable_log_latch()
+      ├─ logtb_expand_trantable()
+      │  └─ logtb_allocate_tdes_area()
+      │     └─ logtb_initialize_tdes()
+      │        └─ log_writeset_tdes_initialize(tdes)       # 설계상 추가
+      └─ log_writeset_history_initialize()     # 추가
+```
+
+</details>
 
 `LOG_TDES` 쪽은 기존 `logtb_initialize_tdes()`에서 트랜잭션별 writeset 초기화 함수를 호출해야 한다.
 
@@ -262,46 +265,50 @@ WRITE와 REF는 종류와 관계없이 마지막에 `log_writeset_push_hash()`�
 
 *그림 8-1-3. INSERT·DELETE와 UPDATE에서 수집한 WRITE·REF가 `log_writeset_push_hash()`로 합류하고, 이 공통 종단에서 트랜잭션별 용량을 판정하는 구조*
 
-> [!NOTE]- 호출 관계 원문
-> **WRITE·REF 수집 경로**
-> ```text
-> INSERT·DELETE
-> └─ locator_add_or_remove_index_internal()
->    ├─ UNIQUE·REVERSE UNIQUE
->    │  └─ key_dbvalue → log_writeset_add_dbvalue(..., WRITE)
->    ├─ FOREIGN KEY
->    │  └─ recdes → locator_writeset_collect_fk_ref()
->    │              └─ log_writeset_add_ref_dbvalue(..., REF)
->    └─ PRIMARY KEY
->       └─ repl_log_insert() 성공
->          └─ key_dbvalue → log_writeset_add_dbvalue(..., WRITE)
->
-> UPDATE
-> └─ locator_update_index()
->    ├─ UNIQUE·REVERSE UNIQUE
->    │  ├─ old_key → log_writeset_add_dbvalue(..., WRITE)
->    │  └─ !same_key: new_key도 WRITE로 추가
->    ├─ FOREIGN KEY
->    │  ├─ old 행 → locator_writeset_collect_fk_ref(..., REF)
->    │  └─ !same_key: new 행의 REF도 추가
->    └─ PRIMARY KEY
->       ├─ 정상 경로: old_key와 new_key를 WRITE로 추가
->       └─ 예외 경로: repl_old_key만 WRITE로 추가
-> ```
->
-> **공통 종단과 용량 처리**
-> ```text
-> log_writeset_add_dbvalue() 또는 log_writeset_add_ref_dbvalue()
-> └─ *_internal()에서 값 정규화
->    ├─ 일반 값: packing → log_writeset_push()
->    │                    └─ log_writeset_push_hash()
->    └─ 문자열: hash ──────────┘
->          ├─ size < LOG_WRITESET_TX_LIMIT
->          │  └─ LOG_TDES.ws_hashes에 추가
->          └─ 한도 도달
->             ├─ LOG_TDES.ws_hashes 전체 제거
->             └─ LOG_TDES.ws_overflow = true
-> ```
+<details>
+<summary>호출 관계 원문</summary>
+
+**WRITE·REF 수집 경로**
+```text
+INSERT·DELETE
+└─ locator_add_or_remove_index_internal()
+   ├─ UNIQUE·REVERSE UNIQUE
+   │  └─ key_dbvalue → log_writeset_add_dbvalue(..., WRITE)
+   ├─ FOREIGN KEY
+   │  └─ recdes → locator_writeset_collect_fk_ref()
+   │              └─ log_writeset_add_ref_dbvalue(..., REF)
+   └─ PRIMARY KEY
+      └─ repl_log_insert() 성공
+         └─ key_dbvalue → log_writeset_add_dbvalue(..., WRITE)
+
+UPDATE
+└─ locator_update_index()
+   ├─ UNIQUE·REVERSE UNIQUE
+   │  ├─ old_key → log_writeset_add_dbvalue(..., WRITE)
+   │  └─ !same_key: new_key도 WRITE로 추가
+   ├─ FOREIGN KEY
+   │  ├─ old 행 → locator_writeset_collect_fk_ref(..., REF)
+   │  └─ !same_key: new 행의 REF도 추가
+   └─ PRIMARY KEY
+      ├─ 정상 경로: old_key와 new_key를 WRITE로 추가
+      └─ 예외 경로: repl_old_key만 WRITE로 추가
+```
+
+**공통 종단과 용량 처리**
+```text
+log_writeset_add_dbvalue() 또는 log_writeset_add_ref_dbvalue()
+└─ *_internal()에서 값 정규화
+   ├─ 일반 값: packing → log_writeset_push()
+   │                    └─ log_writeset_push_hash()
+   └─ 문자열: hash ──────────┘
+         ├─ size < LOG_WRITESET_TX_LIMIT
+         │  └─ LOG_TDES.ws_hashes에 추가
+         └─ 한도 도달
+            ├─ LOG_TDES.ws_hashes 전체 제거
+            └─ LOG_TDES.ws_overflow = true
+```
+
+</details>
 
 `log_writeset_add_dbvalue()`와 `log_writeset_add_ref_dbvalue()`는 각자 `_internal()`에서 값을 정규화·packing한 뒤 `log_writeset_push()`를 거쳐 `log_writeset_push_hash()`에 도달해야 한다. 문자열형처럼 해시가 이미 만들어진 경로는 `log_writeset_push_hash()`를 바로 호출해야 한다. 한도 검사는 이 공통 종단 한 곳에서 수행하여 WRITE와 REF가 같은 트랜잭션별 한도를 사용하게 해야 한다.
 
@@ -337,29 +344,33 @@ DDL 등 statement replication에는 해시할 행 키가 없다. 따라서 state
 
 *그림 8-1-4. 기존 statement 복제 정보 수집 경로에 `ws_overflow` 설정을 추가하고, COMMIT에서 commit-order dependency와 이후 트랜잭션을 위한 history 기준을 만드는 구조*
 
-> [!NOTE]- 호출 관계 원문
-> **AS-IS**
-> ```text
-> xrepl_set_info()
-> └─ REPL_INFO_TYPE_SBR
->    └─ repl_log_insert_statement()
->       └─ LOG_REPLICATION_STATEMENT 정보 수집
-> ```
->
-> **TO-BE**
-> ```text
-> xrepl_set_info()
-> └─ REPL_INFO_TYPE_SBR
->    └─ repl_log_insert_statement()               [CHANGED]
->       ├─ LOG_TDES.ws_overflow = true            ✓ NEW
->       └─ LOG_REPLICATION_STATEMENT 정보 수집
->              ↓
-> log_commit_local()
-> ├─ log_writeset_commit_probe()
-> │  └─ commit-order dependency 확정
-> └─ log_writeset_commit_flush()
->    └─ history 제거·history_start 전진
-> ```
+<details>
+<summary>호출 관계 원문</summary>
+
+**AS-IS**
+```text
+xrepl_set_info()
+└─ REPL_INFO_TYPE_SBR
+   └─ repl_log_insert_statement()
+      └─ LOG_REPLICATION_STATEMENT 정보 수집
+```
+
+**TO-BE**
+```text
+xrepl_set_info()
+└─ REPL_INFO_TYPE_SBR
+   └─ repl_log_insert_statement()               [CHANGED]
+      ├─ LOG_TDES.ws_overflow = true            ✓ NEW
+      └─ LOG_REPLICATION_STATEMENT 정보 수집
+             ↓
+log_commit_local()
+├─ log_writeset_commit_probe()
+│  └─ commit-order dependency 확정
+└─ log_writeset_commit_flush()
+   └─ history 제거·history_start 전진
+```
+
+</details>
 
 `ws_overflow`는 writeset 용량 초과만 나타내는 값이 아니다. 행 단위 충돌 키로 표현할 수 없어 키별 판정을 사용하지 않는 트랜잭션도 같은 commit-order 폴백 상태로 표시해야 한다.
 
@@ -390,26 +401,30 @@ struct log_rec_ws_label
 
 *그림 8-1-5. 기존 REPL·COMMIT 기록 사이에 WS_LABEL을 추가하고, 세 레코드를 동일 `prior_lsa_mutex` 구간에서 연속 기록하는 비교*
 
-> [!NOTE]- 호출 관계 원문
-> **AS-IS**
-> ```text
-> log_append_repl_info_and_commit_log()
-> └─ prior_lsa_mutex 잠금
->    ├─ log_append_repl_info_with_lock(tdes)
->    ├─ log_append_commit_log_with_lock(tdes, commit_lsa)
->    └─ prior_lsa_mutex 해제
-> ```
->
-> **TO-BE**
-> ```text
-> log_append_repl_info_and_commit_log()                 [CHANGED]
-> └─ prior_lsa_mutex 잠금
->    ├─ log_append_repl_info_with_lock(tdes)
->    ├─ log_append_ws_label_with_lock(tdes)             ✓ NEW
->    │  └─ {ws_dependency_seq, ws_dependency_is_read} 기록
->    ├─ log_append_commit_log_with_lock(tdes, commit_lsa)
->    └─ prior_lsa_mutex 해제
-> ```
+<details>
+<summary>호출 관계 원문</summary>
+
+**AS-IS**
+```text
+log_append_repl_info_and_commit_log()
+└─ prior_lsa_mutex 잠금
+   ├─ log_append_repl_info_with_lock(tdes)
+   ├─ log_append_commit_log_with_lock(tdes, commit_lsa)
+   └─ prior_lsa_mutex 해제
+```
+
+**TO-BE**
+```text
+log_append_repl_info_and_commit_log()                 [CHANGED]
+└─ prior_lsa_mutex 잠금
+   ├─ log_append_repl_info_with_lock(tdes)
+   ├─ log_append_ws_label_with_lock(tdes)             ✓ NEW
+   │  └─ {ws_dependency_seq, ws_dependency_is_read} 기록
+   ├─ log_append_commit_log_with_lock(tdes, commit_lsa)
+   └─ prior_lsa_mutex 해제
+```
+
+</details>
 
 > [!NOTE]
 > **인접성 보장과 `trid` 확인**
@@ -429,31 +444,35 @@ struct log_rec_ws_label
 
 *그림 8-1-6. 기존 `log_commit_local()`의 REPL·COMMIT 경로에 dependency probe, WS_LABEL 기록과 COMMIT LSA 기반 history 게시를 추가하는 전체 호출 흐름*
 
-> [!NOTE]- 호출 관계 원문
-> **AS-IS**
-> ```text
-> log_commit()
-> └─ log_commit_local()
->    ├─ log_append_repl_info_and_commit_log()
->    │  ├─ log_append_repl_info_with_lock()
->    │  └─ log_append_commit_log_with_lock()
->    ├─ lock_unlock_all()
->    └─ log_change_tran_as_completed()
-> ```
->
-> **TO-BE**
-> ```text
-> log_commit()
-> └─ log_commit_local()                              [CHANGED]
->    ├─ log_writeset_commit_probe()                  ✓ NEW
->    ├─ log_append_repl_info_and_commit_log()        [CHANGED]
->    │  ├─ log_append_repl_info_with_lock()
->    │  ├─ log_append_ws_label_with_lock()           ✓ NEW
->    │  └─ log_append_commit_log_with_lock()
->    ├─ log_writeset_commit_flush()                  ✓ NEW
->    ├─ lock_unlock_all()
->    └─ log_change_tran_as_completed()
-> ```
+<details>
+<summary>호출 관계 원문</summary>
+
+**AS-IS**
+```text
+log_commit()
+└─ log_commit_local()
+   ├─ log_append_repl_info_and_commit_log()
+   │  ├─ log_append_repl_info_with_lock()
+   │  └─ log_append_commit_log_with_lock()
+   ├─ lock_unlock_all()
+   └─ log_change_tran_as_completed()
+```
+
+**TO-BE**
+```text
+log_commit()
+└─ log_commit_local()                              [CHANGED]
+   ├─ log_writeset_commit_probe()                  ✓ NEW
+   ├─ log_append_repl_info_and_commit_log()        [CHANGED]
+   │  ├─ log_append_repl_info_with_lock()
+   │  ├─ log_append_ws_label_with_lock()           ✓ NEW
+   │  └─ log_append_commit_log_with_lock()
+   ├─ log_writeset_commit_flush()                  ✓ NEW
+   ├─ lock_unlock_all()
+   └─ log_change_tran_as_completed()
+```
+
+</details>
 
 #### dependency 계산
 
