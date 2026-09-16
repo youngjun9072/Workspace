@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="620" viewBox="0 0 1280 620">
+  <defs>
+    <marker id="right" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#64748b"/>
+    </marker>
+    <marker id="blue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#2563eb"/>
+    </marker>
+    <marker id="green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#16a34a"/>
+    </marker>
+    <marker id="orange" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#d97706"/>
+    </marker>
+    <marker id="purple" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#7c3aed"/>
+    </marker>
+    <style>
+      text{font-family:'Droid Sans','Noto Sans KR','Malgun Gothic',sans-serif;fill:#172033;font-size:15px}
+      .title{font-size:25px;font-weight:700}.subtitle{font-size:14px;fill:#64748b}.label{font-size:14px;font-weight:700}.small{font-size:13px}.tiny{font-size:12px}
+      .tile{fill:#fff;stroke:#94a3b8;stroke-width:1.5}.items{fill:#f1f5f9;stroke:#475569;stroke-width:2}
+      .commit{fill:#f0fdf4;stroke:#22c55e;stroke-width:2}.cursor{fill:#f5f3ff;stroke:#8b5cf6;stroke-width:2}
+      .limit{fill:#f8fafc;stroke:#64748b;stroke-width:2}
+      .blueLine{fill:none;stroke:#2563eb;stroke-width:2.2;marker-end:url(#blue)}
+      .greenLine{fill:none;stroke:#16a34a;stroke-width:2.2;marker-end:url(#green)}
+      .orangeLine{fill:none;stroke:#d97706;stroke-width:2.2;marker-end:url(#orange)}
+      .purpleLine{fill:none;stroke:#7c3aed;stroke-width:2.2;marker-end:url(#purple)}
+    </style>
+  </defs>
+
+  <rect width="1280" height="620" fill="#fff"/>
+  <text x="48" y="46" class="title">develop: 트랜잭션 적용 뒤 로그 위에서 움직이는 la_Info의 LSA</text>
+  <text x="48" y="73" class="subtitle">item 내부 구조는 접어 두고, applier의 읽기 위치·적용 결과·로그 보존 범위가 가리키는 위치만 비교한다.</text>
+
+  <text x="65" y="164" class="small" fill="#64748b">오래된 로그</text>
+  <line x1="65" y1="184" x2="1215" y2="184" stroke="#64748b" stroke-width="2.5" marker-end="url(#right)"/>
+  <text x="1210" y="164" text-anchor="end" class="small" fill="#64748b">새 로그</text>
+
+  <rect x="82" y="211" width="64" height="48" rx="7" class="tile"/>
+  <text x="114" y="241" text-anchor="middle" class="small">Q0</text>
+  <rect x="166" y="211" width="44" height="48" rx="7" class="tile"/>
+  <text x="188" y="241" text-anchor="middle" class="tiny">…</text>
+
+  <rect x="250" y="204" width="280" height="62" rx="9" class="items"/>
+  <text x="390" y="230" text-anchor="middle" class="label">T1 replication items</text>
+  <text x="390" y="251" text-anchor="middle" class="tiny" fill="#64748b">내부 D/R 위치는 그림 4-4에서 설명</text>
+  <line x1="494" y1="204" x2="494" y2="266" stroke="#60a5fa" stroke-width="2" stroke-dasharray="4 3"/>
+  <text x="494" y="285" text-anchor="middle" class="tiny" fill="#1d4ed8">마지막 성공 replication record</text>
+
+  <rect x="558" y="204" width="88" height="62" rx="9" class="commit"/>
+  <text x="602" y="230" text-anchor="middle" class="label">COMMIT</text>
+  <text x="602" y="251" text-anchor="middle" class="tiny">C1</text>
+
+  <rect x="685" y="211" width="44" height="48" rx="7" class="tile"/>
+  <text x="707" y="241" text-anchor="middle" class="tiny">…</text>
+  <rect x="758" y="204" width="82" height="62" rx="9" class="cursor"/>
+  <text x="799" y="230" text-anchor="middle" class="label">현재</text>
+  <text x="799" y="251" text-anchor="middle" class="tiny">F1</text>
+  <rect x="869" y="211" width="44" height="48" rx="7" class="tile"/>
+  <text x="891" y="241" text-anchor="middle" class="tiny">…</text>
+  <rect x="942" y="211" width="44" height="48" rx="7" class="tile"/>
+  <text x="964" y="241" text-anchor="middle" class="tiny">…</text>
+
+  <rect x="1020" y="204" width="82" height="62" rx="9" class="limit"/>
+  <text x="1061" y="230" text-anchor="middle" class="label">유효 끝</text>
+  <text x="1061" y="251" text-anchor="middle" class="tiny">E1</text>
+  <rect x="1135" y="204" width="90" height="62" rx="9" class="cursor"/>
+  <text x="1180" y="230" text-anchor="middle" class="label">다음 기록</text>
+  <text x="1180" y="251" text-anchor="middle" class="tiny">A1</text>
+
+  <path d="M114 368 V265" class="orangeLine"/>
+  <text x="114" y="394" text-anchor="middle" class="label" fill="#b45309">required_lsa = Q0</text>
+  <text x="114" y="417" text-anchor="middle" class="tiny">가장 오래된 미완 시작 위치</text>
+
+  <path d="M494 112 V198" class="blueLine"/>
+  <text x="494" y="105" text-anchor="middle" class="label" fill="#1d4ed8">committed_rep_lsa</text>
+  <text x="494" y="126" text-anchor="middle" class="tiny">적용에 성공한 마지막 item 위치</text>
+
+  <path d="M602 368 V272" class="greenLine"/>
+  <text x="602" y="394" text-anchor="middle" class="label" fill="#15803d">committed_lsa = C1</text>
+  <text x="602" y="417" text-anchor="middle" class="tiny">처리를 끝낸 COMMIT 위치</text>
+
+  <path d="M799 112 V198" class="purpleLine"/>
+  <text x="799" y="105" text-anchor="middle" class="label" fill="#6d28d9">final_lsa = F1</text>
+  <text x="799" y="126" text-anchor="middle" class="tiny">applier가 현재 처리할 위치</text>
+
+  <line x1="1061" y1="266" x2="1061" y2="368" stroke="#475569" stroke-width="2"/>
+  <text x="1061" y="394" text-anchor="middle" class="label">eof_lsa = E1</text>
+  <text x="1061" y="417" text-anchor="middle" class="tiny">현재 유효 로그의 끝</text>
+
+  <line x1="1180" y1="112" x2="1180" y2="198" stroke="#7c3aed" stroke-width="2"/>
+  <text x="1180" y="105" text-anchor="middle" class="label" fill="#6d28d9">append_lsa = A1</text>
+  <text x="1180" y="126" text-anchor="middle" class="tiny">다음 로그 기록 위치</text>
+
+  <rect x="80" y="465" width="1135" height="88" rx="11" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="647" y="495" text-anchor="middle" class="small">읽기 위치 final_lsa는 적용 완료 위치(committed_rep_lsa·committed_lsa)보다 앞서갈 수 있다. 적용은 COMMIT을 만난 뒤에만 일어나기 때문이다.</text>
+  <text x="647" y="521" text-anchor="middle" class="small">required_lsa는 미완 트랜잭션을 다시 구성할 로그를 보존한다. 영속과 기동 시 기준선은 4.5·4.6의 장면에서 설명한다.</text>
+
+  <text x="640" y="592" text-anchor="middle" class="tiny" fill="#64748b">위 배치는 한 시점의 예시다. 각 LSA의 실제 상대 위치를 모든 실행 시점의 고정 부등식으로 사용하지 않는다.</text>
+</svg>

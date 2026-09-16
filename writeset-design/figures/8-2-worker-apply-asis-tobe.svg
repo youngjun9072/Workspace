@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="712" viewBox="0 0 2200 712">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>.title{font:700 27px Arial,"Noto Sans KR",sans-serif;fill:#172033}.head{font:700 21px Arial,"Noto Sans KR",sans-serif;fill:#172033}.code{font-family:"DejaVu Sans Mono","Noto Sans Mono CJK KR",monospace;font-size:16px;fill:#253047}</style>
+<text x="36" y="43" class="title">복제 항목 적용 주체와 DB COMMIT 결과 반환</text>
+<line x1="1100" y1="68" x2="1100" y2="690" stroke="#cbd5e1" stroke-width="2"/>
+<text x="550" y="94" text-anchor="middle" class="head">AS-IS</text>
+<text x="1650" y="94" text-anchor="middle" class="head">TO-BE</text>
+<text x="42" y="130" class="code" xml:space="preserve">reader thread</text>
+<text x="42" y="158" class="code" xml:space="preserve">la_apply_log_file()</text>
+<text x="42" y="186" class="code" xml:space="preserve">└─ 로그 레코드 반복</text>
+<text x="42" y="214" class="code" xml:space="preserve">   └─ la_log_record_process()</text>
+<text x="42" y="242" class="code" xml:space="preserve">      └─ LOG_COMMIT</text>
+<text x="42" y="270" class="code" xml:space="preserve">         ├─ la_add_node_into_la_commit_list()</text>
+<text x="42" y="298" class="code" xml:space="preserve">         └─ la_apply_commit_list()</text>
+<text x="42" y="326" class="code" xml:space="preserve">            └─ la_apply_repl_log()</text>
+<text x="42" y="354" class="code" xml:space="preserve">               └─ INSERT·UPDATE·DELETE·statement 적용</text>
+<text x="42" y="382" class="code" xml:space="preserve"></text>
+<text x="42" y="410" class="code" xml:space="preserve">주기 또는 상태 변경 시</text>
+<text x="42" y="438" class="code" xml:space="preserve">la_log_commit()</text>
+<text x="42" y="466" class="code" xml:space="preserve">└─ la_commit_transaction()</text>
+<text x="42" y="494" class="code" xml:space="preserve">   └─ db_commit_transaction()</text>
+<text x="1142" y="130" class="code" xml:space="preserve">worker thread 생성</text>
+<text x="1142" y="158" class="code" xml:space="preserve">la_apply_log_file()                             [CHANGED]</text>
+<text x="1142" y="186" class="code" xml:space="preserve">└─ la_start_apply_workers()                     ✓ NEW</text>
+<text x="1142" y="214" class="code" xml:space="preserve">   └─ pthread_create(la_apply_worker_main)      ✓ NEW</text>
+<text x="1142" y="242" class="code" xml:space="preserve"></text>
+<text x="1142" y="270" class="code" xml:space="preserve">worker thread 반복</text>
+<text x="1142" y="298" class="code" xml:space="preserve">la_apply_worker_main()                          ✓ NEW</text>
+<text x="1142" y="326" class="code" xml:space="preserve">├─ la_dequeue_apply_task()                      ✓ NEW</text>
+<text x="1142" y="354" class="code" xml:space="preserve">│  └─ worker queue에서 LA_APPLY_TASK 가져오기</text>
+<text x="1142" y="382" class="code" xml:space="preserve">├─ LA_APPLY_RESULT 초기화                       ✓ NEW</text>
+<text x="1142" y="410" class="code" xml:space="preserve">│  └─ seq·tranid·rectype·commit_lsa 보존</text>
+<text x="1142" y="438" class="code" xml:space="preserve">├─ la_apply_repl_log()                          [CHANGED]</text>
+<text x="1142" y="466" class="code" xml:space="preserve">│  └─ task.apply의 모든 복제 항목 적용</text>
+<text x="1142" y="494" class="code" xml:space="preserve">├─ [LOG_COMMIT이고 적용 성공]</text>
+<text x="1142" y="522" class="code" xml:space="preserve">│  ├─ la_flush_repl_items()</text>
+<text x="1142" y="550" class="code" xml:space="preserve">│  └─ la_commit_transaction()                   [CHANGED]</text>
+<text x="1142" y="578" class="code" xml:space="preserve">│     └─ db_commit_transaction()</text>
+<text x="1142" y="606" class="code" xml:space="preserve">└─ la_enqueue_apply_result()                    ✓ NEW</text>
+<text x="1142" y="634" class="code" xml:space="preserve">   └─ error·commit_lsa·committed_rep_lsa·통계를 result queue에 저장</text>
+</svg>

@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 580" font-family="'Noto Sans KR','Malgun Gothic',sans-serif">
+  <defs>
+    <marker id="dep" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L7,3 L0,6 z" fill="#c0392b"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1200" height="580" fill="#ffffff"/>
+  <text x="600" y="38" text-anchor="middle" font-size="23" font-weight="700" fill="#1a1a1a">CUBRID writeset FK 병렬 적용 실측 — 같은 부모 행 참조 자식의 병렬성</text>
+  <text x="600" y="62" text-anchor="middle" font-size="13" fill="#666">A(부모) → Achild1·Achild2(부모 A의 같은 행 참조) → B·C·D(독립). 각 5만 행 단일 커밋. 슬레이브 applylogdb ws_apply START/END (2026-09-12, 빌드 a55821e).</text>
+
+  <!-- time grid -->
+  <g stroke="#e3e6ea" stroke-width="1">
+    <line x1="220" y1="95" x2="220" y2="440"/>
+    <line x1="380" y1="95" x2="380" y2="440"/>
+    <line x1="540" y1="95" x2="540" y2="440"/>
+    <line x1="700" y1="95" x2="700" y2="440"/>
+    <line x1="860" y1="95" x2="860" y2="440"/>
+    <line x1="1020" y1="95" x2="1020" y2="440"/>
+  </g>
+  <g font-size="11" fill="#999" text-anchor="middle">
+    <text x="220" y="456">0s</text><text x="380" y="456">1s</text><text x="540" y="456">2s</text>
+    <text x="700" y="456">3s</text><text x="860" y="456">4s</text><text x="1020" y="456">5s</text>
+  </g>
+
+  <!-- group brackets (left) -->
+  <text x="30" y="215" font-size="12" font-weight="700" fill="#5a6472" transform="rotate(-90 30 215)">독립 (dep=212|5240)</text>
+  <text x="30" y="375" font-size="12" font-weight="700" fill="#1e8449" transform="rotate(-90 30 375)">자식·부모행 공유</text>
+
+  <!-- A parent -->
+  <text x="205" y="169" text-anchor="end" font-size="13" font-weight="700" fill="#1f4e8c">A (부모) · w0</text>
+  <rect x="220" y="152" width="426" height="28" rx="4" fill="#e8f0fb" stroke="#1f4e8c" stroke-width="2"/>
+  <text x="433" y="171" text-anchor="middle" font-size="11.5" fill="#1f4e8c">dep=212|5240  (0.000→2.662s)</text>
+  <!-- B -->
+  <text x="205" y="212" text-anchor="end" font-size="13" fill="#5a6472">B (독립) · w1</text>
+  <rect x="241" y="195" width="424" height="28" rx="4" fill="#eef1f4" stroke="#8a99ab" stroke-width="1.5"/>
+  <text x="453" y="214" text-anchor="middle" font-size="11.5" fill="#5a6472">dep=212|5240  (0.133→2.784s)</text>
+  <!-- C -->
+  <text x="205" y="255" text-anchor="end" font-size="13" fill="#5a6472">C (독립) · w2</text>
+  <rect x="245" y="238" width="440" height="28" rx="4" fill="#eef1f4" stroke="#8a99ab" stroke-width="1.5"/>
+  <text x="465" y="257" text-anchor="middle" font-size="11.5" fill="#5a6472">dep=212|5240  (0.159→2.905s)</text>
+  <!-- D -->
+  <text x="205" y="298" text-anchor="end" font-size="13" fill="#5a6472">D (독립) · w3</text>
+  <rect x="250" y="281" width="436" height="28" rx="4" fill="#eef1f4" stroke="#8a99ab" stroke-width="1.5"/>
+  <text x="468" y="300" text-anchor="middle" font-size="11.5" fill="#5a6472">dep=212|5240  (0.188→2.915s)</text>
+
+  <!-- Achild1 -->
+  <text x="205" y="349" text-anchor="end" font-size="13" font-weight="700" fill="#1e8449">Achild1 · w0</text>
+  <rect x="661" y="332" width="432" height="28" rx="4" fill="#e8f5ec" stroke="#3FA35B" stroke-width="2"/>
+  <text x="877" y="351" text-anchor="middle" font-size="11.5" fill="#1e8449">dep=2217|8600  (2.759→5.454s)</text>
+  <!-- Achild2 -->
+  <text x="205" y="392" text-anchor="end" font-size="13" font-weight="700" fill="#1e8449">Achild2 · w4</text>
+  <rect x="661" y="375" width="449" height="28" rx="4" fill="#e8f5ec" stroke="#3FA35B" stroke-width="2"/>
+  <text x="885" y="394" text-anchor="middle" font-size="11.5" fill="#1e8449">dep=2217|8600  (2.759→5.564s)</text>
+
+  <!-- A commit vertical line -->
+  <line x1="646" y1="145" x2="646" y2="410" stroke="#c0392b" stroke-width="1.4" stroke-dasharray="4 3"/>
+  <text x="650" y="428" font-size="11" fill="#c0392b">A 커밋 완료 (2.662s)</text>
+
+  <!-- dependency arrows: A.end -> children start -->
+  <path d="M 646,166 C 655,166 655,346 661,346" fill="none" stroke="#c0392b" stroke-width="1.6" marker-end="url(#dep)"/>
+  <path d="M 646,166 C 653,166 653,389 661,389" fill="none" stroke="#c0392b" stroke-width="1.6" marker-end="url(#dep)"/>
+  <text x="235" y="326" font-size="11.5" font-weight="700" fill="#c0392b">부모 의존: 두 자식 모두 A 커밋(2217|8600) 뒤 시작 (+0.097s)</text>
+
+  <!-- sibling parallel bracket -->
+  <line x1="661" y1="322" x2="1093" y2="322" stroke="#1e8449" stroke-width="1.4"/>
+  <line x1="661" y1="318" x2="661" y2="326" stroke="#1e8449" stroke-width="1.4"/>
+  <line x1="1093" y1="318" x2="1093" y2="326" stroke="#1e8449" stroke-width="1.4"/>
+  <text x="877" y="315" text-anchor="middle" font-size="12" font-weight="700" fill="#1e8449">형제 병렬 — 겹침 +2.695s (w0 ∥ w4)</text>
+
+  <line x1="70" y1="472" x2="1130" y2="472" stroke="#ddd" stroke-width="1"/>
+  <text x="70" y="496" font-size="12.5" fill="#333"><tspan font-weight="700">같은 부모 행 참조 판정</tspan>: Achild1·Achild2의 dep가 <tspan font-family="monospace" fill="#1e8449">2217|8600</tspan>로 동일 = 둘 다 부모 A만 가리킴(서로 미의존). 그래서 부모 뒤에서 형제끼리 병렬로 적용된다.</text>
+  <text x="70" y="518" font-size="12.5" fill="#333"><tspan font-weight="700">MySQL 대비</tspan>: 같은 시나리오에서 MySQL은 부모행 공유 자식이 last_committed 사슬로 묶여(Achild2 dep=Achild1) 겹침 0의 완전 직렬(#110071). rw슬롯이 이 사슬을 끊어 병렬을 연다.</text>
+  <text x="70" y="540" font-size="12.5" fill="#333"><tspan font-weight="700">head-blocking 부재</tspan>: 독립 B·C·D는 A 실행 중(+0.13~0.19s) 겹쳐 시작 — 부모 완료를 안 기다림.</text>
+
+  <text x="1130" y="566" text-anchor="end" font-size="10.5" fill="#aaa">원자료: ha_bench_tool/reports/headblock_20260912_121317/ws_apply.log</text>
+</svg>

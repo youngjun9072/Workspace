@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="650" viewBox="0 0 1500 650">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L10,3 L0,6 Z" fill="#445062"/></marker>
+    <style>.title{font:700 27px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#26303d}.sub{font:400 14px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#6b7a8d}.h{font:700 17px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#26303d}.t{font:400 14px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#445062}.small{font:400 12px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#596678}.mono{font:600 13px ui-monospace,SFMono-Regular,Consolas,monospace;fill:#26303d}.panel{fill:#f8fafc;stroke:#aab4c2;stroke-width:1.5;stroke-dasharray:7 5}.orange{fill:#fff3e7;stroke:#d9822b;stroke-width:2}.green{fill:#e8f5ec;stroke:#3FA35B;stroke-width:2}.blue{fill:#e8f0fb;stroke:#2C7BE5;stroke-width:2}.arrow{fill:none;stroke:#445062;stroke-width:2;marker-end:url(#arrow)}</style>
+  </defs>
+  <rect width="1500" height="650" fill="#fff"/>
+  <text x="50" y="50" class="title">같은 부모를 참조하는 자식이 사슬로 연결되는 이유</text>
+  <text x="50" y="78" class="sub">부모 폴백 뒤 비어 있는 전역 history의 동일 FK 해시 슬롯을 자식들이 차례로 점유한다</text>
+
+  <rect x="45" y="112" width="310" height="420" rx="14" class="panel"/>
+  <text x="67" y="146" class="h">① 부모 T2 · seq=2</text>
+  <rect x="68" y="174" width="264" height="122" rx="10" class="orange"/>
+  <text x="88" y="205" class="h">commit-order 폴백</text>
+  <text x="88" y="240" class="mono">history_start ← 2</text>
+  <text x="88" y="270" class="mono">history = { }</text>
+  <rect x="68" y="328" width="264" height="152" rx="10" fill="#fff" stroke="#8a99ab"/>
+  <text x="88" y="359" class="h">부모 키 해시</text>
+  <text x="88" y="393" class="mono">H(parent, 1)</text>
+  <text x="88" y="426" class="t">추출돼도 history에는</text>
+  <text x="88" y="451" class="t">게시되지 않는다</text>
+
+  <rect x="405" y="112" width="310" height="420" rx="14" class="panel"/>
+  <text x="427" y="146" class="h">② 첫째 자식 T4 · seq=4</text>
+  <rect x="428" y="174" width="264" height="122" rx="10" class="blue"/>
+  <text x="448" y="205" class="h">동일 FK 해시 조회</text>
+  <text x="448" y="240" class="mono">H(parent, 1) → 없음</text>
+  <text x="448" y="270" class="mono">LC(T4) = 2</text>
+  <rect x="428" y="328" width="264" height="152" rx="10" class="green"/>
+  <text x="448" y="359" class="h">새 슬롯 생성</text>
+  <text x="448" y="395" class="mono">history[H(parent,1)]</text>
+  <text x="525" y="425" class="mono">← 4</text>
+  <text x="448" y="458" class="small">슬롯의 주인 = 첫째 자식</text>
+
+  <rect x="765" y="112" width="310" height="420" rx="14" class="panel"/>
+  <text x="787" y="146" class="h">③ 둘째 자식 T5 · seq=5</text>
+  <rect x="788" y="174" width="264" height="122" rx="10" class="blue"/>
+  <text x="808" y="205" class="h">동일 FK 해시 발견</text>
+  <text x="808" y="240" class="mono">H(parent, 1) → 4</text>
+  <text x="808" y="270" class="mono">LC(T5) = 4</text>
+  <rect x="788" y="328" width="264" height="152" rx="10" class="green"/>
+  <text x="808" y="359" class="h">슬롯 주인 교체</text>
+  <text x="808" y="395" class="mono">history[H(parent,1)]</text>
+  <text x="885" y="425" class="mono">← 5</text>
+  <text x="808" y="458" class="small">앞 자식이 선행 관계가 됨</text>
+
+  <rect x="1125" y="112" width="330" height="420" rx="14" class="panel"/>
+  <text x="1147" y="146" class="h">④ 다음 자식 T6</text>
+  <rect x="1148" y="174" width="284" height="122" rx="10" class="blue"/>
+  <text x="1168" y="205" class="h">다시 같은 슬롯 발견</text>
+  <text x="1168" y="240" class="mono">H(parent, 1) → 5</text>
+  <text x="1168" y="270" class="mono">LC(T6) = 5</text>
+  <rect x="1148" y="328" width="284" height="152" rx="10" fill="#fff0f0" stroke="#c94b4b" stroke-width="2"/>
+  <text x="1168" y="359" class="h">과직렬화 결과</text>
+  <text x="1168" y="397" class="mono">T4 → T5 → T6</text>
+  <text x="1168" y="430" class="t">서로 다른 자식 행이지만</text>
+  <text x="1168" y="458" class="t">참조만으로 사슬이 된다</text>
+
+  <path d="M355 322 H397" class="arrow"/><path d="M715 322 H757" class="arrow"/><path d="M1075 322 H1117" class="arrow"/>
+  <rect x="288" y="569" width="924" height="51" rx="9" fill="#efe6f7" stroke="#9b6fc4"/>
+  <text x="315" y="601" class="h" style="fill:#5e3a8c">필요한 관계: 부모 T2 → 각 자식　　실제 관계: T2 → T4 → T5 → T6</text>
+</svg>

@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1280" viewBox="0 0 1400 1280">
+  <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#475569"/></marker></defs>
+  <style>
+    text{font-family:Arial,'Noto Sans KR',sans-serif;fill:#172033}.title{font-size:26px;font-weight:700}.head{font-size:22px;font-weight:700}.body{font-size:16px}.small{font-size:14px}.mark{font-size:22px;font-weight:700;fill:#dc2626}
+    .boundary{rx:16;fill:#fff;stroke:#94a3b8;stroke-width:2}.fn{rx:10;fill:#f8fafc;stroke:#64748b;stroke-width:2}.key{rx:10;fill:#eff6ff;stroke:#3b82f6;stroke-width:2}.state{rx:10;fill:#ecfdf5;stroke:#10b981;stroke-width:2}.flow{stroke:#475569;stroke-width:2;fill:none;marker-end:url(#arrow)}
+  </style>
+  <rect width="1400" height="1380" fill="#fff"/>
+  <text x="32" y="40" class="title">UPDATE: old/new 인덱스별 순차 처리에 writeset 수집 추가</text>
+  <line x1="700" y1="70" x2="700" y2="1220" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="350" y="82" text-anchor="middle" class="head">AS-IS</text><text x="1050" y="82" text-anchor="middle" class="head">TO-BE</text>
+
+  <g transform="translate(0,-100)">
+  <rect x="30" y="205" width="640" height="1085" class="boundary"/><text x="55" y="241" class="body">UPDATE 인덱스 처리</text>
+  <rect x="730" y="205" width="640" height="1085" class="boundary"/><text x="755" y="241" class="body">UPDATE 인덱스 처리</text>
+
+  <!-- To-Be-only synchronous collection; overlays have padding and do not touch common boxes. -->
+  <rect x="795" y="458" width="510" height="130" rx="18" fill="#ef4444" fill-opacity="0.08" stroke="#dc2626" stroke-width="3"/>
+  <rect x="795" y="818" width="510" height="116" rx="18" fill="#ef4444" fill-opacity="0.08" stroke="#dc2626" stroke-width="3"/>
+
+  <rect x="140" y="275" width="420" height="54" class="fn"/><text x="350" y="308" text-anchor="middle" class="body">인덱스 1개 선택 · 종류 확인</text>
+  <rect x="840" y="275" width="420" height="54" class="fn"/><text x="1050" y="308" text-anchor="middle" class="body">인덱스 1개 선택 · 종류 확인</text>
+  <path d="M350 329V375" class="flow"/><path d="M1050 329V375" class="flow"/>
+
+  <rect x="140" y="375" width="420" height="62" class="key"/><text x="350" y="401" text-anchor="middle" class="body">old key · new key 추출</text><text x="350" y="425" text-anchor="middle" class="small">같은 키인지 비교</text>
+  <rect x="840" y="375" width="420" height="62" class="key"/><text x="1050" y="401" text-anchor="middle" class="body">old key · new key 추출</text><text x="1050" y="425" text-anchor="middle" class="small">같은 키인지 비교</text>
+  <path d="M350 437V620" class="flow"/><path d="M1050 437V475" class="flow"/>
+
+  <rect x="815" y="475" width="470" height="88" class="fn"/><text x="825" y="502" class="mark">①</text><text x="1050" y="505" text-anchor="middle" class="body">index 종류에 따라 writeset 동기 수집</text><text x="1050" y="532" text-anchor="middle" class="small">UNIQUE: old WRITE + 변경 시 new WRITE</text><text x="1050" y="555" text-anchor="middle" class="small">child FK: old REF + 변경 시 new REF</text>
+  <path d="M1050 563V620" class="flow"/>
+
+  <rect x="140" y="620" width="420" height="62" class="fn"/><text x="350" y="658" text-anchor="middle" class="body">기존 index UPDATE · 필요 시 delete / insert</text>
+  <rect x="840" y="620" width="420" height="62" class="fn"/><text x="1050" y="658" text-anchor="middle" class="body">기존 index UPDATE · 필요 시 delete / insert</text>
+  <path d="M350 682V735" class="flow"/><path d="M1050 682V735" class="flow"/>
+
+  <rect x="140" y="735" width="420" height="62" class="fn"/><text x="350" y="762" text-anchor="middle" class="body">PK이면 replication key 보존</text><text x="350" y="786" text-anchor="middle" class="small">현재 인덱스 처리 결과 유지</text>
+  <rect x="840" y="735" width="420" height="62" class="fn"/><text x="1050" y="762" text-anchor="middle" class="body">PK이면 replication key 보존</text><text x="1050" y="786" text-anchor="middle" class="small">현재 인덱스 처리 결과 유지</text>
+  <path d="M350 797V970" class="flow"/><path d="M1050 797V835" class="flow"/>
+
+  <rect x="815" y="835" width="470" height="78" class="fn"/><text x="825" y="862" class="mark">②</text><text x="1050" y="882" text-anchor="middle" class="body">정상 경로: PK old/new를 WRITE로 동기 수집</text>
+  <path d="M1050 913V970" class="flow"/>
+
+  <rect x="140" y="970" width="420" height="48" class="fn"/><text x="350" y="1000" text-anchor="middle" class="body">다음 인덱스 / 순회 종료</text>
+  <rect x="840" y="970" width="420" height="48" class="fn"/><text x="1050" y="1000" text-anchor="middle" class="body">다음 인덱스 / 순회 종료</text>
+  <path d="M350 1018V1070" class="flow"/><path d="M1050 1018V1070" class="flow"/>
+
+  <rect x="140" y="1070" width="420" height="62" class="fn"/><text x="350" y="1108" text-anchor="middle" class="body">순회 종료 뒤 UPDATE 복제 정보 생성</text>
+  <rect x="840" y="1070" width="420" height="62" class="fn"/><text x="1050" y="1108" text-anchor="middle" class="body">순회 종료 뒤 UPDATE 복제 정보 생성</text>
+  <path d="M350 1132V1190" class="flow"/><path d="M1050 1132V1190" class="flow"/>
+
+  <rect x="140" y="1190" width="420" height="68" class="state"/><text x="350" y="1231" text-anchor="middle" class="body">UPDATE 복제 정보 유지</text>
+  <rect x="840" y="1190" width="420" height="68" class="state"/><text x="1050" y="1217" text-anchor="middle" class="body">UPDATE 복제 정보 + writeset 항목 유지</text><text x="1050" y="1243" text-anchor="middle" class="small">현재 LOG_TDES가 commit/abort까지 소유</text>
+  </g>
+  <text x="700" y="1240" text-anchor="middle" class="small">예외 경로의 old PK 수집 조건은 그림 아래 코드 대응 설명에서 구분한다.</text>
+</svg>

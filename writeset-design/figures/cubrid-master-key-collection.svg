@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="840" viewBox="0 0 1400 840">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/>
+    </marker>
+    <style>
+      .title { font: 700 31px 'Noto Sans KR', sans-serif; fill: #0f172a; }
+      .subtitle { font: 500 17px 'Noto Sans KR', sans-serif; fill: #475569; }
+      .head { font: 700 20px 'Noto Sans KR', sans-serif; fill: #0f172a; }
+      .body { font: 500 17px 'Noto Sans KR', sans-serif; fill: #334155; }
+      .small { font: 500 15px 'Noto Sans KR', sans-serif; fill: #475569; }
+      .mono { font: 500 15px 'Noto Sans Mono CJK KR', monospace; fill: #475569; }
+      .line { fill: none; stroke: #475569; stroke-width: 2.6; marker-end: url(#arrow); }
+      .input { fill: #f8fafc; stroke: #64748b; stroke-width: 2.2; rx: 14; }
+      .process { fill: #fff7ed; stroke: #ea580c; stroke-width: 2.3; rx: 14; }
+      .ref { fill: #eff6ff; stroke: #2563eb; stroke-width: 2.3; rx: 14; }
+      .write { fill: #fff1f2; stroke: #e11d48; stroke-width: 2.3; rx: 14; }
+      .entry { fill: #f0fdf4; stroke: #16a34a; stroke-width: 2.3; rx: 14; }
+      .store { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 2.3; rx: 14; }
+    </style>
+  </defs>
+
+  <rect width="1400" height="840" fill="#ffffff"/>
+  <text x="700" y="50" text-anchor="middle" class="title">행 하나에서 writeset entry 만들기</text>
+  <text x="700" y="80" text-anchor="middle" class="subtitle">DML이 선택한 행 이미지를 인덱스별 충돌 키로 바꾸고 WRITE·REF 종류와 함께 저장한다</text>
+
+  <rect x="80" y="112" width="360" height="82" class="input"/>
+  <text x="260" y="145" text-anchor="middle" class="head">INSERT</text>
+  <text x="260" y="174" text-anchor="middle" class="body">new row</text>
+
+  <rect x="520" y="112" width="360" height="82" class="input"/>
+  <text x="700" y="145" text-anchor="middle" class="head">DELETE</text>
+  <text x="700" y="174" text-anchor="middle" class="body">old row</text>
+
+  <rect x="960" y="112" width="360" height="82" class="input"/>
+  <text x="1140" y="145" text-anchor="middle" class="head">UPDATE</text>
+  <text x="1140" y="174" text-anchor="middle" class="body">old row + new row</text>
+
+  <path d="M260 194 L260 222 L535 244" class="line"/>
+  <path d="M700 194 L700 238" class="line"/>
+  <path d="M1140 194 L1140 222 L865 244" class="line"/>
+  <rect x="445" y="238" width="510" height="76" class="process"/>
+  <text x="700" y="268" text-anchor="middle" class="head">DML 종류에 따라 처리할 행 선택</text>
+  <text x="700" y="295" text-anchor="middle" class="small">INSERT=new · DELETE=old · UPDATE=old와 new를 각각 처리</text>
+
+  <path d="M700 314 L700 350" class="line"/>
+  <rect x="445" y="350" width="510" height="78" class="process"/>
+  <text x="700" y="381" text-anchor="middle" class="head">인덱스별 제약 키 추출</text>
+  <text x="700" y="409" text-anchor="middle" class="small">한 행에서 여러 인덱스 키가 나올 수 있음</text>
+
+  <path d="M700 428 L700 456 L355 480" class="line"/>
+  <path d="M700 428 L700 456 L1045 480" class="line"/>
+  <rect x="75" y="480" width="560" height="118" class="write"/>
+  <text x="355" y="514" text-anchor="middle" class="head">PK · UNIQUE · REVERSE UNIQUE → WRITE</text>
+  <text x="355" y="546" text-anchor="middle" class="body">현재 클래스·인덱스 공간의 키를 해시</text>
+  <text x="355" y="576" text-anchor="middle" class="mono">log_writeset_add_dbvalue()</text>
+
+  <rect x="765" y="480" width="560" height="118" class="ref"/>
+  <text x="1045" y="514" text-anchor="middle" class="head">자식 FOREIGN KEY → REF</text>
+  <text x="1045" y="546" text-anchor="middle" class="body">참조 대상 부모 PK 공간의 키를 해시</text>
+  <text x="1045" y="576" text-anchor="middle" class="mono">locator_writeset_collect_fk_ref() → log_writeset_add_ref_dbvalue()</text>
+
+  <path d="M355 598 L355 624 L540 646" class="line"/>
+  <path d="M1045 598 L1045 624 L860 646" class="line"/>
+  <rect x="350" y="638" width="700" height="100" class="entry"/>
+  <text x="700" y="670" text-anchor="middle" class="head">LOG_WRITESET_ENTRY { hash, kind } 여러 개</text>
+  <text x="700" y="701" text-anchor="middle" class="body">예: child(id=10, parent_id=7)</text>
+  <text x="700" y="725" text-anchor="middle" class="small">{ H(child PK,10), WRITE }  +  { H(parent PK,7), REF }</text>
+
+  <path d="M700 738 L700 766" class="line"/>
+  <rect x="430" y="766" width="540" height="58" class="store"/>
+  <text x="700" y="802" text-anchor="middle" class="head">현재 트랜잭션의 LOG_TDES.ws_hashes에 추가</text>
+</svg>

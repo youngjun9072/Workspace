@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2100" height="850" viewBox="0 0 2100 850">
+  <style>
+    text{font-family:Arial,'Noto Sans KR',sans-serif;fill:#172033}
+    .title{font-size:27px;font-weight:700}.head{font-size:21px;font-weight:700}
+    .code{font-family:'DejaVu Sans Mono','Noto Sans Mono CJK KR',monospace;font-size:16px;fill:#253047}
+    .new{fill:#b91c1c}.muted{fill:#64748b}
+  </style>
+  <rect width="2100" height="700" fill="#ffffff"/>
+  <text x="38" y="45" class="title">LOG_COMMIT 처리 · reader 직접 적용에서 task 배정으로 변경</text>
+  <line x1="1050" y1="70" x2="1050" y2="825" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="525" y="98" text-anchor="middle" class="head">AS-IS</text>
+  <text x="1575" y="98" text-anchor="middle" class="head">TO-BE</text>
+
+  <text x="45" y="140" class="code">reader thread</text>
+  <text x="45" y="170" class="code">la_apply_log_file()</text>
+  <text x="45" y="200" class="code">└─ 로그 레코드 반복</text>
+  <text x="45" y="230" class="code">   ├─ LOG_GET_LOG_RECORD_HEADER()</text>
+  <text x="45" y="260" class="code">   └─ la_log_record_process()</text>
+  <text x="45" y="290" class="code">      └─ case LOG_COMMIT</text>
+  <text x="45" y="320" class="code">         ├─ la_retrieve_eot_time()</text>
+  <text x="45" y="350" class="code">         ├─ la_add_node_into_la_commit_list()</text>
+  <text x="45" y="380" class="code">         │  ├─ LA_COMMIT 메모리 할당</text>
+  <text x="45" y="410" class="code">         │  ├─ trid·type·LSA·시간 저장</text>
+  <text x="45" y="440" class="code">         │  └─ commit_head/tail 끝에 연결</text>
+  <text x="45" y="470" class="code">         └─ la_apply_commit_list()</text>
+  <text x="45" y="500" class="code">            └─ la_apply_repl_log()</text>
+  <text x="45" y="550" class="code muted">reader가 같은 호출 흐름에서 DB 적용</text>
+
+  <text x="1090" y="140" class="code">reader/coordinator thread</text>
+  <text x="1090" y="170" class="code">la_apply_log_file()                              [CHANGED]</text>
+  <text x="1090" y="200" class="code">└─ 로그 레코드 반복</text>
+  <text x="1090" y="230" class="code">   ├─ LOG_GET_LOG_RECORD_HEADER()</text>
+  <text x="1090" y="260" class="code">   └─ la_log_record_process()                    [CHANGED]</text>
+  <text x="1090" y="290" class="code">      └─ case LOG_COMMIT</text>
+  <text x="1090" y="320" class="code">         ├─ la_retrieve_eot_time()</text>
+  <text x="1090" y="350" class="code">         ├─ la_add_node_into_la_commit_list()</text>
+  <text x="1090" y="380" class="code">         │  ├─ LA_COMMIT 메모리 할당</text>
+  <text x="1090" y="410" class="code">         │  ├─ trid·type·LSA·시간 저장</text>
+  <text x="1090" y="440" class="code">         │  └─ commit_head/tail 끝에 연결</text>
+  <text x="1090" y="470" class="code new">         ├─ LA_APPLY_TASK 필드 구성                 ✓ NEW</text>
+  <text x="1090" y="500" class="code new">         │  ├─ COMMIT 정보와 LA_APPLY 포인터 저장</text>
+  <text x="1090" y="530" class="code new">         │  └─ 같은 trid의 WS_LABEL 값을 dependency에 저장</text>
+  <text x="1090" y="560" class="code new">         ├─ la_gate_order_push()                   ✓ NEW</text>
+  <text x="1090" y="590" class="code new">         └─ la_gate_is_satisfied()                 ✓ NEW</text>
+  <text x="1090" y="620" class="code new">            ├─ true  → la_gate_dispatch_now()</text>
+  <text x="1090" y="650" class="code new">            │           └─ worker queue enqueue</text>
+  <text x="1090" y="680" class="code new">            └─ false → la_gate_enqueue_pending()</text>
+  <text x="1090" y="730" class="code muted">reader는 task를 배정하고 다음 로그로 전진</text>
+</svg>

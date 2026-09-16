@@ -1,0 +1,265 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1900" height="980" viewBox="0 0 1900 980" role="img" aria-labelledby="title desc">
+  <title id="title">writeset 기반 병렬 복제의 기본 아키텍처</title>
+  <desc id="desc">마스터에서 행 연산을 트랜잭션별 writeset 해시로 변환하고, 전역 히스토리 맵에서 충돌을 검사해 선행 관계를 커밋 로그에 기록한 뒤, 슬레이브의 의존성 게이트가 완료 상태와 비교하여 워커 실행 가능 여부를 판정하는 흐름이다.</desc>
+
+  <defs>
+    <style>
+      .bg { fill: #f7f9fc; }
+      .frame-master { fill: #f4f7fb; stroke: #7f8da1; stroke-width: 2; }
+      .frame-slave { fill: #f0f8f4; stroke: #27895b; stroke-width: 2; }
+      .panel { fill: #ffffff; stroke: #bcc7d4; stroke-width: 1.5; }
+      .panel-green { fill: #ffffff; stroke: #49a676; stroke-width: 1.5; }
+      .header { fill: #e7edf5; }
+      .header-green { fill: #dff2e7; }
+      .hash { fill: #edf4ff; stroke: #4d83c5; stroke-width: 1.5; }
+      .conflict { fill: #fff0ef; stroke: #d85b50; stroke-width: 1.5; }
+      .ready { fill: #e7f6ed; stroke: #28935d; stroke-width: 1.5; }
+      .wait { fill: #fff7e6; stroke: #d69a28; stroke-width: 1.5; }
+      .title { font: 700 30px 'Noto Sans CJK KR', 'Malgun Gothic', 'Droid Sans', sans-serif; fill: #172033; }
+      .subtitle { font: 400 16px 'Noto Sans CJK KR', 'Malgun Gothic', 'Droid Sans', sans-serif; fill: #536174; }
+      .zone { font: 700 23px 'Noto Sans CJK KR', 'Malgun Gothic', 'Droid Sans', sans-serif; fill: #263449; }
+      .stage { font: 700 18px 'Noto Sans CJK KR', 'Malgun Gothic', 'Droid Sans', sans-serif; fill: #263449; }
+      .body { font: 400 15px 'Noto Sans CJK KR', 'Malgun Gothic', 'Droid Sans', sans-serif; fill: #263449; }
+      .small { font: 400 13px 'Noto Sans CJK KR', 'Malgun Gothic', 'Droid Sans', sans-serif; fill: #536174; }
+      .tiny { font: 400 12px 'Noto Sans CJK KR', 'Malgun Gothic', 'Droid Sans', sans-serif; fill: #536174; }
+      .mono { font: 600 14px monospace; fill: #263449; }
+      .mono-small { font: 600 12px monospace; fill: #263449; }
+      .arrow { fill: none; stroke: #75859a; stroke-width: 2.3; marker-end: url(#arrow); }
+      .arrow-green { fill: none; stroke: #27895b; stroke-width: 2.5; marker-end: url(#arrow-green); }
+      .arrow-red { fill: none; stroke: #d85b50; stroke-width: 2.1; marker-end: url(#arrow-red); }
+      .grid { stroke: #d2dae4; stroke-width: 1; }
+      .dash { stroke-dasharray: 6 5; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#75859a"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#27895b"/>
+    </marker>
+    <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#d85b50"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1900" height="980"/>
+  <text class="title" x="55" y="52">writeset 기반 병렬 복제의 기본 아키텍처</text>
+  <text class="subtitle" x="55" y="80">행의 식별 키를 해시하여 전역 충돌을 찾고, 그 결과를 선행 관계로 전달해 슬레이브의 실행 순서를 결정한다.</text>
+
+  <rect class="frame-master" x="40" y="110" width="1370" height="790" rx="18"/>
+  <rect class="frame-slave" x="1445" y="110" width="415" height="790" rx="18"/>
+  <text class="zone" x="68" y="148">MASTER</text>
+  <text class="small" x="172" y="147">행 연산 → 의존성 라벨 생성</text>
+  <text class="zone" x="1473" y="148" fill="#197246">SLAVE</text>
+  <text class="small" x="1565" y="147">의존성 게이트 → 워커 실행</text>
+
+  <!-- System boundary: replication is transferred from master to slave. -->
+  <path class="arrow-green" d="M 1360 164 L 1450 164"/>
+  <text class="small" x="1405" y="146" text-anchor="middle">복제 로그 전송</text>
+
+  <!-- 1. Row operations -->
+  <rect class="panel" x="70" y="185" width="280" height="500" rx="12"/>
+  <rect class="header" x="70" y="185" width="280" height="54" rx="12"/>
+  <rect class="header" x="70" y="222" width="280" height="17"/>
+  <text class="stage" x="210" y="218" text-anchor="middle">1. 트랜잭션의 행 연산</text>
+  <text class="small" x="90" y="265">각 트랜잭션이 변경한 행</text>
+
+  <rect class="panel" x="90" y="292" width="240" height="184" rx="7"/>
+  <rect class="header" x="90" y="292" width="240" height="38" rx="7"/>
+  <line class="grid" x1="145" y1="292" x2="145" y2="476"/>
+  <line class="grid" x1="220" y1="292" x2="220" y2="476"/>
+  <line class="grid" x1="90" y1="330" x2="330" y2="330"/>
+  <line class="grid" x1="90" y1="378" x2="330" y2="378"/>
+  <line class="grid" x1="90" y1="426" x2="330" y2="426"/>
+  <text class="small" x="117" y="316" text-anchor="middle">TX</text>
+  <text class="small" x="182" y="316" text-anchor="middle">연산</text>
+  <text class="small" x="275" y="316" text-anchor="middle">행 식별 키</text>
+  <text class="mono" x="117" y="359" text-anchor="middle">T1</text>
+  <text class="small" x="182" y="359" text-anchor="middle">UPDATE</text>
+  <text class="mono" x="275" y="359" text-anchor="middle">K=10</text>
+  <text class="mono" x="117" y="407" text-anchor="middle">T2</text>
+  <text class="small" x="182" y="407" text-anchor="middle">UPDATE</text>
+  <text class="mono" x="275" y="407" text-anchor="middle">K=10</text>
+  <text class="mono" x="117" y="455" text-anchor="middle">T3</text>
+  <text class="small" x="182" y="455" text-anchor="middle">UPDATE</text>
+  <text class="mono" x="275" y="455" text-anchor="middle">K=20</text>
+
+  <rect class="hash" x="90" y="510" width="240" height="82" rx="8"/>
+  <text class="small" x="210" y="538" text-anchor="middle">행 자체가 아니라</text>
+  <text class="body" x="210" y="565" text-anchor="middle">충돌을 식별할 키를 수집</text>
+  <text class="tiny" x="210" y="620" text-anchor="middle">예: 테이블 · 인덱스 · 키 값</text>
+  <path class="arrow dash" d="M 210 476 L 210 510"/>
+
+  <!-- transform arrow -->
+  <path class="arrow" d="M 350 425 L 385 425"/>
+  <text class="small" x="368" y="407" text-anchor="middle">해시</text>
+
+  <!-- 2. Transaction-local writeset -->
+  <rect class="panel" x="385" y="185" width="285" height="500" rx="12"/>
+  <rect class="header" x="385" y="185" width="285" height="54" rx="12"/>
+  <rect class="header" x="385" y="222" width="285" height="17"/>
+  <text class="stage" x="527" y="218" text-anchor="middle">2. 트랜잭션별 writeset</text>
+  <text class="small" x="405" y="265">트랜잭션 내부의 해시 집합</text>
+
+  <rect class="panel" x="405" y="292" width="245" height="184" rx="7"/>
+  <rect class="header" x="405" y="292" width="245" height="38" rx="7"/>
+  <line class="grid" x1="475" y1="292" x2="475" y2="476"/>
+  <line class="grid" x1="405" y1="330" x2="650" y2="330"/>
+  <line class="grid" x1="405" y1="378" x2="650" y2="378"/>
+  <line class="grid" x1="405" y1="426" x2="650" y2="426"/>
+  <text class="small" x="440" y="316" text-anchor="middle">TX</text>
+  <text class="small" x="562" y="316" text-anchor="middle">writeset</text>
+  <text class="mono" x="440" y="359" text-anchor="middle">T1</text>
+  <text class="mono" x="562" y="359" text-anchor="middle">{ H(K=10) }</text>
+  <text class="mono" x="440" y="407" text-anchor="middle">T2</text>
+  <text class="mono" x="562" y="407" text-anchor="middle">{ H(K=10) }</text>
+  <text class="mono" x="440" y="455" text-anchor="middle">T3</text>
+  <text class="mono" x="562" y="455" text-anchor="middle">{ H(K=20) }</text>
+
+  <rect class="hash" x="405" y="510" width="245" height="112" rx="8"/>
+  <text class="mono-small" x="527" y="541" text-anchor="middle">H(table, index, key)</text>
+  <line class="grid" x1="425" y1="557" x2="630" y2="557"/>
+  <text class="small" x="527" y="582" text-anchor="middle">같은 논리 키 → 같은 해시</text>
+  <text class="small" x="527" y="605" text-anchor="middle">다른 논리 키 → 다른 해시</text>
+
+  <!-- compare arrow -->
+  <path class="arrow" d="M 670 425 L 705 425"/>
+  <text class="small" x="688" y="395" text-anchor="middle">커밋 시</text>
+  <text class="small" x="688" y="413" text-anchor="middle">대조</text>
+
+  <!-- 3. Global history -->
+  <rect class="panel" x="705" y="185" width="330" height="500" rx="12"/>
+  <rect class="header" x="705" y="185" width="330" height="54" rx="12"/>
+  <rect class="header" x="705" y="222" width="330" height="17"/>
+  <text class="stage" x="870" y="218" text-anchor="middle">3. 전역 히스토리 맵</text>
+  <text class="small" x="725" y="265">모든 커밋 트랜잭션의 최근 접근 이력</text>
+
+  <rect class="panel" x="725" y="292" width="290" height="136" rx="7"/>
+  <rect class="header" x="725" y="292" width="290" height="38" rx="7"/>
+  <line class="grid" x1="860" y1="292" x2="860" y2="428"/>
+  <line class="grid" x1="725" y1="330" x2="1015" y2="330"/>
+  <line class="grid" x1="725" y1="379" x2="1015" y2="379"/>
+  <text class="small" x="792" y="316" text-anchor="middle">키 해시</text>
+  <text class="small" x="937" y="316" text-anchor="middle">최근 커밋 순번</text>
+  <text class="mono" x="792" y="361" text-anchor="middle">H(K=10)</text>
+  <text class="mono" x="937" y="361" text-anchor="middle">seq(T1)=1</text>
+  <text class="mono" x="792" y="410" text-anchor="middle">H(K=20)</text>
+  <text class="mono" x="937" y="410" text-anchor="middle">없음</text>
+
+  <rect class="conflict" x="725" y="461" width="290" height="65" rx="8"/>
+  <text class="mono" x="745" y="487">T2: H(K=10)</text>
+  <text class="body" x="995" y="487" text-anchor="end">T1과 충돌</text>
+  <text class="small" x="870" y="511" text-anchor="middle">선행 트랜잭션 = T1</text>
+
+  <rect class="ready" x="725" y="541" width="290" height="65" rx="8"/>
+  <text class="mono" x="745" y="567">T3: H(K=20)</text>
+  <text class="body" x="995" y="567" text-anchor="end">충돌 없음</text>
+  <text class="small" x="870" y="591" text-anchor="middle">기존 선행 트랜잭션 없음</text>
+
+  <text class="tiny" x="870" y="640" text-anchor="middle">판정 후 해당 해시의 최근 순번을 현재 TX로 갱신</text>
+
+  <!-- dependency arrow -->
+  <path class="arrow" d="M 1035 425 L 1070 425"/>
+  <text class="small" x="1052" y="407" text-anchor="middle">라벨</text>
+
+  <!-- 4. Commit/dependency labels -->
+  <rect class="panel" x="1070" y="185" width="310" height="500" rx="12"/>
+  <rect class="header" x="1070" y="185" width="310" height="54" rx="12"/>
+  <rect class="header" x="1070" y="222" width="310" height="17"/>
+  <text class="stage" x="1225" y="208" text-anchor="middle">4. 커밋 순번과</text>
+  <text class="stage" x="1225" y="229" text-anchor="middle">선행 관계 확정</text>
+  <text class="small" x="1090" y="265">예시의 마스터 커밋 순서</text>
+
+  <rect class="panel" x="1090" y="292" width="270" height="184" rx="7"/>
+  <rect class="header" x="1090" y="292" width="270" height="38" rx="7"/>
+  <line class="grid" x1="1150" y1="292" x2="1150" y2="476"/>
+  <line class="grid" x1="1220" y1="292" x2="1220" y2="476"/>
+  <line class="grid" x1="1090" y1="330" x2="1360" y2="330"/>
+  <line class="grid" x1="1090" y1="378" x2="1360" y2="378"/>
+  <line class="grid" x1="1090" y1="426" x2="1360" y2="426"/>
+  <text class="small" x="1120" y="316" text-anchor="middle">TX</text>
+  <text class="small" x="1185" y="316" text-anchor="middle">seq</text>
+  <text class="small" x="1290" y="316" text-anchor="middle">dependency</text>
+  <text class="mono" x="1120" y="359" text-anchor="middle">T1</text>
+  <text class="mono" x="1185" y="359" text-anchor="middle">1</text>
+  <text class="mono" x="1290" y="359" text-anchor="middle">0</text>
+  <text class="mono" x="1120" y="407" text-anchor="middle">T2</text>
+  <text class="mono" x="1185" y="407" text-anchor="middle">2</text>
+  <text class="mono" x="1290" y="407" text-anchor="middle">1 (T1)</text>
+  <text class="mono" x="1120" y="455" text-anchor="middle">T3</text>
+  <text class="mono" x="1185" y="455" text-anchor="middle">3</text>
+  <text class="mono" x="1290" y="455" text-anchor="middle">0</text>
+
+  <path class="arrow-red" d="M 1120 392 C 1060 390, 1060 350, 1120 350"/>
+  <text class="small" x="1225" y="515" text-anchor="middle">충돌한 T2만 T1 뒤에 연결</text>
+  <rect class="ready" x="1090" y="541" width="270" height="68" rx="8"/>
+  <text class="body" x="1225" y="568" text-anchor="middle">의존 그래프</text>
+  <text class="mono" x="1225" y="592" text-anchor="middle">T1 → T2    T3 독립</text>
+  <text class="tiny" x="1225" y="640" text-anchor="middle">트랜잭션을 재정렬하지 않고 선행 관계를 기록</text>
+
+  <!-- Replication log channel -->
+  <rect class="hash" x="1015" y="735" width="365" height="112" rx="10"/>
+  <text class="stage" x="1035" y="767">복제 로그</text>
+  <rect class="panel" x="1035" y="786" width="98" height="38" rx="6"/>
+  <rect class="conflict" x="1143" y="786" width="98" height="38" rx="6"/>
+  <rect class="ready" x="1251" y="786" width="108" height="38" rx="6"/>
+  <text class="mono-small" x="1084" y="810" text-anchor="middle">T1 1/0</text>
+  <text class="mono-small" x="1192" y="810" text-anchor="middle">T2 2/1</text>
+  <text class="mono-small" x="1305" y="810" text-anchor="middle">T3 3/0</text>
+  <text class="tiny" x="1197" y="839" text-anchor="middle">트랜잭션 데이터 + seq/dependency</text>
+  <path class="arrow" d="M 1225 685 L 1225 735"/>
+
+  <!-- Slave -->
+  <rect class="panel-green" x="1470" y="185" width="365" height="150" rx="12"/>
+  <rect class="header-green" x="1470" y="185" width="365" height="48" rx="12"/>
+  <rect class="header-green" x="1470" y="220" width="365" height="13"/>
+  <text class="stage" x="1652" y="216" text-anchor="middle">5. 수신한 복제 로그</text>
+  <rect class="panel" x="1495" y="257" width="94" height="42" rx="6"/>
+  <rect class="conflict" x="1605" y="257" width="94" height="42" rx="6"/>
+  <rect class="ready" x="1715" y="257" width="94" height="42" rx="6"/>
+  <text class="mono-small" x="1542" y="283" text-anchor="middle">T1 1/0</text>
+  <text class="mono-small" x="1652" y="283" text-anchor="middle">T2 2/1</text>
+  <text class="mono-small" x="1762" y="283" text-anchor="middle">T3 3/0</text>
+
+  <path class="arrow-green" d="M 1652 335 L 1652 377"/>
+
+  <rect class="panel-green" x="1470" y="377" width="365" height="233" rx="12"/>
+  <rect class="header-green" x="1470" y="377" width="365" height="48" rx="12"/>
+  <rect class="header-green" x="1470" y="412" width="365" height="13"/>
+  <text class="stage" x="1652" y="408" text-anchor="middle">6. 의존성 게이트 모듈</text>
+  <rect class="hash" x="1495" y="444" width="315" height="76" rx="8"/>
+  <text class="small" x="1652" y="467" text-anchor="middle">입력: 트랜잭션 T의 선행 관계</text>
+  <text class="mono-small" x="1652" y="490" text-anchor="middle">runnable(T) ⇔</text>
+  <text class="mono-small" x="1652" y="507" text-anchor="middle">predecessors(T) ⊆ applied</text>
+  <text class="tiny" x="1652" y="518" text-anchor="middle">참이면 워커 배정 · 거짓이면 완료 대기</text>
+
+  <rect class="ready" x="1495" y="535" width="145" height="55" rx="8"/>
+  <rect class="wait" x="1665" y="535" width="145" height="55" rx="8"/>
+  <text class="mono" x="1567" y="559" text-anchor="middle">T1 · T3</text>
+  <text class="small" x="1567" y="579" text-anchor="middle">실행 가능</text>
+  <text class="mono" x="1737" y="559" text-anchor="middle">T2</text>
+  <text class="small" x="1737" y="579" text-anchor="middle">T1 완료 대기</text>
+
+  <path class="arrow-green" d="M 1567 610 L 1567 656"/>
+  <path class="arrow" d="M 1737 610 C 1737 635, 1725 642, 1700 656"/>
+
+  <rect class="panel-green" x="1470" y="656" width="365" height="191" rx="12"/>
+  <text class="stage" x="1652" y="689" text-anchor="middle">의존성 판정 결과</text>
+  <rect class="ready" x="1510" y="718" width="82" height="48" rx="8"/>
+  <rect class="wait" x="1640" y="718" width="82" height="48" rx="8"/>
+  <rect class="ready" x="1750" y="718" width="62" height="48" rx="8"/>
+  <text class="mono" x="1551" y="748" text-anchor="middle">T1</text>
+  <text class="mono" x="1681" y="748" text-anchor="middle">T2</text>
+  <text class="mono" x="1781" y="748" text-anchor="middle">T3</text>
+  <path class="arrow-red" d="M 1592 742 L 1640 742"/>
+  <text class="small" x="1616" y="723" text-anchor="middle">선행</text>
+  <text class="small" x="1781" y="788" text-anchor="middle">독립</text>
+  <text class="tiny" x="1652" y="817" text-anchor="middle">실제 워커 배정과 실행 시점은 스케줄러 정책에 따라 달라진다.</text>
+
+  <rect x="70" y="718" width="900" height="130" rx="10" fill="#172033"/>
+  <text x="95" y="754" font-family="Noto Sans CJK KR, Malgun Gothic, Droid Sans, sans-serif" font-size="17" font-weight="700" fill="#ffffff">핵심 원리</text>
+  <text x="95" y="786" font-family="Noto Sans CJK KR, Malgun Gothic, Droid Sans, sans-serif" font-size="15" fill="#ffffff">전역 히스토리 맵은 같은 키 해시가 겹친 트랜잭션만 선행 관계로 연결한다.</text>
+  <text x="95" y="815" font-family="Noto Sans CJK KR, Malgun Gothic, Droid Sans, sans-serif" font-size="15" fill="#ffffff">슬레이브는 데이터 자체를 다시 비교하지 않고, 마스터가 기록한 의존 라벨과 자신의 완료 상태만으로 실행 여부를 판단한다.</text>
+
+  <text class="tiny" x="950" y="942" text-anchor="middle">개념도: 실제 키 구성, 로그 레코드 형식, 완료 경계 명칭은 DBMS 구현에 따라 달라질 수 있다.</text>
+</svg>
+

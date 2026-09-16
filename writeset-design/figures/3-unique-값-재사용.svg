@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1700" height="820" viewBox="0 0 1700 820" role="img" aria-labelledby="title desc">
+  <title id="title">UNIQUE 값 재사용 순서를 LC에 기록하는 과정</title>
+  <desc id="desc">마스터에서 email X를 삭제한 뒤 다른 PK로 재사용할 때, PK만 해시하면 T1에서 T2로 이어지는 선행 관계가 LC에 기록되지 않아 리플리카의 적용 순서가 보장되지 않는다. UNIQUE 값도 해시하면 T2의 LC가 T1의 sequence number를 가리켜 안전한 적용 순서를 보장한다.</desc>
+
+  <defs>
+    <style>
+      .bg { fill: #f7f9fc; }
+      .frame { fill: #f4f7fb; stroke: #7f8da1; stroke-width: 2; }
+      .unsafe-frame { fill: #fff8f7; stroke: #d85b50; stroke-width: 2; }
+      .safe-frame { fill: #f2faf5; stroke: #28935d; stroke-width: 2; }
+      .panel { fill: #ffffff; stroke: #bcc7d4; stroke-width: 1.5; }
+      .header { fill: #e7edf5; }
+      .hash { fill: #edf4ff; stroke: #4d83c5; stroke-width: 1.5; }
+      .danger { fill: #fff0ef; stroke: #d85b50; stroke-width: 1.5; }
+      .safe { fill: #e7f6ed; stroke: #28935d; stroke-width: 1.5; }
+      .warn { fill: #fff7e6; stroke: #d69a28; stroke-width: 1.5; }
+      .title { font: 700 30px 'Noto Sans CJK KR', 'Malgun Gothic', sans-serif; fill: #172033; }
+      .subtitle { font: 400 16px 'Noto Sans CJK KR', 'Malgun Gothic', sans-serif; fill: #536174; }
+      .zone { font: 700 22px 'Noto Sans CJK KR', 'Malgun Gothic', sans-serif; fill: #263449; }
+      .stage { font: 700 18px 'Noto Sans CJK KR', 'Malgun Gothic', sans-serif; fill: #263449; }
+      .body { font: 400 15px 'Noto Sans CJK KR', 'Malgun Gothic', sans-serif; fill: #263449; }
+      .small { font: 400 13px 'Noto Sans CJK KR', 'Malgun Gothic', sans-serif; fill: #536174; }
+      .mono { font: 600 14px monospace; fill: #263449; }
+      .mono-small { font: 600 12px monospace; fill: #263449; }
+      .arrow { fill: none; stroke: #75859a; stroke-width: 2.3; marker-end: url(#arrow); }
+      .arrow-red { fill: none; stroke: #d85b50; stroke-width: 2.3; marker-end: url(#arrow-red); }
+      .arrow-green { fill: none; stroke: #28935d; stroke-width: 2.3; marker-end: url(#arrow-green); }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#75859a"/>
+    </marker>
+    <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#d85b50"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#28935d"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1700" height="820"/>
+  <text class="title" x="50" y="50">UNIQUE 값 재사용: 필요한 순서를 LC에 기록하기</text>
+  <text class="subtitle" x="50" y="79">UNIQUE가 순서를 뒤집는 것이 아니라, UNIQUE 해시가 없으면 T1→T2 의존성이 LC에서 빠진다.</text>
+
+  <!-- Master input -->
+  <rect class="frame" x="45" y="115" width="440" height="645" rx="18"/>
+  <text class="zone" x="70" y="153">MASTER</text>
+  <text class="small" x="170" y="152">커밋 순서 T1 → T2</text>
+
+  <rect class="panel" x="70" y="180" width="390" height="90" rx="10"/>
+  <text class="stage" x="90" y="211">초기 상태</text>
+  <text class="mono" x="90" y="240">t(id=1, email='X')</text>
+  <text class="small" x="315" y="240">id: PK · email: UNIQUE</text>
+
+  <path class="arrow" d="M 265 270 L 265 310"/>
+  <rect class="panel" x="70" y="310" width="390" height="145" rx="10"/>
+  <rect class="header" x="70" y="310" width="390" height="42" rx="10"/>
+  <rect class="header" x="70" y="342" width="390" height="10"/>
+  <text class="stage" x="90" y="338">T1 · seq=1</text>
+  <text class="mono" x="90" y="382">DELETE WHERE id=1</text>
+  <text class="body" x="90" y="410">email='X'를 비운다</text>
+  <rect class="hash" x="285" y="368" width="150" height="58" rx="7"/>
+  <text class="mono-small" x="360" y="391" text-anchor="middle">H(PK,1)</text>
+  <text class="mono-small" x="360" y="413" text-anchor="middle">H(UNIQUE,X)</text>
+
+  <path class="arrow" d="M 265 455 L 265 495"/>
+  <rect class="panel" x="70" y="495" width="390" height="145" rx="10"/>
+  <rect class="header" x="70" y="495" width="390" height="42" rx="10"/>
+  <rect class="header" x="70" y="527" width="390" height="10"/>
+  <text class="stage" x="90" y="523">T2 · seq=2</text>
+  <text class="mono" x="90" y="567">INSERT (2, 'X')</text>
+  <text class="body" x="90" y="595">비워진 email='X'를 재사용한다</text>
+  <rect class="hash" x="285" y="553" width="150" height="58" rx="7"/>
+  <text class="mono-small" x="360" y="576" text-anchor="middle">H(PK,2)</text>
+  <text class="mono-small" x="360" y="598" text-anchor="middle">H(UNIQUE,X)</text>
+
+  <rect x="70" y="675" width="390" height="58" rx="9" fill="#172033"/>
+  <text x="265" y="700" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="14" fill="#ffffff">마스터에서는 T1이 'X'를 비운 뒤</text>
+  <text x="265" y="721" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="14" fill="#ffffff">T2가 같은 값을 사용하므로 정상</text>
+
+  <!-- Split -->
+  <path class="arrow-red" d="M 485 335 C 520 335, 520 255, 555 255"/>
+  <path class="arrow-green" d="M 485 540 C 520 540, 520 600, 555 600"/>
+
+  <!-- Unsafe branch -->
+  <rect class="unsafe-frame" x="555" y="115" width="1100" height="300" rx="18"/>
+  <text class="zone" x="580" y="153" fill="#b8453d">PK만 해시한 경우</text>
+  <text class="small" x="790" y="152">서로 다른 PK → 충돌 없음 → 독립 실행으로 잘못 판정</text>
+
+  <rect class="hash" x="585" y="185" width="250" height="120" rx="10"/>
+  <text class="stage" x="710" y="215" text-anchor="middle">writeset 비교</text>
+  <text class="mono" x="610" y="250">T1 = { H(PK,1) }</text>
+  <text class="mono" x="610" y="278">T2 = { H(PK,2) }</text>
+  <text class="small" x="710" y="296" text-anchor="middle">공통 해시 없음</text>
+
+  <path class="arrow-red" d="M 835 245 L 900 245"/>
+  <rect class="warn" x="900" y="185" width="300" height="120" rx="10"/>
+  <text class="stage" x="1050" y="215" text-anchor="middle">선행 관계가 LC에서 누락</text>
+  <text class="mono-small" x="1050" y="247" text-anchor="middle">T1: seq=1, LC=0</text>
+  <text class="mono-small" x="1050" y="271" text-anchor="middle">T2: seq=2, LC=0</text>
+  <text class="small" x="1050" y="296" text-anchor="middle">같은 LC → 병렬 실행 가능</text>
+
+  <path class="arrow-red" d="M 1200 245 L 1265 245"/>
+  <rect class="danger" x="1265" y="185" width="360" height="120" rx="10"/>
+  <text class="stage" x="1445" y="215" text-anchor="middle">리플리카 적용 순서 미보장</text>
+  <text class="mono-small" x="1445" y="245" text-anchor="middle">T2 INSERT가 먼저 실행될 수 있음</text>
+  <text class="body" x="1445" y="271" text-anchor="middle">기존 'X'와 충돌 → UNIQUE 위반</text>
+  <text class="small" x="1445" y="294" text-anchor="middle">T1 완료를 기다릴 근거가 없음</text>
+
+  <rect class="danger" x="585" y="330" width="1040" height="55" rx="8"/>
+  <text class="body" x="1105" y="364" text-anchor="middle">UNIQUE 해시 누락 → LC 의존성 누락 → T2 선실행 가능. 역전은 원인이 아니라 누락의 결과다.</text>
+
+  <!-- Safe branch -->
+  <rect class="safe-frame" x="555" y="450" width="1100" height="310" rx="18"/>
+  <text class="zone" x="580" y="488" fill="#197246">PK와 UNIQUE를 함께 해시한 경우</text>
+  <text class="small" x="900" y="487">같은 UNIQUE 해시 → T1이 T2의 선행 트랜잭션</text>
+
+  <rect class="hash" x="585" y="520" width="280" height="125" rx="10"/>
+  <text class="stage" x="725" y="550" text-anchor="middle">writeset 비교</text>
+  <text class="mono-small" x="610" y="582">T1 = { H(PK,1), H(UQ,X) }</text>
+  <text class="mono-small" x="610" y="608">T2 = { H(PK,2), H(UQ,X) }</text>
+  <text class="small" x="725" y="632" text-anchor="middle">H(UQ,X)가 충돌</text>
+
+  <path class="arrow-green" d="M 865 582 L 925 582"/>
+  <rect class="safe" x="925" y="520" width="300" height="125" rx="10"/>
+  <text class="stage" x="1075" y="550" text-anchor="middle">선행 관계가 LC에 기록</text>
+  <text class="mono-small" x="1075" y="582" text-anchor="middle">T1: seq=1, LC=0</text>
+  <text class="mono-small" x="1075" y="606" text-anchor="middle">T2: seq=2, LC=1</text>
+  <text class="small" x="1075" y="632" text-anchor="middle">T2는 seq=1 완료 대기</text>
+
+  <path class="arrow-green" d="M 1225 582 L 1285 582"/>
+  <rect class="safe" x="1285" y="520" width="340" height="125" rx="10"/>
+  <text class="stage" x="1455" y="550" text-anchor="middle">리플리카 적용</text>
+  <text class="mono" x="1455" y="582" text-anchor="middle">T1 DELETE → T2 INSERT</text>
+  <text class="small" x="1455" y="614" text-anchor="middle">먼저 'X'를 비운 뒤 재사용 → 정상</text>
+
+  <rect class="safe" x="585" y="675" width="1040" height="55" rx="8"/>
+  <text class="body" x="1105" y="709" text-anchor="middle">UNIQUE 값도 충돌 키에 포함해야 PK가 다른 행 사이의 값 해제·재사용 순서를 보장할 수 있다.</text>
+</svg>

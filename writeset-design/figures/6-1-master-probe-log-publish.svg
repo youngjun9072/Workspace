@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="790" viewBox="0 0 1600 790">
+  <defs>
+    <style>
+      .title{font:700 30px sans-serif;fill:#0f172a}
+      .sub{font:500 17px sans-serif;fill:#475569}
+      .phase{font:700 21px sans-serif;fill:#0f172a}
+      .head{font:700 18px sans-serif;fill:#0f172a}
+      .body{font:500 16px sans-serif;fill:#334155}
+      .small{font:500 14px sans-serif;fill:#64748b}
+      .box{fill:#fff;stroke:#94a3b8;stroke-width:2;rx:14}
+      .probe{fill:#eff6ff;stroke:#3b82f6}
+      .log{fill:#f0fdf4;stroke:#16a34a}
+      .publish{fill:#fff7ed;stroke:#ea580c}
+      .success{fill:#f5f3ff;stroke:#7c3aed}
+      .fail{fill:#fff1f2;stroke:#e11d48}
+      .arrow{fill:none;stroke:#475569;stroke-width:2.5;marker-end:url(#arrow)}
+      .goodArrow{fill:none;stroke:#15803d;stroke-width:2.5;marker-end:url(#green)}
+      .badArrow{fill:none;stroke:#be123c;stroke-width:2.4;stroke-dasharray:8 6;marker-end:url(#red)}
+      .lock{fill:none;stroke:#64748b;stroke-width:2;stroke-dasharray:7 6}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#475569"/></marker>
+    <marker id="green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#15803d"/></marker>
+    <marker id="red" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#be123c"/></marker>
+  </defs>
+
+  <rect width="1600" height="790" fill="#fff"/>
+  <text x="50" y="52" class="title">커밋 경계에서 history를 읽고 게시하는 순서</text>
+  <text x="50" y="84" class="sub">과거 이력은 dependency 계산에만 사용하고, 현재 트랜잭션의 본인 LSA는 정상 COMMIT 뒤에 게시한다</text>
+
+  <path d="M70 135 H1500 M70 135 V155 M1500 135 V155" class="lock"/>
+  <text x="785" y="126" text-anchor="middle" class="small">같은 키의 다음 트랜잭션이 앞서지 않도록 row lock을 publish까지 유지</text>
+
+  <rect x="50" y="180" width="420" height="300" class="box probe"/>
+  <text x="80" y="220" class="phase">1. probe · 과거 history 읽기</text>
+  <rect x="80" y="250" width="175" height="125" class="box"/>
+  <text x="167" y="282" text-anchor="middle" class="head">history 이전 상태</text>
+  <text x="167" y="315" text-anchor="middle" class="body">write_seq</text>
+  <text x="167" y="345" text-anchor="middle" class="body">read_seq</text>
+  <path d="M255 312 H300" class="arrow"/>
+  <rect x="300" y="245" width="140" height="135" class="box"/>
+  <text x="370" y="278" text-anchor="middle" class="head">entry별 판정</text>
+  <text x="370" y="312" text-anchor="middle" class="small">kind에 따라</text>
+  <text x="370" y="337" text-anchor="middle" class="small">후보 슬롯 선택</text>
+  <text x="370" y="362" text-anchor="middle" class="small">history 갱신 없음</text>
+  <rect x="105" y="405" width="310" height="50" class="box success"/>
+  <text x="260" y="436" text-anchor="middle" class="body">dependency LSA + 대기 방식 확정</text>
+
+  <path d="M470 330 H535" class="arrow"/>
+
+  <rect x="535" y="180" width="430" height="300" class="box log"/>
+  <text x="565" y="220" class="phase">2. 복제 로그에 실행 계약 기록</text>
+  <rect x="570" y="255" width="165" height="125" class="box"/>
+  <text x="652" y="287" text-anchor="middle" class="head">WS_LABEL</text>
+  <text x="652" y="322" text-anchor="middle" class="small">dependency LSA</text>
+  <text x="652" y="348" text-anchor="middle" class="small">대기 방식</text>
+  <path d="M735 317 H785" class="arrow"/>
+  <rect x="785" y="255" width="145" height="125" class="box"/>
+  <text x="857" y="287" text-anchor="middle" class="head">COMMIT</text>
+  <text x="857" y="322" text-anchor="middle" class="small">현재 트랜잭션의</text>
+  <text x="857" y="348" text-anchor="middle" class="small">본인 LSA 확정</text>
+  <text x="750" y="423" text-anchor="middle" class="body">WS_LABEL과 COMMIT이 같은 트랜잭션 경계를 이룬다</text>
+  <text x="750" y="451" text-anchor="middle" class="small">로그 기록·COMMIT 성공 여부에 따라 다음 단계가 갈린다</text>
+
+  <path d="M965 295 H1030" class="goodArrow"/>
+  <text x="998" y="278" text-anchor="middle" class="small">정상 COMMIT</text>
+
+  <rect x="1030" y="165" width="520" height="330" class="box publish"/>
+  <text x="1060" y="205" class="phase">3. publish · 본인 LSA 게시</text>
+  <text x="1060" y="239" class="small">현재 트랜잭션의 각 entry에 대해</text>
+  <rect x="1060" y="270" width="220" height="105" class="box"/>
+  <text x="1170" y="303" text-anchor="middle" class="head">현재 entry = WRITE</text>
+  <text x="1170" y="339" text-anchor="middle" class="body">write_seq = 본인 LSA</text>
+  <rect x="1310" y="270" width="210" height="105" class="box"/>
+  <text x="1415" y="303" text-anchor="middle" class="head">현재 entry = REF</text>
+  <text x="1415" y="334" text-anchor="middle" class="body">read_seq = max(기존,</text>
+  <text x="1415" y="358" text-anchor="middle" class="body">본인 LSA)</text>
+  <rect x="1090" y="405" width="400" height="60" class="box success"/>
+  <text x="1290" y="432" text-anchor="middle" class="head">history 이후 상태</text>
+  <text x="1290" y="456" text-anchor="middle" class="small">현재 정상 COMMIT을 다음 트랜잭션이 발견 가능</text>
+
+  <path d="M1290 495 V545" class="goodArrow"/>
+  <rect x="1115" y="545" width="350" height="75" class="box success"/>
+  <text x="1290" y="577" text-anchor="middle" class="head">publish 완료 후 row lock 해제</text>
+  <text x="1290" y="603" text-anchor="middle" class="small">다음 동일 키 트랜잭션의 probe 허용</text>
+
+  <path d="M750 480 V565 H690" class="badArrow"/>
+  <rect x="250" y="535" width="440" height="115" class="box fail"/>
+  <text x="470" y="573" text-anchor="middle" class="head">로그 기록 실패 · COMMIT 실패 · abort</text>
+  <text x="470" y="607" text-anchor="middle" class="body">현재 트랜잭션은 history에 게시하지 않음</text>
+  <text x="470" y="635" text-anchor="middle" class="small">과거 history를 그대로 유지하고 실패 경로로 종료</text>
+
+  <rect x="250" y="690" width="1215" height="60" class="box"/>
+  <text x="857" y="717" text-anchor="middle" class="head">probe 결과는 “누구를 기다릴지”, publish 결과는 “다음 트랜잭션이 나를 어떻게 찾을지”를 정한다</text>
+  <text x="857" y="741" text-anchor="middle" class="small">history에는 현재 트랜잭션의 lc가 아니라 정상 COMMIT으로 확정된 본인 LSA를 기록한다</text>
+</svg>

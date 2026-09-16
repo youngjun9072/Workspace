@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="500" viewBox="0 0 1200 500">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#475569"/></marker></defs>
+<rect width="1200" height="500" fill="#fff"/><style>text{font-family:Arial,'Noto Sans KR',sans-serif;fill:#172033}.h{font-size:24px;font-weight:700}.t{font-size:17px}.s{font-size:15px}.box{rx:12;stroke-width:2}.arr{stroke:#475569;stroke-width:2;fill:none;marker-end:url(#a)}</style>
+<text x="40" y="42" class="h">AS-IS</text><rect x="40" y="70" width="1120" height="105" class="box" fill="#f1f5f9" stroke="#94a3b8"/>
+<text x="80" y="105" class="t">슬레이브 applylogdb reader</text><text x="80" y="140" class="s">로그 읽기 → 직접 적용 → DB commit → 진행 위치 갱신 → 다음 로그</text>
+<text x="40" y="225" class="h">TO-BE</text>
+<rect x="40" y="255" width="250" height="150" class="box" fill="#ecfdf5" stroke="#10b981"/><text x="75" y="290" class="t">마스터</text><text x="75" y="325" class="s">충돌 키 수집</text><text x="75" y="352" class="s">dependency 계산</text><text x="75" y="379" class="s">WS_LABEL 기록</text>
+<rect x="350" y="255" width="250" height="150" class="box" fill="#eff6ff" stroke="#3b82f6"/><text x="385" y="290" class="t">슬레이브 reader</text><text x="385" y="325" class="s">task 조립</text><text x="385" y="352" class="s">실행 가능 판정</text><text x="385" y="379" class="s">worker 배정</text>
+<rect x="660" y="255" width="200" height="150" class="box" fill="#f5f3ff" stroke="#8b5cf6"/><text x="695" y="290" class="t">worker</text><text x="695" y="325" class="s">트랜잭션 적용</text><text x="695" y="352" class="s">DB commit</text><text x="695" y="379" class="s">결과 반환</text>
+<rect x="920" y="255" width="240" height="150" class="box" fill="#fff7ed" stroke="#f97316"/><text x="955" y="290" class="t">reader 결과 수집부</text><text x="955" y="325" class="s">순서 밖 완료 수집</text><text x="955" y="352" class="s">빈 구간 확인</text><text x="955" y="379" class="s">안전 완료 LSA 전진</text>
+<path d="M290 330H350M600 330H660M860 330H920" class="arr"/><path d="M920 390C880 455 620 455 550 405" class="arr"/><text x="560" y="466" class="s">완료 결과가 실행 가능 판정과 안전 완료 위치로 되돌아감</text>
+</svg>

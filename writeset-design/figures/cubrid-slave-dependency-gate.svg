@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">슬레이브 dependency gate의 최초 판정과 pending 재판정</title>
+  <desc id="desc">reader coordinator가 transaction task를 판정한다. 충족 task는 worker queue로 보내고 미충족 task는 pending에 둔다. worker 결과는 reader coordinator가 수거해 완료집합과 frontier를 갱신하며 drain_ready가 pending task를 같은 gate에서 다시 판정한다.</desc>
+  <defs>
+    <style>
+      text{font-family:"Pretendard","Noto Sans KR",sans-serif;fill:#1f2a36}
+      .title{font-size:29px;font-weight:700}.subtitle{font-size:17px;fill:#647385}
+      .laneTitle{font-size:20px;font-weight:700}.laneSub{font-size:14px;fill:#647385}
+      .head{font-size:19px;font-weight:700}.body{font-size:16px}.small{font-size:14px;fill:#5e6d7e}
+      .mono{font:14px ui-monospace,SFMono-Regular,Menlo,monospace}
+      .readerLane{fill:#f4f8fd;stroke:#93b7dc;stroke-width:2}.workerLane{fill:#faf8fd;stroke:#b9a1c8;stroke-width:2}
+      .box{fill:#fff;stroke:#91a0af;stroke-width:2}.task{fill:#eef5fb;stroke:#5681ad}
+      .gate{fill:#edf8f0;stroke:#3f9d5a}.pending{fill:#fff5e9;stroke:#d9822b}
+      .dispatch{fill:#f2faf4;stroke:#4a9e61}.worker{fill:#f5f0fa;stroke:#8d67a0}
+      .result{fill:#eef5fb;stroke:#5681ad}.drain{fill:#fffbea;stroke:#c59a20}
+      .line{fill:none;stroke:#536273;stroke-width:2.6;marker-end:url(#arrow)}
+      .passLine{fill:none;stroke:#3f9d5a;stroke-width:3;marker-end:url(#greenArrow)}
+      .holdLine{fill:none;stroke:#d9822b;stroke-width:3;marker-end:url(#orangeArrow)}
+      .feedback{fill:none;stroke:#8d67a0;stroke-width:2.8;stroke-dasharray:9 7;marker-end:url(#purpleArrow)}
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#536273"/></marker>
+    <marker id="greenArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#3f9d5a"/></marker>
+    <marker id="orangeArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#d9822b"/></marker>
+    <marker id="purpleArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#8d67a0"/></marker>
+  </defs>
+
+  <rect width="1600" height="900" fill="#fff"/>
+  <text x="48" y="46" class="title">dependency 최초 판정과 worker 완료 뒤 pending 재판정</text>
+  <text x="48" y="76" class="subtitle">완료 결과는 reader/coordinator가 수거하며, pending task는 drain_ready를 거쳐 동일한 gate에서 다시 판정한다.</text>
+
+  <rect x="30" y="105" width="1000" height="735" rx="18" class="readerLane"/>
+  <text x="55" y="137" class="laneTitle">reader / coordinator · 단일 thread</text>
+  <text x="55" y="160" class="laneSub">로그 읽기 · task 구성 · dependency 판정 · 결과 수거 · 완료 상태 갱신</text>
+
+  <rect x="1055" y="105" width="515" height="735" rx="18" class="workerLane"/>
+  <text x="1080" y="137" class="laneTitle">worker threads · N개</text>
+  <text x="1080" y="160" class="laneSub">허가된 task의 DB 적용과 COMMIT, 결과 반환</text>
+
+  <rect x="60" y="235" width="255" height="155" rx="14" class="box task"/>
+  <text x="188" y="270" text-anchor="middle" class="head">완성된 transaction task</text>
+  <text x="188" y="306" text-anchor="middle" class="body">변경 목록 · COMMIT LSA</text>
+  <text x="188" y="336" text-anchor="middle" class="body">dependency_seq</text>
+  <text x="188" y="366" text-anchor="middle" class="body">dependency_is_read</text>
+  <path d="M315 312H370" class="line"/>
+
+  <rect x="370" y="190" width="350" height="300" rx="16" class="box gate"/>
+  <text x="545" y="226" text-anchor="middle" class="head">dependency gate</text>
+  <text x="545" y="257" text-anchor="middle" class="small">위에서부터 순서대로 판정</text>
+  <line x1="405" y1="274" x2="685" y2="274" stroke="#b9d8c1" stroke-width="1.5"/>
+  <text x="405" y="307" class="mono">dep == NULL</text>
+  <text x="672" y="307" text-anchor="end" class="body">통과</text>
+  <text x="405" y="344" class="mono">dep &lt;= frontier</text>
+  <text x="672" y="344" text-anchor="end" class="body">통과</text>
+  <text x="405" y="381" class="mono">dep_is_read</text>
+  <text x="672" y="381" text-anchor="end" class="body">pending</text>
+  <text x="405" y="418" class="mono">completed에 dep 있음</text>
+  <text x="672" y="418" text-anchor="end" class="body">통과</text>
+  <text x="545" y="462" text-anchor="middle" class="small">그 밖의 경우 pending</text>
+
+  <rect x="770" y="190" width="230" height="120" rx="14" class="box dispatch"/>
+  <text x="885" y="226" text-anchor="middle" class="head">worker 선택</text>
+  <text x="885" y="260" text-anchor="middle" class="body">미완료 task가</text>
+  <text x="885" y="287" text-anchor="middle" class="body">가장 적은 worker</text>
+  <path d="M720 250H770" class="passLine"/>
+  <text x="745" y="232" text-anchor="middle" class="small">충족</text>
+
+  <rect x="770" y="365" width="230" height="105" rx="14" class="box pending"/>
+  <text x="885" y="404" text-anchor="middle" class="head">pending queue</text>
+  <text x="885" y="438" text-anchor="middle" class="body">dependency 미충족 task</text>
+  <path d="M720 430H770" class="holdLine"/>
+  <text x="745" y="414" text-anchor="middle" class="small">미충족</text>
+
+  <rect x="1090" y="195" width="200" height="110" rx="14" class="box worker"/>
+  <text x="1190" y="234" text-anchor="middle" class="head">worker queue[i]</text>
+  <text x="1190" y="268" text-anchor="middle" class="body">task enqueue</text>
+  <path d="M1000 250H1090" class="passLine"/>
+
+  <rect x="1340" y="185" width="200" height="145" rx="14" class="box worker"/>
+  <text x="1440" y="224" text-anchor="middle" class="head">worker[i]</text>
+  <text x="1440" y="260" text-anchor="middle" class="body">변경 적용</text>
+  <text x="1440" y="292" text-anchor="middle" class="body">DB COMMIT</text>
+  <path d="M1290 250H1340" class="line"/>
+
+  <rect x="1340" y="405" width="200" height="110" rx="14" class="box result"/>
+  <text x="1440" y="445" text-anchor="middle" class="head">result queue[i]</text>
+  <text x="1440" y="479" text-anchor="middle" class="body">완료 결과 반환</text>
+  <path d="M1440 330V405" class="line"/>
+
+  <rect x="750" y="555" width="270" height="155" rx="14" class="box result"/>
+  <text x="885" y="592" text-anchor="middle" class="head">완료 결과 수거</text>
+  <text x="885" y="621" text-anchor="middle" class="small">reader / coordinator</text>
+  <text x="885" y="655" text-anchor="middle" class="body">완료 집합 등록</text>
+  <text x="885" y="684" text-anchor="middle" class="body">frontier 전진</text>
+  <path d="M1340 460H1250V632H1020" class="feedback"/>
+  <text x="1190" y="615" text-anchor="middle" class="small">result 수거</text>
+
+  <rect x="405" y="570" width="265" height="125" rx="14" class="box drain"/>
+  <text x="538" y="608" text-anchor="middle" class="head">drain_ready()</text>
+  <text x="538" y="641" text-anchor="middle" class="body">pending task를 꺼내</text>
+  <text x="538" y="670" text-anchor="middle" class="body">같은 gate에서 재판정</text>
+  <path d="M750 632H670" class="feedback"/>
+  <text x="710" y="617" text-anchor="middle" class="small">완료 상태 변경</text>
+
+  <path d="M885 470V525H620V570" class="feedback"/>
+  <text x="765" y="515" text-anchor="middle" class="small">pending task</text>
+  <path d="M405 632H340V520H470V490" class="feedback"/>
+  <text x="330" y="552" text-anchor="middle" class="small">재판정</text>
+
+  <rect x="60" y="750" width="940" height="62" rx="12" class="box"/>
+  <text x="530" y="777" text-anchor="middle" class="body">결과 수거가 pending으로 직접 들어가는 것이 아니다.</text>
+  <text x="530" y="801" text-anchor="middle" class="small">완료 상태를 바꾼 뒤 drain_ready가 pending task를 꺼내 동일한 dependency gate를 다시 호출한다.</text>
+
+  <rect x="1090" y="600" width="450" height="110" rx="14" class="box"/>
+  <text x="1315" y="637" text-anchor="middle" class="head">재판정 결과</text>
+  <text x="1315" y="670" text-anchor="middle" class="body">통과 → worker queue로 dispatch</text>
+  <text x="1315" y="698" text-anchor="middle" class="body">실패 → pending에 그대로 유지</text>
+</svg>

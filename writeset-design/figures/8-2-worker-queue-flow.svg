@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="330" viewBox="0 0 1400 330">
+  <defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#475569"/></marker></defs>
+  <style>text{font-family:Arial,'Noto Sans KR',sans-serif;fill:#172033}.title{font-size:25px;font-weight:700}.head{font-size:18px;font-weight:700}.body{font-size:15px}.small{font-size:13px;fill:#526174}.line{fill:none;stroke:#475569;stroke-width:2.4;marker-end:url(#a)}</style>
+  <rect width="1400" height="330" fill="#fff"/>
+  <text x="38" y="44" class="title">worker queue · 실행 가능한 task 전달</text>
+  <rect x="55" y="105" width="280" height="110" rx="14" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
+  <text x="195" y="142" text-anchor="middle" class="head">dependency gate 통과</text><text x="195" y="174" text-anchor="middle" class="body">la_gate_dispatch_now()</text><text x="195" y="200" text-anchor="middle" class="small">실행 가능한 task</text>
+  <path d="M335 160H510" class="line"/><text x="423" y="145" text-anchor="middle" class="small">enqueue</text>
+  <rect x="510" y="105" width="330" height="110" rx="14" fill="#ecfdf5" stroke="#10b981" stroke-width="2"/>
+  <text x="675" y="142" text-anchor="middle" class="head">LA_WORKER_QUEUE[i]</text><text x="675" y="174" text-anchor="middle" class="body">선택된 worker에 task 전달</text><text x="675" y="200" text-anchor="middle" class="small">가득 차면 빈자리가 날 때까지 backpressure</text>
+  <path d="M840 160H1015" class="line"/><text x="928" y="145" text-anchor="middle" class="small">dequeue</text>
+  <rect x="1015" y="105" width="330" height="110" rx="14" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
+  <text x="1180" y="142" text-anchor="middle" class="head">worker[i]</text><text x="1180" y="174" text-anchor="middle" class="body">task의 복제 항목 적용</text><text x="1180" y="200" text-anchor="middle" class="small">DB COMMIT까지 수행</text>
+  <text x="55" y="275" class="small">worker queue 포화는 dependency 미충족이 아니므로 task를 pending에 중복 등록하지 않아야 한다.</text>
+</svg>
