@@ -288,7 +288,7 @@ WRITE와 REF는 종류와 관계없이 마지막에 `log_writeset_push_hash()`�
 
 *그림 8-1-3. INSERT·DELETE와 UPDATE에서 수집한 WRITE·REF가 `log_writeset_push_hash()`로 합류하고, 이 공통 종단에서 트랜잭션별 용량을 판정하는 구조*
 
-> [!NOTE]
+> [!NOTE]-
 > **호출 관계 원문**
 > **WRITE·REF 수집 경로**
 > ```text
@@ -366,7 +366,7 @@ DDL 등 statement replication에는 해시할 행 키가 없다. 따라서 state
 
 *그림 8-1-4. 기존 statement 복제 정보 수집 경로에 `ws_overflow` 설정을 추가하고, COMMIT에서 commit-order dependency와 이후 트랜잭션을 위한 history 기준을 만드는 구조*
 
-> [!NOTE]
+> [!NOTE]-
 > **호출 관계 원문**
 > **AS-IS**
 > ```text
@@ -421,7 +421,7 @@ struct log_rec_ws_label
 
 *그림 8-1-5. 기존 REPL·COMMIT 기록 사이에 WS_LABEL을 추가하고, 세 레코드를 동일 `prior_lsa_mutex` 구간에서 연속 기록하는 비교*
 
-> [!NOTE]
+> [!NOTE]-
 > **호출 관계 원문**
 > **AS-IS**
 > ```text
@@ -443,7 +443,7 @@ struct log_rec_ws_label
 >    └─ prior_lsa_mutex 해제
 > ```
 
-> [!NOTE]
+> [!NOTE]-
 > **인접성 보장과 `trid` 확인**
 > 위 mutex 구간은 다른 트랜잭션의 로그가 WS_LABEL과 COMMIT 사이에 들어오지 못하게 해야 한다. WS_LABEL은 공통 로그 레코드 헤더에 이미 `trid`를 가지므로 payload에 이를 중복 저장할 필요가 없다. 슬레이브 reader는 라벨의 `trid`를 보관했다가 동일한 `trid`의 COMMIT에만 연결해야 한다. 물리적 인접성은 라벨 유실을 막고, `trid` 확인은 다른 COMMIT으로의 오귀속을 막는다.
 
@@ -461,7 +461,7 @@ struct log_rec_ws_label
 
 *그림 8-1-6. 기존 `log_commit_local()`의 REPL·COMMIT 경로에 dependency probe, WS_LABEL 기록과 COMMIT LSA 기반 history 게시를 추가하는 전체 호출 흐름*
 
-> [!NOTE]
+> [!NOTE]-
 > **호출 관계 원문**
 > **AS-IS**
 > ```text
@@ -519,22 +519,29 @@ return parent
 
 **알고리즘 2 — entry 하나의 선행 후보 선택**
 
+반환값은 `{lsa, from_read_seq}` 형식의 선행 후보다.
+
+- `lsa`: 현재 entry보다 먼저 완료돼야 하는 과거 트랜잭션의 COMMIT LSA다. 선행 충돌이 없으면 `NULL`을 반환한다.
+- `from_read_seq`: 반환한 `lsa`가 history의 `read_seq`에서 선택됐으면 `true`, `write_seq`에서 선택됐거나 선행 충돌이 없으면 `false`다. 현재 entry의 종류나 함수 성공 여부를 나타내는 값이 아니다.
+
 ```text
 select_entry_candidate(entry, history):
+    # return: {dependency COMMIT LSA, dependency가 read_seq에서 선택됐는지}
     slots = history.find(entry.hash)
     if slots does not exist:
-        return {NULL, false}
+        return {NULL, false}               # 이 키의 선행 충돌 없음
 
     if entry.kind == REF:
         return {slots.write_seq, false}    # 현재 REF는 이전 WRITE만 기다림
 
     if slots.read_seq > slots.write_seq:
-        return {slots.read_seq, true}      # 현재 WRITE는 이전 WRITE·REF 중 더 늦은 위치 선택
+        return {slots.read_seq, true}      # 현재 WRITE: 이전 REF가 이전 WRITE보다 늦음
 
-    return {slots.write_seq, false}
+    return {slots.write_seq, false}        # 현재 WRITE: write_seq >= read_seq
+                                           # 이전 WRITE를 선행 후보로 반환
 ```
 
-반환값의 boolean은 현재 entry가 REF인지를 뜻하지 않는다. 최종 후보가 `read_seq`에서 왔는지를 보존하여 슬레이브의 대기 방식을 결정하기 위한 값이다.
+`from_read_seq`는 슬레이브의 대기 방식을 결정한다. `true`이면 frontier가 해당 LSA까지 도달하기를 기다리고, `false`이면 해당 WRITE 트랜잭션 한 건의 완료도 충족 조건으로 사용할 수 있다.
 
 **알고리즘 3 — 폴백과 최종 라벨 확정**
 

@@ -14,13 +14,13 @@
   <text x="1125" y="92" text-anchor="middle" class="col">TO-BE</text>
 
   <rect x="90" y="125" width="570" height="82" rx="13" class="signal"/>
-  <text x="375" y="155" text-anchor="middle" class="head">마스터 HA 상태 변경</text>
-  <text x="375" y="181" text-anchor="middle" class="body">LOG_DUMMY_HA_SERVER_STATE · active log header 상태 갱신</text>
+  <text x="375" y="155" text-anchor="middle" class="head">HA 상태 전환 또는 마스터 장애 감지</text>
+  <text x="375" y="181" text-anchor="middle" class="body">정상 전환 로그 · 장애 시 copy log header의 DEAD 상태</text>
   <path d="M375 207V245" class="line"/>
   <rect x="90" y="245" width="570" height="100" rx="13" class="box"/>
-  <text x="375" y="276" text-anchor="middle" class="head">la_log_record_process()</text>
-  <text x="375" y="302" text-anchor="middle" class="body">state record 확인 → is_role_changed=true → ER_INTERRUPTED</text>
-  <text x="375" y="326" text-anchor="middle" class="small">reader 반복으로 복귀</text>
+  <text x="375" y="276" text-anchor="middle" class="head">applylogdb가 copy log 상태 확인</text>
+  <text x="375" y="302" text-anchor="middle" class="body">상태 로그 또는 header의 DEAD 상태로 역할 변경 감지</text>
+  <text x="375" y="326" text-anchor="middle" class="small">reader 반복에서 상태 전환 조건 확인</text>
   <path d="M375 345V383" class="line"/>
   <rect x="90" y="383" width="570" height="105" rx="13" class="box"/>
   <text x="375" y="414" text-anchor="middle" class="head">반복마다 la_change_state()</text>
@@ -33,13 +33,13 @@
   <text x="375" y="611" text-anchor="middle" class="small">외부 HA 역할 전환 절차가 승격 진행</text>
 
   <rect x="840" y="125" width="570" height="82" rx="13" class="signal"/>
-  <text x="1125" y="155" text-anchor="middle" class="head">마스터 HA 상태 변경</text>
-  <text x="1125" y="181" text-anchor="middle" class="body">LOG_DUMMY_HA_SERVER_STATE · active log header 상태 갱신</text>
+  <text x="1125" y="155" text-anchor="middle" class="head">HA 상태 전환 또는 마스터 장애 감지</text>
+  <text x="1125" y="181" text-anchor="middle" class="body">정상 전환 로그 · 장애 시 copy log header의 DEAD 상태</text>
   <path d="M1125 207V245" class="line"/>
   <rect x="840" y="245" width="570" height="100" rx="13" class="box"/>
-  <text x="1125" y="276" text-anchor="middle" class="head">la_log_record_process()</text>
-  <text x="1125" y="302" text-anchor="middle" class="body">state record 확인 → is_role_changed=true → ER_INTERRUPTED</text>
-  <text x="1125" y="326" text-anchor="middle" class="small">현재 레코드 처리를 중단하고 reader 반복으로 복귀</text>
+  <text x="1125" y="276" text-anchor="middle" class="head">reader/coordinator 반복</text>
+  <text x="1125" y="302" text-anchor="middle" class="body">결과 수거 · copy log header 확인 · 도착한 로그 처리</text>
+  <text x="1125" y="326" text-anchor="middle" class="small">파일 용량과 관계없이 수신 범위까지 계속 읽기</text>
   <path d="M1125 345V383" class="line"/>
   <rect x="840" y="383" width="570" height="105" rx="13" class="box"/>
   <text x="1125" y="414" text-anchor="middle" class="head">반복마다 la_change_state()</text>
@@ -50,7 +50,7 @@
   <text x="1125" y="551" text-anchor="middle" class="head">drain 미완료: DONE 보류</text>
   <text x="1125" y="577" text-anchor="middle" class="body">결과 수거 → pending 재판정 → worker 적용 반복</text>
   <text x="1125" y="602" text-anchor="middle" class="small">pending 없음 · Dispatch Order 비움 · Gate Order 비움</text>
-  <path d="M1410 572H1450V435H1410" class="loop"/>
+  <path d="M1410 572H1450V295H1410" class="loop"/>
   <path d="M1125 625V657" class="line"/>
   <rect x="840" y="657" width="570" height="70" rx="13" class="done"/>
   <text x="1125" y="686" text-anchor="middle" class="head">drain 완료 → 영속 → DONE 통보</text>

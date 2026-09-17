@@ -50,7 +50,7 @@ LSA 이름이 많은 이유는 하나의 진행값을 여러 이름으로 부르
 - **`forw_lsa`**: 물리적으로 다음 로그 레코드를 가리킨다. applier는 이 값을 따라 `final_lsa`를 전진시킨다.
 - **`back_lsa`**: 물리적으로 이전 로그 레코드를 가리킨다. applier는 직전 위치인 `prev_final`과 비교해 로그 체인의 연속성을 확인한다.
 - **`prev_tranlsa`**: 다른 트랜잭션의 레코드를 건너 같은 트랜잭션의 이전 레코드를 가리킨다. NULL이면 applylogdb가 해당 트랜잭션에서 처음 관찰한 레코드로 판정한다.
-- **`chkpt_lsa`**: DB 서버가 비정상 종료됐을 때 서버 자체의 복구 분석을 시작하는 checkpoint 위치다. applylogdb의 복제 진행 위치가 아니며 상태 dump에만 표시한다.
+- **`chkpt_lsa`**: DB 서버가 비정상 종료됐을 때 서버 자체의 crash recovery 분석을 시작하는 checkpoint 위치다. applylogdb의 복제 진행 위치가 아니며 상태 dump에만 표시한다. 역할 변경 신호 확인이나 drain 완료 판정에도 사용하지 않는다.
 
 ![4-develop-log-record-pointers_draft](./figures/4-develop-log-record-pointers_draft.svg)
 

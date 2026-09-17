@@ -198,7 +198,7 @@ la_apply_worker_main()
 
 *그림 8-2-3. worker를 깨워 join하고 worker별 queue와 동기화 객체를 해제한 뒤 기존 reader 공통 자원을 정리하는 종료 호출 관계*
 
-> [!NOTE]
+> [!NOTE]-
 > **호출 관계 원문**
 > ```text
 > AS-IS
@@ -249,7 +249,7 @@ transaction task는 worker가 트랜잭션 하나를 적용하는 데 필요한 
 
 `la_apply_log_file()` 전체에는 worker 시작과 결과 수거가 추가되지만, 로그 페이지에서 `LOG_GET_LOG_RECORD_HEADER()`로 레코드 헤더를 읽고 `la_log_record_process()`에 전달하는 기본 읽기 방식은 유지해야 한다. 그림 8-2-4에서 달라지는 부분은 `la_log_record_process()`가 처리할 로그 종류와 COMMIT 이후의 처리다.
 
-> [!NOTE]
+> [!NOTE]-
 > **호출 관계 원문**
 > ```text
 > AS-IS
@@ -662,7 +662,21 @@ la_gate_drain_ready():
 
 ## 8-2.8 역할 전환 drain과 `DONE` 전환
 
-이 절은 그림 8-2-1의 **⑦ 역할 전환 경로**를 설명한다. 마스터의 HA 상태 변경은 `LOG_DUMMY_HA_SERVER_STATE`와 active log header 상태로 슬레이브에 전달된다. applylogdb는 reader 반복에서 이 상태를 확인하고, 병렬 적용이 받아들인 작업을 모두 끝낸 뒤 `DONE`을 통보해야 한다.
+이 절은 그림 8-2-1의 **⑦ 역할 전환 경로**를 설명한다. 정상 상태 전환 중에는 마스터가 `LOG_DUMMY_HA_SERVER_STATE`를 기록하고 log writer가 전송 헤더에 현재 `ha_server_state`를 넣는다. 마스터가 갑자기 종료되면 상태 로그를 새로 기록할 수 없으므로, 슬레이브의 log copier가 통신 오류 `ER_NET_SERVER_CRASHED`를 확인해 로컬 copy log header의 `ha_server_state`를 `DEAD`로 바꿔 저장한다. applylogdb는 이 copy log와 header를 읽고, 병렬 적용이 받아들인 작업을 모두 끝낸 뒤 `DONE`을 통보해야 한다.
+
+copylogdb는 수신한 로그 페이지와 active copy log header를 계속 파일에 기록하며, applylogdb는 파일이 가득 찰 때까지 기다리지 않고 도착한 범위까지 반복해서 읽어야 한다. `ha_file_status=SYNCHRONIZED`는 파일 용량 상태가 아니라 copylogdb가 요청 시점의 마스터 `eof_lsa`까지 따라잡았다는 표시다.
+
+```text
+reader/coordinator 반복
+├─ la_collect_apply_results()
+├─ active copy log header 다시 읽기
+├─ 읽을 로그가 있으면 la_log_record_process()
+└─ la_change_state()
+   ├─ final_lsa가 eof_lsa까지 도달했는지 확인
+   ├─ ha_file_status == SYNCHRONIZED 확인
+   ├─ ha_server_state 확인
+   └─ la_gate_drain_complete() 확인
+```
 
 정상 실행 중 pending task를 다시 배정하는 `la_gate_drain_ready()`와 역할 전환 drain은 목적이 다르다. 역할 전환 drain은 별도의 적용 알고리즘을 실행하지 않고, ⑤ 결과 수거 → ⑥ pending 재배정 → ④ worker 적용 순환이 남은 작업을 소진할 때까지 기존 상태 전환을 보류해야 한다.
 
@@ -681,10 +695,10 @@ la_gate_drain_ready():
 >
 > la_apply_log_file()
 > └─ reader 로그 반복
->    ├─ la_log_record_process()
->    │  └─ LOG_DUMMY_HA_SERVER_STATE
->    │     ├─ la_Info.is_role_changed = true
->    │     └─ ER_INTERRUPTED 반환
+>    ├─ 역할 변경 감지
+>    │  ├─ 정상 전환: la_log_record_process()
+>    │  │  └─ LOG_DUMMY_HA_SERVER_STATE → is_role_changed = true
+>    │  └─ 마스터 장애: copy log header의 ha_server_state = DEAD
 >    └─ la_change_state()
 >       └─ 로그 끝 + SYNCHRONIZED + DEAD·STANDBY·MAINTENANCE
 >          ├─ new_state = DONE
@@ -699,15 +713,17 @@ la_gate_drain_ready():
 > la_apply_log_file()
 > └─ reader/coordinator 반복
 >    ├─ la_collect_apply_results()
->    ├─ la_log_record_process()
->    │  └─ LOG_DUMMY_HA_SERVER_STATE
->    │     ├─ la_Info.is_role_changed = true
->    │     └─ ER_INTERRUPTED 반환
+>    ├─ active copy log header와 읽을 로그 확인
+>    ├─ 역할 변경 감지
+>    │  ├─ 정상 전환: la_log_record_process()
+>    │  │  └─ LOG_DUMMY_HA_SERVER_STATE → is_role_changed = true
+>    │  └─ 마스터 장애: copy log header의 ha_server_state = DEAD
 >    └─ la_change_state()
 >       └─ 로그 끝 + SYNCHRONIZED + DEAD·STANDBY·MAINTENANCE
 >          └─ la_gate_drain_complete()
 >             ├─ false → DONE 전환 보류
->             │  └─ ⑤ 결과 수거 → ⑥ pending 재배정 → ④ worker 적용 반복
+>             │  └─ reader/coordinator 반복 시작으로 복귀
+>             │     └─ ⑤ 결과 수거 → 로그·header 확인 → ⑥ pending 재배정 → ④ worker 적용
 >             └─ true
 >                ├─ new_state = DONE
 >                ├─ la_log_commit(true)
@@ -733,58 +749,52 @@ worker queue와 실행 중 task는 dispatch order에 대응 항목이 남아 있
 
 ## 8-2.9 비정상 종료 뒤 재시작 범위와 error skip
 
-이 절은 그림 8-2-1의 **⑧ 재시작 경로**에서 이전 실행의 안전 완료 위치부터 로그를 다시 읽고, 이미 DB에 반영된 순서 밖 완료 트랜잭션을 처리하는 하위 구조를 설명한다.
+장애 직전의 홀, 복구 경계와 재처리 범위는 [6-2.2.4.2절](./6-2-cubrid-슬레이브-병렬-적용-설계.md#6-2242-비정상-종료-뒤의-홀-복구)에서 설명한다. 이 절에서는 복구 구간에서 재적용 오류를 구분하는 처리만 설명한다.
 
-병렬 적용에서는 이전 실행에서 `final_lsa`까지 로그를 읽었더라도 `committed_lsa` 뒤에 홀과 순서 밖 완료가 남을 수 있다. 재시작 시 reader는 안전 경계인 `committed_lsa`부터 다시 읽어야 하며, 이전 실행의 영속 `final_lsa`는 error skip을 허용할 복구 구간의 상한으로만 고정해야 한다.
-
-![8-2-recovery-error-skip-step-1](./figures/8-2-recovery-error-skip-step-1.svg)
-
-*그림 8-2-10a. 장애 직전 `committed_lsa=C0` 뒤에 미완료 C1과 먼저 완료된 C2·C3이 남고, reader가 읽은 위치 R이 `final_lsa`로 저장된 상태*
-
-![8-2-recovery-error-skip-step-2](./figures/8-2-recovery-error-skip-step-2.svg)
-
-*그림 8-2-10b. 재시작 시 reader 위치를 안전 경계 C0로 되감고, 이전 실행의 `final_lsa=R`을 `recovery_boundary_lsa`로 고정하는 단계*
-
-![8-2-recovery-error-skip-step-3](./figures/8-2-recovery-error-skip-step-3.svg)
-
-*그림 8-2-10c. `(C0, R]`의 task를 다시 구성·적용하고, 복구 구간에서 허용한 재적용 오류만 로그와 `fail_counter` 증가 없이 건너뛰는 단계*
-
-![8-2-recovery-error-skip-step-4](./figures/8-2-recovery-error-skip-step-4.svg)
-
-*그림 8-2-10d. C1의 hole이 닫히면 Gate Order의 앞에서부터 이미 완료된 C2·C3을 연속으로 흡수해 frontier를 R 범위까지 전진시키는 단계*
-
-![8-2-recovery-error-skip-step-5](./figures/8-2-recovery-error-skip-step-5.svg)
-
-*그림 8-2-10e. R 범위의 task와 연속 완료 경계 처리를 마친 뒤, R 다음 로그부터 기존 오류 처리로 전환하는 단계*
-
-### 기능 진입 call stack
+`la_apply_repl_log()`는 현재 task의 COMMIT LSA가 `(last_committed_lsa, recovery_boundary_lsa]`에 있으면 해당 transaction을 복구 구간으로 표시해야 한다. 이후 `la_flush_repl_items()`의 오류 처리에서 기존 경로와 복구 구간 경로를 나눠야 한다.
 
 ```text
-la_apply_log_file()
-├─ la_get_last_ha_applied_info()
-│  ├─ committed_lsa 복원
-│  ├─ final_lsa 복원
-│  └─ recovery_boundary_lsa = 복원한 final_lsa
-├─ la_apply_pre()
-│  └─ final_lsa = committed_lsa
-└─ reader가 committed_lsa부터 로그 재독
-   └─ worker: la_apply_repl_log()
-      ├─ commit_lsa <= last_committed_lsa
-      │  └─ 이미 확정된 트랜잭션 전체 skip
-      └─ last_committed_lsa < commit_lsa <= recovery_boundary_lsa
-         └─ recovery window로 표시해 전체 item 재적용
-            └─ flush 결과의 재적용 오류를 제한적으로 skip
+AS-IS
+
+reader thread
+la_log_commit()
+├─ la_flush_repl_items(true)
+│  └─ locator_repl_flush_all()
+│     └─ 항목별 오류
+│        ├─ 오류 로그 기록
+│        ├─ fail_counter 증가
+│        └─ la_restart_on_bulk_flush_error()
+│           ├─ retry 대상 → 재연결 오류로 전환
+│           └─ 그 외     → 기존 오류 처리 계속
+└─ flush 성공
+   └─ la_commit_transaction()
+      └─ db_commit_transaction()
+
+TO-BE
+
+la_apply_worker_main()
+├─ la_apply_repl_log()
+│  └─ task COMMIT LSA로 복구 구간 여부 저장
+├─ la_flush_repl_items(true)
+│  └─ locator_repl_flush_all()
+│     └─ 항목별 오류
+│        ├─ 복구 구간의 허용한 재적용 오류
+│        │  ├─ INSERT unique 위반
+│        │  └─ UPDATE·DELETE 대상 행 없음
+│        │     ├─ 오류 로그와 fail_counter 증가 생략
+│        │     ├─ recovery_skipped_counter 증가
+│        │     └─ retry 판정 없이 다음 항목 처리
+│        └─ 그 밖의 오류
+│           └─ AS-IS 오류 처리 유지
+└─ flush 성공
+   └─ la_commit_transaction()
+      └─ db_commit_transaction()
+         ├─ 성공 → worker 결과 반환
+         └─ 실패 → skip하지 않고 오류 반환
 ```
 
-### 주요 구현 흐름
+INSERT unique 위반과 UPDATE·DELETE 대상 행 없음은 `locator_repl_flush_all()`이 변경을 슬레이브 DB에 반영할 때 항목별 오류로 반환한다. 따라서 error skip은 `la_flush_repl_items()`에서 처리해야 한다. `la_commit_transaction()`에서 발생한 오류는 이미 반영된 행의 재적용 충돌로 판정할 수 없으므로 skip하지 않아야 한다.
 
-`recovery_boundary_lsa`는 `_db_ha_apply_info`에서 복원한 이전 실행의 `final_lsa`를 `la_apply_pre()`가 덮어쓰기 전에 복사해야 한다. apply-info 행이 없는 최초 기동에서는 NULL로 유지하여 복구 구간을 만들지 않아야 한다.
+error skip은 복구 구간의 모든 오류를 성공으로 바꾸는 기능이 아니다. 허용한 두 종류만 이미 반영된 변경의 재적용 결과로 처리해야 하며, `recovery_boundary_lsa` 뒤의 정상 운영 구간과 그 밖의 오류는 기존 오류 처리 경로를 따라야 한다.
 
-develop은 `commit_lsa <= last_committed_lsa`이면 트랜잭션 전체를 건너뛰고, 처리 대상 트랜잭션 안에서도 `item->lsa <= last_committed_rep_lsa`인 item을 건너뛴다. 병렬 적용에서는 `committed_rep_lsa`가 순서 밖 worker 결과의 최댓값일 수 있으므로 item 단위 skip 기준으로 사용하면 다른 트랜잭션의 위치 때문에 현재 트랜잭션 일부만 누락될 수 있다. 따라서 트랜잭션 전체 skip만 유지하고, 복구 구간의 트랜잭션은 item 전체를 다시 적용해야 한다.
-
-error skip은 복구 구간의 모든 오류를 무시하는 기능이 아니다. 현재 코드는 다음 재적용 오류만 별도 카운터로 분류한다.
-
-- INSERT 재적용의 unique 위반
-- UPDATE·DELETE 재적용의 대상 행 없음
-
-그 밖의 오류와 `recovery_boundary_lsa` 뒤의 정상 운영 구간 오류는 기존 오류 처리 경로를 따라야 한다. 또한 현재 구현은 재적용 오류를 `recovery_skipped_counter`로 분류한 뒤에도 기존 `la_restart_on_bulk_flush_error()`를 호출한다. 따라서 해당 서버 오류가 retry 목록에 포함돼 있으면 재연결 오류로 전환될 수 있으며, 정식 error skip 정책에서는 재적용 skip과 retry 판정의 우선순위를 확정해야 한다.
+현재 브랜치는 허용한 재적용 오류의 로그와 `fail_counter` 증가는 생략하지만, 그 뒤에도 `la_restart_on_bulk_flush_error()`를 호출한다. 정식 구현에서는 위 TO-BE처럼 error skip 분기에서 retry 판정으로 내려가지 않도록 보강해야 한다.

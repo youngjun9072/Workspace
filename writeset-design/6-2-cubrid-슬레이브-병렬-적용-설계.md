@@ -153,6 +153,26 @@ worker가 task를 적용하며 계산한 replication item 진행 위치는 task�
 → 정상 오류 처리로 전환
 ```
 
+![8-2-recovery-error-skip-step-1](./figures/8-2-recovery-error-skip-step-1.svg)
+
+*그림 6-2-2e. 장애 직전 `committed_lsa=C0` 뒤에 미완료 C1과 먼저 완료된 C2·C3이 남고, reader가 읽은 위치 R이 `final_lsa`로 저장된 상태*
+
+![8-2-recovery-error-skip-step-2](./figures/8-2-recovery-error-skip-step-2.svg)
+
+*그림 6-2-2f. 재시작 시 reader 위치를 안전 경계 C0로 되감고, 이전 실행의 `final_lsa=R`을 `recovery_boundary_lsa`로 고정하는 단계*
+
+![8-2-recovery-error-skip-step-3](./figures/8-2-recovery-error-skip-step-3.svg)
+
+*그림 6-2-2g. `(C0, R]`의 task를 다시 구성·적용하고, 복구 구간에서 허용한 재적용 오류만 로그와 `fail_counter` 증가 없이 건너뛰는 단계*
+
+![8-2-recovery-error-skip-step-4](./figures/8-2-recovery-error-skip-step-4.svg)
+
+*그림 6-2-2h. C1의 hole이 닫히면 Gate Order의 앞에서부터 이미 완료된 C2·C3을 연속으로 흡수해 frontier를 R 범위까지 전진시키는 단계*
+
+![8-2-recovery-error-skip-step-5](./figures/8-2-recovery-error-skip-step-5.svg)
+
+*그림 6-2-2i. R 범위의 task와 연속 완료 경계 처리를 마친 뒤, R 다음 로그부터 기존 오류 처리로 전환하는 단계*
+
 develop에서는 기동 시 복원한 `committed_lsa`와 `committed_rep_lsa`를 각각 `last_committed_lsa`와 `last_committed_rep_lsa`로 고정한다. 전자는 완료된 트랜잭션 전체를 건너뛰고, 후자는 처리 대상 트랜잭션 안에서 이미 적용한 replication item을 건너뛰는 기준이다.
 
 병렬 적용에서는 `committed_rep_lsa`가 여러 worker 결과 중 가장 큰 replication item 위치일 수 있어, 그 이하의 모든 item이 적용됐음을 보장하지 않는다. 따라서 `last_committed_rep_lsa`를 item skip 기준으로 사용하지 않아야 한다. 재시작은 `last_committed_lsa` 이하의 트랜잭션만 전체 skip하고, `(last_committed_lsa, recovery_boundary_lsa]`의 트랜잭션은 item 전체를 다시 적용해야 한다.
@@ -318,11 +338,22 @@ reader/coordinator는 성공을 확인한 결과만 완료 상태에 반영한�
 
 ## 6-2.7 역할 전환 drain
 
-failover가 발생해 역할 전환을 시작하면 먼저 로그 처리 기준점 `R`을 고정하고, 그 뒤에 생기는 새로운 transaction task의 유입을 막는다. 다만 `R`까지 이미 읽어 받아들인 task는 버리지 않는다. pending, worker 대기·실행, result 대기 상태에 남은 작업을 모두 drain 대상으로 유지한다.
+copylogdb는 로그 파일이 일정 용량에 도달할 때까지 기다리지 않고, 마스터에서 받은 로그 페이지와 active copy log header를 계속 기록한다. applylogdb도 같은 active copy log에서 도착한 범위까지 로그를 계속 읽어 적용한다.
+
+```text
+마스터 로그 생성
+→ copylogdb가 로그 페이지 수신
+→ active copy log의 페이지와 header 갱신
+→ applylogdb가 도착한 범위까지 읽어 task 생성·적용
+```
+
+역할 전환 시 copylogdb가 마스터 로그의 현재 끝까지 따라잡으면 copy log header의 `ha_file_status`가 `SYNCHRONIZED`가 된다. 이는 파일이 가득 찼다는 뜻이 아니라, copylogdb가 요청한 시점의 마스터 로그 끝까지 수신했다는 뜻이다. 갑작스러운 마스터 장애에서는 copylogdb가 이미 받은 로그를 저장한 뒤 로컬 copy log header의 `ha_server_state`를 `DEAD`로 기록한다.
+
+applylogdb는 reader 반복에서 copy log header와 로그 페이지를 다시 확인한다. `final_lsa`가 수신한 `eof_lsa`까지 도달하고 header가 역할 전환 가능한 상태가 되면, 그때까지 생성한 pending, worker 대기·실행, result 대기 task를 모두 drain 대상으로 유지해야 한다.
 
 ![8-failover-drain-role-timeline_v2](./figures/8-failover-drain-role-timeline_v2.svg)
 
-*그림 6-2-6. failover 발생 시 처리 기준점을 고정하고 새로운 task 유입은 막되, 이미 받아들인 작업은 drain 대상으로 유지하는 단계*
+*그림 6-2-6. 역할 전환 시 copylogdb가 수신한 로그 끝까지 task를 구성하고, 이미 받아들인 작업을 drain 대상으로 유지하는 단계*
 
 입력을 막은 뒤에는 남은 task를 평상시와 같은 dependency gate로 판정한다. dependency가 없거나 이미 충족된 task는 worker에 배정하고, 아직 충족되지 않은 task는 pending에 둔다. worker 결과가 도착하면 coordinator가 결과를 수거해 개별 완료 상태와 연속 완료 경계를 갱신하고, 그 변화로 실행 가능해진 pending task를 같은 gate에서 다시 판정한다.
 
