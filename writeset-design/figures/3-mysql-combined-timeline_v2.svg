@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="820" viewBox="0 0 1560 820">
+  <defs>
+    <style>.title{font:700 27px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#26303d}.sub{font:400 14px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#6b7a8d}.h{font:700 16px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#26303d}.t{font:400 13px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#445062}.small{font:400 11px 'Noto Sans KR','Malgun Gothic','Droid Sans Fallback',sans-serif;fill:#596678}.mono{font:600 12px ui-monospace,SFMono-Regular,Consolas,monospace;fill:#26303d}.panel{fill:#f8fafc;stroke:#aab4c2;stroke-width:1.5;stroke-dasharray:7 5}.grid{stroke:#d7dde5;stroke-width:1}.axis{stroke:#8a99ab;stroke-width:1.3}.eligible{fill:#e8f5ec;stroke:#3FA35B}.chain{fill:#fff3e7;stroke:#d9822b}.a{fill:#2C7BE5}.ac1{fill:#d9822b}.ac2{fill:#c94b4b}.b{fill:#3FA35B}.c{fill:#9b6fc4}.d{fill:#3a8f9f}.mark{stroke:#c94b4b;stroke-width:2;stroke-dasharray:6 4}.mark2{stroke:#d9822b;stroke-width:2;stroke-dasharray:6 4}</style>
+  </defs>
+  <rect width="1560" height="820" fill="#fff"/>
+  <text x="48" y="48" class="title">마스터의 실행 자격과 슬레이브의 실제 시작 시각</text>
+  <text x="48" y="75" class="sub">FK 자식 사슬은 LC에서, 독립 B·C·D의 지연은 worker 시간선에서 확인한다 · 시간 단위: 초</text>
+
+  <rect x="42" y="106" width="1472" height="224" rx="14" class="panel"/>
+  <text x="67" y="140" class="h">마스터가 기록한 병렬 실행 자격</text>
+  <text x="67" y="168" class="small">LC가 가리키는 sequence까지 슬레이브의 연속 완료 경계가 전진해야 실행 가능</text>
+  <g transform="translate(68,190)">
+    <rect x="0" y="0" width="210" height="50" rx="8" class="eligible"/><text x="15" y="21" class="h">A(parent)</text><text x="15" y="41" class="mono">seq=1 · LC=0</text>
+    <rect x="232" y="0" width="210" height="50" rx="8" class="chain"/><text x="247" y="21" class="h">Achild1</text><text x="247" y="41" class="mono">seq=2 · LC=1</text>
+    <rect x="464" y="0" width="210" height="50" rx="8" class="chain"/><text x="479" y="21" class="h">Achild2</text><text x="479" y="41" class="mono">seq=3 · LC=2</text>
+    <rect x="696" y="0" width="210" height="50" rx="8" class="eligible"/><text x="711" y="21" class="h">B</text><text x="711" y="41" class="mono">seq=4 · LC=1</text>
+    <rect x="928" y="0" width="210" height="50" rx="8" class="eligible"/><text x="943" y="21" class="h">C</text><text x="943" y="41" class="mono">seq=5 · LC=1</text>
+    <rect x="1160" y="0" width="210" height="50" rx="8" class="eligible"/><text x="1175" y="21" class="h">D</text><text x="1175" y="41" class="mono">seq=6 · LC=1</text>
+    <text x="0" y="82" class="t">Achild2는 Achild1(seq=2)을 기다림</text>
+    <text x="696" y="82" class="t" style="fill:#2e7d44">B·C·D는 A(seq=1) 완료 뒤 모두 실행 자격 획득</text>
+  </g>
+
+  <rect x="42" y="356" width="1472" height="406" rx="14" class="panel"/>
+  <text x="67" y="390" class="h">슬레이브 worker에서 관찰한 실제 실행 구간</text>
+  <g transform="translate(170,430)">
+    <line x1="0" y1="0" x2="1280" y2="0" class="axis"/>
+    <g class="small">
+      <text x="-4" y="-10">0</text><text x="156" y="-10">2</text><text x="316" y="-10">4</text><text x="476" y="-10">6</text><text x="636" y="-10">8</text><text x="792" y="-10">10</text><text x="952" y="-10">12</text><text x="1112" y="-10">14</text><text x="1270" y="-10">16</text>
+    </g>
+    <g>
+      <line x1="0" y1="0" x2="0" y2="286" class="grid"/><line x1="160" y1="0" x2="160" y2="286" class="grid"/><line x1="320" y1="0" x2="320" y2="286" class="grid"/><line x1="480" y1="0" x2="480" y2="286" class="grid"/><line x1="640" y1="0" x2="640" y2="286" class="grid"/><line x1="800" y1="0" x2="800" y2="286" class="grid"/><line x1="960" y1="0" x2="960" y2="286" class="grid"/><line x1="1120" y1="0" x2="1120" y2="286" class="grid"/><line x1="1280" y1="0" x2="1280" y2="286" class="grid"/>
+    </g>
+    <text x="-110" y="45" class="h">worker 1</text><text x="-110" y="111" class="h">worker 2</text><text x="-110" y="177" class="h">worker 3</text><text x="-110" y="243" class="h">worker 4</text>
+    <rect x="0" y="20" width="160" height="38" rx="6" class="a"/><text x="54" y="45" class="t" style="fill:#fff">A 0–2.000</text>
+    <rect x="161.6" y="20" width="294.2" height="38" rx="6" class="ac1"/><text x="225" y="45" class="t" style="fill:#fff">Achild1 2.020–5.698</text>
+    <rect x="458.2" y="20" width="446.3" height="38" rx="6" class="ac2"/><text x="570" y="45" class="t" style="fill:#fff">Achild2 5.727–11.306</text>
+    <rect x="542.6" y="86" width="428.1" height="38" rx="6" class="b"/><text x="660" y="111" class="t" style="fill:#fff">B 6.782–12.133</text>
+    <rect x="626.2" y="152" width="538.8" height="38" rx="6" class="c"/><text x="768" y="177" class="t" style="fill:#fff">C 7.827–14.562</text>
+    <rect x="760.4" y="218" width="506.8" height="38" rx="6" class="d"/><text x="897" y="243" class="t" style="fill:#fff">D 9.505–15.840</text>
+    <line x1="160" y1="-8" x2="160" y2="286" class="mark"/><text x="174" y="281" class="small" style="fill:#a43f3f">A 완료 2.000 · B/C/D 자격 획득</text>
+    <line x1="458.2" y1="-8" x2="458.2" y2="286" class="mark2"/><text x="472" y="302" class="small" style="fill:#b56517">Achild2 실제 시작 5.727 · 뒤 독립 tx 배정은 이후</text>
+  </g>
+  <rect x="67" y="716" width="1370" height="31" rx="7" fill="#efe6f7" stroke="#9b6fc4"/>
+  <text x="88" y="737" class="t" style="fill:#5e3a8c">분리해서 읽기: Achild1→Achild2는 마스터 LC가 만든 자격 제한 · B/C/D의 4.8~7.5초 지연은 슬레이브 스케줄링에서 발생</text>
+</svg>

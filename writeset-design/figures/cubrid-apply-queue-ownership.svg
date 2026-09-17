@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="820" viewBox="0 0 1500 820">
+  <defs>
+    <style>
+      .title{font:700 30px sans-serif;fill:#0f172a}.sub{font:500 17px sans-serif;fill:#475569}
+      .laneTitle{font:700 21px sans-serif;fill:#0f172a}.laneSub{font:500 15px sans-serif;fill:#64748b}
+      .head{font:700 19px sans-serif;fill:#0f172a}.body{font:500 16px sans-serif;fill:#334155}.small{font:500 14px sans-serif;fill:#64748b}
+      .readerLane{fill:#f0f7ff;stroke:#93c5fd;stroke-width:2;rx:18}.workerLane{fill:#f8fafc;stroke:#cbd5e1;stroke-width:2;rx:18}
+      .box{fill:#fff;stroke:#94a3b8;stroke-width:2;rx:13}.reader{fill:#fff;stroke:#3b82f6}.pending{fill:#fff7ed;stroke:#ea580c}.queue{fill:#f8fafc;stroke:#64748b}.worker{fill:#f5f3ff;stroke:#7c3aed}.result{fill:#f0fdf4;stroke:#16a34a}
+      .arrow{fill:none;stroke:#475569;stroke-width:2.5;marker-end:url(#arrow)}.control{fill:none;stroke:#2563eb;stroke-width:2.4;stroke-dasharray:8 6;marker-end:url(#blue)}.feedback{fill:none;stroke:#7c3aed;stroke-width:2.4;stroke-dasharray:8 6;marker-end:url(#purple)}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#475569"/></marker>
+    <marker id="blue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#2563eb"/></marker>
+    <marker id="purple" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#7c3aed"/></marker>
+  </defs>
+
+  <rect width="1500" height="820" fill="#fff"/>
+  <text x="55" y="50" class="title">슬레이브 병렬 적용의 실행 구조</text>
+  <text x="55" y="82" class="sub">reader는 로그 읽기를 계속하고, DB 적용은 queue로 연결된 여러 worker가 나누어 수행한다</text>
+
+  <rect x="45" y="115" width="1410" height="300" class="readerLane"/>
+  <text x="75" y="151" class="laneTitle">reader / coordinator thread · 1개</text>
+  <text x="75" y="177" class="laneSub">로그 읽기와 배정을 조정하며 DB 적용은 수행하지 않는다</text>
+
+  <rect x="75" y="215" width="205" height="105" class="box reader"/>
+  <text x="178" y="255" text-anchor="middle" class="head">복제 로그 읽기</text>
+  <text x="178" y="287" text-anchor="middle" class="body">COMMIT task 조립</text>
+
+  <path d="M280 268 H340" class="arrow"/>
+
+  <rect x="340" y="205" width="250" height="125" class="box reader"/>
+  <text x="465" y="244" text-anchor="middle" class="head">dependency 판정</text>
+  <text x="465" y="275" text-anchor="middle" class="body">la_gate_is_satisfied()</text>
+  <text x="465" y="304" text-anchor="middle" class="small">worker를 기다리지 않고 다음 로그 진행</text>
+
+  <path d="M590 250 H660" class="arrow"/>
+  <text x="625" y="235" text-anchor="middle" class="small">미충족</text>
+
+  <rect x="660" y="205" width="245" height="125" class="box pending"/>
+  <text x="783" y="244" text-anchor="middle" class="head">pending queue</text>
+  <text x="783" y="275" text-anchor="middle" class="body">의존성 대기 task</text>
+  <text x="783" y="304" text-anchor="middle" class="small">reader / coordinator가 보관</text>
+
+  <rect x="1040" y="190" width="350" height="155" class="box result"/>
+  <text x="1215" y="228" text-anchor="middle" class="head">worker 결과 수거</text>
+  <text x="1215" y="260" text-anchor="middle" class="body">완료 등록 · frontier 전진</text>
+  <text x="1215" y="292" text-anchor="middle" class="body">drain_ready()로 pending 재판정</text>
+  <text x="1215" y="322" text-anchor="middle" class="small">배정 순서의 결과 대응과 retire도 담당</text>
+
+  <path d="M1040 268 H930 V330 H905" class="feedback"/>
+  <text x="974" y="315" text-anchor="middle" class="small">조건 변화</text>
+
+  <rect x="45" y="450" width="1410" height="275" class="workerLane"/>
+  <text x="75" y="486" class="laneTitle">worker threads · N개</text>
+  <text x="75" y="512" class="laneSub">worker별 queue를 통해 task를 받아 서로 독립적으로 DB 트랜잭션을 적용한다</text>
+
+  <rect x="330" y="550" width="230" height="110" class="box queue"/>
+  <text x="445" y="591" text-anchor="middle" class="head">worker queue[i]</text>
+  <text x="445" y="624" text-anchor="middle" class="body">실행 허가된 task</text>
+  <text x="445" y="648" text-anchor="middle" class="small">reader → worker[i]</text>
+
+  <path d="M560 605 H655" class="arrow"/>
+
+  <rect x="655" y="525" width="245" height="160" class="box worker"/>
+  <text x="778" y="562" text-anchor="middle" class="head">worker[i]</text>
+  <text x="778" y="591" text-anchor="middle" class="small">develop 적용 코어 재사용</text>
+  <text x="778" y="622" text-anchor="middle" class="body">la_apply_repl_log()</text>
+  <text x="778" y="653" text-anchor="middle" class="body">DB COMMIT 또는 rollback</text>
+
+  <path d="M900 605 H995" class="arrow"/>
+
+  <rect x="995" y="550" width="230" height="110" class="box queue"/>
+  <text x="1110" y="591" text-anchor="middle" class="head">result queue[i]</text>
+  <text x="1110" y="624" text-anchor="middle" class="body">worker 완료 결과</text>
+  <text x="1110" y="648" text-anchor="middle" class="small">worker[i]에 속함 · reader가 회수</text>
+
+  <path d="M465 330 V550" class="arrow"/>
+  <text x="480" y="438" class="small">충족 task 배정</text>
+
+  <path d="M783 330 V390 H445 V550" class="feedback"/>
+  <text x="610" y="378" text-anchor="middle" class="small">drain_ready(): 조건이 풀린 task 재배정</text>
+
+  <path d="M1110 550 V390 H1215 V345" class="arrow"/>
+  <text x="1160" y="432" class="small">result 회수</text>
+
+  <path d="M340 315 H305 V365 H178 V320" class="control"/>
+  <text x="255" y="387" text-anchor="middle" class="small">다음 복제 로그를 계속 읽음</text>
+
+  <text x="75" y="770" class="small">queue가 thread 사이의 task/result 소유권을 넘긴다 · pending은 의존성 대기 전용이며 worker 부족 대기와 구분한다</text>
+  <text x="75" y="797" class="small">reader/coordinator는 하나의 제어 thread이고, 실제 병렬성은 여러 worker의 DB 적용에서 나온다</text>
+</svg>

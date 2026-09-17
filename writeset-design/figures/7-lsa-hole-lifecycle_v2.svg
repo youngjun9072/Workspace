@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="920" viewBox="0 0 1800 920" role="img" aria-labelledby="title desc">
+  <title id="title">LSA hole의 생성과 연속 완료 경계 전진</title>
+  <desc id="desc">C3, C1, C2 순서로 완료될 때 completed set과 commit-order FIFO가 hole을 보존하고 frontier를 C1, C3 순서로 전진시키는 세 상태를 비교한다.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L10,3 L0,6 Z" fill="#526170"/></marker>
+    <style>
+      text{font-family:"Pretendard","Noto Sans KR",sans-serif;fill:#17212b} .title{font-size:30px;font-weight:700}.sub{font-size:17px;fill:#526170}.h{font-size:20px;font-weight:700}.t{font-size:17px}.m{font-family:"D2Coding","Noto Sans Mono",monospace;font-size:17px}.panel{fill:#f8fafc;stroke:#aab5c1;stroke-width:2}.done{fill:#e9f7ef;stroke:#2f855a;stroke-width:2}.wait{fill:#fff4e5;stroke:#cc7a00;stroke-width:2}.hole{fill:#fff0f0;stroke:#c53030;stroke-width:2}.front{fill:#eaf2ff;stroke:#3569b7;stroke-width:2}.flow{fill:none;stroke:#526170;stroke-width:2.5;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1800" height="920" fill="#fff"/>
+  <text x="60" y="55" class="title">LSA hole · 개별 완료와 연속 완료를 분리한다</text>
+  <text x="60" y="88" class="sub">커밋 순서 C1 → C2 → C3, 실제 완료 순서 C3 → C1 → C2</text>
+
+  <rect x="55" y="125" width="520" height="690" rx="16" class="panel"/>
+  <text x="315" y="165" text-anchor="middle" class="h">상태 A · C3이 먼저 완료</text>
+  <text x="315" y="195" text-anchor="middle" class="sub">C1과 C2가 hole이므로 frontier는 움직이지 않는다</text>
+  <text x="95" y="250" class="h">COMMIT 순서 상태 · coordinator 소유</text>
+  <rect x="95" y="275" width="120" height="70" rx="8" class="hole"/><text x="155" y="318" text-anchor="middle" class="m">C1</text>
+  <rect x="230" y="275" width="120" height="70" rx="8" class="hole"/><text x="290" y="318" text-anchor="middle" class="m">C2</text>
+  <rect x="365" y="275" width="120" height="70" rx="8" class="done"/><text x="425" y="318" text-anchor="middle" class="m">C3 ✓</text>
+  <text x="95" y="395" class="h">개별 완료 상태 (completed set)</text><rect x="95" y="420" width="390" height="80" rx="10" class="done"/><text x="290" y="468" text-anchor="middle" class="m">{ C3 }</text>
+  <text x="95" y="555" class="h">연속 완료 경계</text><rect x="95" y="580" width="390" height="85" rx="10" class="front"/><text x="290" y="632" text-anchor="middle" class="m">frontier = F0</text>
+  <text x="95" y="720" class="t">C3의 완료는 보존하지만 C1·C2를</text><text x="95" y="750" class="t">완료한 것으로 추론하지 않는다.</text>
+
+  <path d="M590 470H635" class="flow"/><text x="612" y="448" text-anchor="middle" class="m">C1 완료</text>
+  <rect x="640" y="125" width="520" height="690" rx="16" class="panel"/>
+  <text x="900" y="165" text-anchor="middle" class="h">상태 B · C1 완료</text>
+  <text x="900" y="195" text-anchor="middle" class="sub">FIFO head C1을 흡수하지만 C2에서 다시 멈춘다</text>
+  <text x="680" y="250" class="h">COMMIT 순서 상태 · coordinator 소유</text>
+  <rect x="680" y="275" width="120" height="70" rx="8" class="done"/><text x="740" y="318" text-anchor="middle" class="m">C1 ✓</text>
+  <rect x="815" y="275" width="120" height="70" rx="8" class="hole"/><text x="875" y="318" text-anchor="middle" class="m">C2</text>
+  <rect x="950" y="275" width="120" height="70" rx="8" class="done"/><text x="1010" y="318" text-anchor="middle" class="m">C3 ✓</text>
+  <text x="680" y="395" class="h">개별 완료 상태 (completed set)</text><rect x="680" y="420" width="390" height="80" rx="10" class="done"/><text x="875" y="468" text-anchor="middle" class="m">{ C3 }</text>
+  <text x="680" y="555" class="h">연속 완료 경계</text><rect x="680" y="580" width="390" height="85" rx="10" class="front"/><text x="875" y="632" text-anchor="middle" class="m">frontier = C1</text>
+  <text x="680" y="720" class="t">C1은 frontier에 흡수된다.</text><text x="680" y="750" class="t">C2가 미완료라 C3까지 갈 수 없다.</text>
+
+  <path d="M1175 470H1220" class="flow"/><text x="1197" y="448" text-anchor="middle" class="m">C2 완료</text>
+  <rect x="1225" y="125" width="520" height="690" rx="16" class="panel"/>
+  <text x="1485" y="165" text-anchor="middle" class="h">상태 C · hole 닫힘</text>
+  <text x="1485" y="195" text-anchor="middle" class="sub">C2와 이미 완료된 C3을 연속으로 흡수한다</text>
+  <text x="1265" y="250" class="h">COMMIT 순서 상태 · coordinator 소유</text>
+  <rect x="1265" y="275" width="390" height="70" rx="8" class="done"/><text x="1460" y="318" text-anchor="middle" class="m">C1 ✓   C2 ✓   C3 ✓</text>
+  <text x="1265" y="395" class="h">개별 완료 상태 (completed set)</text><rect x="1265" y="420" width="390" height="80" rx="10" class="done"/><text x="1460" y="458" text-anchor="middle" class="m">{ }</text><text x="1460" y="486" text-anchor="middle" class="t">실제 하위 슬롯은 필요할 때 지연 prune</text>
+  <text x="1265" y="555" class="h">연속 완료 경계</text><rect x="1265" y="580" width="390" height="85" rx="10" class="front"/><text x="1460" y="632" text-anchor="middle" class="m">frontier = C3</text>
+  <text x="1265" y="720" class="t">영속 committed_lsa는 C3까지</text><text x="1265" y="750" class="t">안전하게 전진할 수 있다.</text>
+
+  <rect x="300" y="850" width="1200" height="48" rx="8" fill="#fff7ed" stroke="#cc7a00" stroke-width="1.5"/>
+  <text x="900" y="881" text-anchor="middle" class="t">불변식 · 완료된 가장 큰 LSA가 아니라 COMMIT 순서의 연속 완료 범위만 frontier가 된다.</text>
+</svg>

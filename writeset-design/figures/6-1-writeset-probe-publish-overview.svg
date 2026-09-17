@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="540" viewBox="0 0 1200 540" font-family="-apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif">
+<defs><marker id="aO" markerWidth="10" markerHeight="10" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#ea580c"/></marker><marker id="aG" markerWidth="10" markerHeight="10" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#6b7280"/></marker></defs>
+<rect width="1200" height="540" fill="#fff"/>
+<text x="40" y="46" font-size="26" font-weight="700" fill="#111827">트랜잭션 안의 해시 목록과 전역 history — probe로 비교하고 publish로 갱신한다</text>
+<text x="40" y="70" font-size="14" fill="#6b7280">① probe(읽기) → ② dependency를 WS_LABEL·COMMIT으로 기록 → ③ publish(본인 seq 게시) → ④ 트랜잭션 해시 목록 소멸</text>
+<rect x="40" y="92" width="400" height="200" rx="8" fill="#fff" stroke="#374151" stroke-width="2"/>
+<text x="60" y="120" font-size="16" fill="#111827" font-weight="700" text-anchor="start">트랜잭션 · LOG_TDES.ws_hashes</text>
+<text x="60" y="140" font-size="12" fill="#6b7280" text-anchor="start">행 연산마다 {해시, WRITE|REF} 추가 · 트랜잭션 로컬 · lock 없음</text>
+<rect x="60" y="158" width="360" height="28" rx="6" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
+<text x="72" y="177" font-size="14" fill="#9a3412" font-weight="700" text-anchor="start">자기 PK · UNIQUE</text>
+<text x="340" y="177" font-size="14" fill="#ea580c" font-weight="700" text-anchor="start">WRITE</text>
+<rect x="60" y="192" width="360" height="28" rx="6" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
+<text x="72" y="211" font-size="14" fill="#9a3412" font-weight="700" text-anchor="start">자식 FK가 가리키는 부모 PK</text>
+<text x="340" y="211" font-size="14" fill="#ea580c" font-weight="700" text-anchor="start">REF</text>
+<text x="60" y="258" font-size="13" fill="#6b7280" text-anchor="start">④ COMMIT 또는 ABORT 뒤 비움 (소멸)</text>
+<rect x="60" y="232" width="360" height="1" rx="8" fill="#e5e7eb" stroke="#e5e7eb" stroke-width="0"/>
+<rect x="760" y="92" width="400" height="200" rx="8" fill="#fff" stroke="#374151" stroke-width="2"/>
+<text x="780" y="120" font-size="16" fill="#111827" font-weight="700" text-anchor="start">전역 history · log_Writeset_history</text>
+<text x="780" y="140" font-size="12" fill="#6b7280" text-anchor="start">hash → {write_seq, read_seq} · 서버 전역 · latch로 보호</text>
+<rect x="780" y="158" width="360" height="28" rx="6" fill="#f3f4f6" stroke="#6b7280" stroke-width="2"/>
+<text x="792" y="177" font-size="14" fill="#374151" font-weight="700" text-anchor="start">write_seq</text>
+<text x="880" y="177" font-size="13" fill="#374151" text-anchor="start">이 키를 마지막으로 WRITE한 COMMIT seq</text>
+<rect x="780" y="192" width="360" height="28" rx="6" fill="#f3f4f6" stroke="#6b7280" stroke-width="2"/>
+<text x="792" y="211" font-size="14" fill="#374151" font-weight="700" text-anchor="start">read_seq</text>
+<text x="880" y="211" font-size="13" fill="#374151" text-anchor="start">이 키를 REF한 COMMIT seq의 최댓값</text>
+<text x="780" y="258" font-size="13" fill="#6b7280" text-anchor="start">커밋한 위치만 남는다. 행 값도, lc도 저장하지 않는다.</text>
+<line x1="440" y1="150" x2="760" y2="150" stroke="#6b7280" stroke-width="2.2" marker-end="url(#aG)"/>
+<text x="600" y="140" font-size="13" fill="#6b7280" font-weight="700" text-anchor="middle">① probe · 읽기만</text>
+<text x="600" y="166" font-size="11" fill="#6b7280" text-anchor="middle">REF → write_seq / WRITE → write_seq·read_seq</text>
+<line x1="440" y1="236" x2="760" y2="236" stroke="#ea580c" stroke-width="2.2" marker-end="url(#aO)"/>
+<text x="600" y="226" font-size="13" fill="#ea580c" font-weight="700" text-anchor="middle">③ publish · 본인 COMMIT seq 게시</text>
+<text x="600" y="252" font-size="11" fill="#ea580c" text-anchor="middle">WRITE → write_seq = seq / REF → read_seq = max(·, seq)</text>
+<line x1="240" y1="292" x2="240" y2="340" stroke="#ea580c" stroke-width="2.2" marker-end="url(#aO)"/>
+<text x="258" y="322" font-size="13" fill="#ea580c" font-weight="700" text-anchor="start">② 가장 늦은 후보 = dependency</text>
+<rect x="40" y="346" width="270" height="52" rx="7" fill="#f3f4f6" stroke="#6b7280" stroke-width="2"/>
+<text x="175.0" y="377" font-size="14" fill="#374151" font-weight="700" text-anchor="middle">REPL · 변경 복제 레코드</text>
+<rect x="330" y="346" width="350" height="52" rx="7" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
+<text x="505.0" y="377" font-size="14" fill="#9a3412" font-weight="700" text-anchor="middle">WS_LABEL · dependency_seq, is_read</text>
+<rect x="700" y="346" width="300" height="52" rx="7" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
+<text x="850.0" y="377" font-size="14" fill="#9a3412" font-weight="700" text-anchor="middle">COMMIT · 본인 seq 확정</text>
+<line x1="310" y1="372.0" x2="330" y2="372.0" stroke="#6b7280" stroke-width="2.2" marker-end="url(#aG)"/>
+<line x1="680" y1="372.0" x2="700" y2="372.0" stroke="#ea580c" stroke-width="2.2" marker-end="url(#aO)"/>
+<line x1="1000" y1="398" x2="1000" y2="420" stroke="#ea580c" stroke-width="2.2" marker-end="url(#aO)"/>
+<text x="1000" y="436" font-size="12" fill="#ea580c" font-weight="700" text-anchor="middle">③ 확정된 seq로 publish → 그 뒤 잠금 해제</text>
+<text x="40" y="436" font-size="13" fill="#374151" text-anchor="start">probe·publish는 latch 안에서, 커밋 경로에서만 일어난다. 슬레이브에는 ②의 두 값만 전달된다.</text>
+<rect x="0" y="476" width="1200" height="64" fill="#0f172a"/>
+<text x="600" y="514" font-size="18" fill="#fff" font-weight="700" text-anchor="middle">트랜잭션 안의 해시는 커밋 한 번을 위해 존재하고, history에는 커밋한 위치만 남는다.</text>
+</svg>

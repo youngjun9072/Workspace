@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="560" viewBox="0 0 1500 560" role="img" aria-labelledby="title desc">
+  <title id="title">WS_LABEL의 복제 로그 배치</title>
+  <desc id="desc">같은 트랜잭션의 변경 복제 레코드 뒤에 dependency 결과를 담은 WS_LABEL이 놓이고, 그 뒤에 COMMIT이 기록된다. 세 레코드는 같은 트랜잭션 ID로 연결된다.</desc>
+  <defs>
+    <style>
+      text{font-family:"Pretendard","Noto Sans KR",sans-serif;fill:#1f2a36}
+      .title{font-size:30px;font-weight:700}.subtitle{font-size:17px;fill:#647385}
+      .head{font-size:20px;font-weight:700}.body{font-size:16px}.small{font-size:14px;fill:#647385}.mono{font:15px ui-monospace,SFMono-Regular,Menlo,monospace}
+      .boundary{fill:#f7f9fc;stroke:#9aabba;stroke-width:2;stroke-dasharray:9 7}
+      .data{fill:#eef5fb;stroke:#5681ad;stroke-width:2}.label{fill:#fff5e9;stroke:#d9822b;stroke-width:2}.commit{fill:#edf8f0;stroke:#3f9d5a;stroke-width:2}
+      .line{fill:none;stroke:#536273;stroke-width:3;marker-end:url(#arrow)}
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#536273"/></marker>
+  </defs>
+  <rect width="1500" height="560" fill="#fff"/>
+  <text x="50" y="50" class="title">dependency 결과를 COMMIT task에 연결하는 로그 배치</text>
+  <text x="50" y="82" class="subtitle">충돌 키와 history는 보내지 않고, 최종 dependency 결과만 같은 트랜잭션의 COMMIT 앞에 기록한다.</text>
+
+  <rect x="55" y="125" width="1390" height="310" rx="18" class="boundary"/>
+  <text x="85" y="160" class="head">하나의 append 경계 · 동일한 transaction ID</text>
+
+  <rect x="105" y="215" width="355" height="145" rx="14" class="data"/>
+  <text x="282" y="255" text-anchor="middle" class="head">변경 복제 레코드</text>
+  <text x="282" y="291" text-anchor="middle" class="body">INSERT · UPDATE · DELETE</text>
+  <text x="282" y="326" text-anchor="middle" class="mono">trid = T1</text>
+
+  <rect x="570" y="215" width="355" height="145" rx="14" class="label"/>
+  <text x="747" y="255" text-anchor="middle" class="head">WS_LABEL</text>
+  <text x="747" y="289" text-anchor="middle" class="body">dependency LSA · 대기 방식</text>
+  <text x="747" y="326" text-anchor="middle" class="mono">trid = T1</text>
+
+  <rect x="1035" y="215" width="355" height="145" rx="14" class="commit"/>
+  <text x="1212" y="255" text-anchor="middle" class="head">COMMIT</text>
+  <text x="1212" y="289" text-anchor="middle" class="body">transaction task 완성 기준</text>
+  <text x="1212" y="326" text-anchor="middle" class="mono">trid = T1</text>
+
+  <path d="M460 287H570" class="line"/>
+  <path d="M925 287H1035" class="line"/>
+
+  <rect x="210" y="470" width="1080" height="58" rx="12" fill="#172033"/>
+  <text x="750" y="506" text-anchor="middle" style="font:700 16px 'Pretendard','Noto Sans KR',sans-serif;fill:#fff">WS_LABEL은 앞의 history를 설명하는 레코드가 아니라, 뒤의 COMMIT task가 사용할 dependency 결과다.</text>
+</svg>

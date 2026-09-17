@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="390" viewBox="0 0 1400 390">
+  <defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#475569"/></marker></defs>
+  <style>text{font-family:Arial,'Noto Sans KR',sans-serif;fill:#172033}.title{font-size:25px;font-weight:700}.head{font-size:18px;font-weight:700}.body{font-size:15px}.small{font-size:13px;fill:#526174}.line{fill:none;stroke:#475569;stroke-width:2.4;marker-end:url(#a)}.retry{fill:none;stroke:#8b5cf6;stroke-width:2.4;stroke-dasharray:8 6;marker-end:url(#a)}</style>
+  <rect width="1400" height="390" fill="#fff"/>
+  <text x="38" y="44" class="title">pending · dependency 미충족 task 보류와 재판정</text>
+  <rect x="55" y="105" width="285" height="105" rx="14" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
+  <text x="198" y="143" text-anchor="middle" class="head">dependency gate</text><text x="198" y="176" text-anchor="middle" class="body">판정 결과: 미충족</text>
+  <path d="M340 158H500" class="line"/><text x="420" y="143" text-anchor="middle" class="small">보류</text>
+  <rect x="500" y="105" width="330" height="105" rx="14" fill="#fff7ed" stroke="#f97316" stroke-width="2"/>
+  <text x="665" y="143" text-anchor="middle" class="head">LA_GATE_PENDING</text><text x="665" y="176" text-anchor="middle" class="body">아직 실행하면 안 되는 task</text>
+  <rect x="995" y="105" width="350" height="105" rx="14" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
+  <text x="1170" y="143" text-anchor="middle" class="head">worker 완료 상태 변경</text><text x="1170" y="176" text-anchor="middle" class="body">frontier·completed set 갱신</text>
+  <path d="M1170 210V290H665V210" class="retry"/>
+  <text x="918" y="278" text-anchor="middle" class="small">la_gate_drain_ready()가 pending을 다시 판정</text>
+  <path d="M500 158H455V320H995V210" class="retry"/>
+  <text x="725" y="344" text-anchor="middle" class="small">재판정에서 충족된 task만 worker queue로 전달</text>
+</svg>

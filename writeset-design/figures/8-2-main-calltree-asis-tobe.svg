@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2300" height="1290" viewBox="0 0 2300 1290">
+  <style>
+    text{font-family:Arial,'Noto Sans KR',sans-serif;fill:#172033}
+    .title{font-size:28px;font-weight:700}.head{font-size:22px;font-weight:700}
+    .code{font-family:'DejaVu Sans Mono','Noto Sans Mono CJK KR',monospace;font-size:15px;fill:#253047}
+    .new{fill:#b91c1c}.num{fill:#1d4ed8;font-weight:700}.muted{fill:#64748b}
+    .repeat{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.5}
+  </style>
+  <rect width="2300" height="1290" fill="#fff"/>
+  <text x="40" y="48" class="title">슬레이브 적용 전체 호출 관계와 상세 절 연결</text>
+  <line x1="1100" y1="72" x2="1100" y2="1210" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="550" y="103" text-anchor="middle" class="head">AS-IS</text>
+  <text x="1700" y="103" text-anchor="middle" class="head">TO-BE</text>
+
+  <text x="45" y="148" class="code">reader thread</text>
+  <text x="45" y="180" class="code">la_apply_log_file()</text>
+  <text x="45" y="218" class="code">├─ la_init()</text>
+  <rect x="35" y="242" width="980" height="280" rx="12" class="repeat"/>
+  <text x="55" y="275" class="code muted">반복: 로그 레코드가 있는 동안</text>
+  <text x="55" y="315" class="code">├─ 로그 레코드 반복</text>
+  <text x="55" y="350" class="code">│  ├─ LOG_GET_LOG_RECORD_HEADER()</text>
+  <text x="55" y="385" class="code">│  └─ la_log_record_process()</text>
+  <text x="55" y="420" class="code">│     └─ LOG_COMMIT</text>
+  <text x="55" y="455" class="code">│        └─ la_apply_commit_list()</text>
+  <text x="55" y="490" class="code">│           └─ la_apply_repl_log()</text>
+  <text x="45" y="565" class="code">└─ la_shutdown()</text>
+  <text x="45" y="620" class="code muted">로그 읽기와 DB 적용이 reader 호출 흐름 안에서 순차 실행</text>
+
+  <text x="1140" y="148" class="code">reader/coordinator thread</text>
+  <text x="1140" y="180" class="code">la_apply_log_file()</text>
+  <text x="1140" y="215" class="code">├─ la_init()</text>
+  <text x="1140" y="250" class="code new">├─ la_start_apply_workers()</text>
+  <text x="2100" y="250" class="code num">— ①</text>
+  <text x="1140" y="285" class="code new">│  └─ pthread_create(la_apply_worker_main)</text>
+
+  <rect x="1130" y="305" width="1100" height="235" rx="12" class="repeat"/>
+  <text x="1150" y="338" class="code muted">별도 worker thread 반복: 종료 요청 전까지</text>
+  <text x="1150" y="373" class="code new">│     └─ worker 반복</text>
+  <text x="2100" y="373" class="code num">— ④</text>
+  <text x="1150" y="408" class="code new">│        ├─ la_dequeue_apply_task()</text>
+  <text x="1150" y="443" class="code">│        ├─ la_apply_repl_log()</text>
+  <text x="1890" y="443" class="code num">— ⑧ error skip</text>
+  <text x="1150" y="478" class="code new">│        ├─ la_commit_transaction()</text>
+  <text x="1150" y="513" class="code new">│        └─ la_enqueue_apply_result()</text>
+
+  <text x="1140" y="580" class="code new">├─ la_get_last_ha_applied_info()</text>
+  <text x="2100" y="580" class="code num">— ⑧</text>
+  <text x="1140" y="615" class="code">├─ 적용 반복</text>
+  <text x="1140" y="650" class="code new">│  ├─ la_apply_pre()</text>
+  <text x="2100" y="650" class="code num">— ⑧</text>
+
+  <rect x="1130" y="670" width="1100" height="330" rx="12" class="repeat"/>
+  <text x="1150" y="703" class="code muted">reader 로그 반복</text>
+  <text x="1150" y="738" class="code new">│  └─ reader 로그 반복</text>
+  <text x="1150" y="773" class="code new">│     ├─ la_collect_apply_results()</text>
+  <text x="2100" y="773" class="code num">— ⑤</text>
+  <text x="1150" y="808" class="code">│     ├─ LOG_GET_LOG_RECORD_HEADER()</text>
+  <text x="1150" y="843" class="code">│     ├─ la_log_record_process()</text>
+  <text x="2100" y="843" class="code num">— ②</text>
+  <text x="1150" y="878" class="code new">│     │  └─ LOG_COMMIT에서 LA_APPLY_TASK 완성</text>
+  <text x="1150" y="913" class="code new">│     │     └─ dependency 판정과 queue 배정</text>
+  <text x="2100" y="913" class="code num">— ③</text>
+  <text x="1150" y="948" class="code new">│     └─ la_change_state()</text>
+  <text x="2100" y="948" class="code num">— ⑦</text>
+
+  <text x="1140" y="1045" class="code">└─ la_shutdown()</text>
+  <text x="1140" y="1080" class="code new">   └─ la_stop_apply_workers()</text>
+  <text x="2100" y="1080" class="code num">— ①</text>
+
+  <rect x="1130" y="1125" width="1100" height="95" rx="12" class="repeat"/>
+  <text x="1150" y="1162" class="code new">⑤ 결과 수거 → ⑥ la_gate_drain_ready() → pending 재판정·재배정</text>
+  <text x="1150" y="1198" class="code new">                         ③과 같은 조건 사용 └─ 통과 → ④ worker 반복</text>
+  <text x="1140" y="1260" class="code muted">⑦은 이 순환이 모두 끝날 때까지 DONE 전환을 보류한다</text>
+</svg>

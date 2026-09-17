@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="432" viewBox="0 0 2000 432">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>.title{font:700 27px Arial,"Noto Sans KR",sans-serif;fill:#172033}.head{font:700 21px Arial,"Noto Sans KR",sans-serif;fill:#172033}.code{font-family:"DejaVu Sans Mono","Noto Sans Mono CJK KR",monospace;font-size:17px;fill:#253047}.added{fill:#dc2626;font-weight:700}</style>
+<text x="36" y="43" class="title">트랜잭션 테이블 기동과 writeset 상태 초기화</text>
+<line x1="1000" y1="68" x2="1000" y2="410" stroke="#cbd5e1" stroke-width="2"/>
+<text x="500" y="94" text-anchor="middle" class="head">AS-IS</text>
+<text x="1500" y="94" text-anchor="middle" class="head">TO-BE</text>
+<text x="42" y="130" class="code" xml:space="preserve">boot_restart_server()</text>
+<text x="42" y="158" class="code" xml:space="preserve">└─ logtb_define_trantable()</text>
+<text x="42" y="186" class="code" xml:space="preserve">   └─ logtb_define_trantable_log_latch()</text>
+<text x="42" y="214" class="code" xml:space="preserve">      └─ logtb_expand_trantable()</text>
+<text x="42" y="242" class="code" xml:space="preserve">         └─ logtb_allocate_tdes_area()</text>
+<text x="42" y="270" class="code" xml:space="preserve">            └─ logtb_initialize_tdes()</text>
+<text x="42" y="298" class="code" xml:space="preserve">               └─ 기존 LOG_TDES 상태 초기화</text>
+<text x="1042" y="130" class="code" xml:space="preserve">boot_restart_server()</text>
+<text x="1042" y="158" class="code" xml:space="preserve">└─ logtb_define_trantable()</text>
+<text x="1042" y="186" class="code" xml:space="preserve">   └─ logtb_define_trantable_log_latch()</text>
+<text x="1042" y="214" class="code" xml:space="preserve">      ├─ logtb_expand_trantable()</text>
+<text x="1042" y="242" class="code" xml:space="preserve">      │  └─ logtb_allocate_tdes_area()</text>
+<text x="1042" y="270" class="code" xml:space="preserve">      │     └─ logtb_initialize_tdes()</text>
+<text x="1042" y="298" class="code added" xml:space="preserve">      │        └─ log_writeset_tdes_initialize(tdes)</text>
+<text x="1042" y="326" class="code added" xml:space="preserve">      └─ log_writeset_history_initialize()</text>
+</svg>

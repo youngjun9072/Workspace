@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="690" viewBox="0 0 1500 690">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#475569"/>
+    </marker>
+    <marker id="redArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#dc2626"/>
+    </marker>
+    <style>
+      text{font-family:'Droid Sans','Noto Sans KR','Malgun Gothic',sans-serif;fill:#172033;font-size:15px}
+      .title{font-size:26px;font-weight:700}.side{font-size:21px;font-weight:700}.head{font-size:17px;font-weight:700}.body{font-size:14px}.small{font-size:13px;fill:#64748b}.newText{fill:#b91c1c}
+      .box{fill:#fff;stroke:#94a3b8;stroke-width:2}.base{fill:#f8fafc;stroke:#64748b}.log{fill:#eff6ff;stroke:#3b82f6}.new{fill:#dc2626;fill-opacity:.05;stroke:#dc2626;stroke-width:2.5}.commit{fill:#fff7ed;stroke:#f97316}
+      .arrow{fill:none;stroke:#475569;stroke-width:2.2;marker-end:url(#arrow)}.redArrow{fill:none;stroke:#dc2626;stroke-width:2.4;marker-end:url(#redArrow)}.divider{stroke:#cbd5e1;stroke-width:2}
+    </style>
+  </defs>
+
+  <rect width="1500" height="690" fill="#fff"/>
+  <text x="48" y="48" class="title">statement replication의 AS-IS · TO-BE 호출 관계</text>
+  <line x1="750" y1="78" x2="750" y2="650" class="divider"/>
+
+  <text x="375" y="102" text-anchor="middle" class="side">AS-IS</text>
+  <text x="1125" y="102" text-anchor="middle" class="side">TO-BE</text>
+
+  <rect x="105" y="132" width="540" height="66" rx="12" class="box base"/>
+  <text x="375" y="172" text-anchor="middle" class="head">xrepl_set_info()</text>
+  <path d="M375 198 V230" class="arrow"/>
+  <rect x="105" y="230" width="540" height="66" rx="12" class="box base"/>
+  <text x="375" y="270" text-anchor="middle" class="head">REPL_INFO_TYPE_SBR</text>
+  <path d="M375 296 V328" class="arrow"/>
+  <rect x="105" y="328" width="540" height="74" rx="12" class="box base"/>
+  <text x="375" y="359" text-anchor="middle" class="head">repl_log_insert_statement()</text>
+  <text x="375" y="384" text-anchor="middle" class="small">statement 복제 정보 생성</text>
+  <path d="M375 402 V434" class="arrow"/>
+  <rect x="105" y="434" width="540" height="76" rx="12" class="box log"/>
+  <text x="375" y="467" text-anchor="middle" class="head">LOG_REPLICATION_STATEMENT</text>
+  <text x="375" y="492" text-anchor="middle" class="small">LOG_TDES.repl_records에 수집</text>
+
+  <rect x="855" y="132" width="540" height="66" rx="12" class="box base"/>
+  <text x="1125" y="172" text-anchor="middle" class="head">xrepl_set_info()</text>
+  <path d="M1125 198 V230" class="arrow"/>
+  <rect x="855" y="230" width="540" height="66" rx="12" class="box base"/>
+  <text x="1125" y="270" text-anchor="middle" class="head">REPL_INFO_TYPE_SBR</text>
+  <path d="M1125 296 V328" class="arrow"/>
+
+  <rect x="825" y="316" width="600" height="210" rx="18" class="new"/>
+  <rect x="845" y="303" width="126" height="28" rx="14" fill="#dc2626"/>
+  <text x="908" y="322" text-anchor="middle" class="small" style="fill:#fff">변경·추가 영역</text>
+  <rect x="855" y="342" width="540" height="72" rx="12" class="box base"/>
+  <text x="1125" y="373" text-anchor="middle" class="head">repl_log_insert_statement()</text>
+  <text x="1125" y="397" text-anchor="middle" class="small">기존 statement 복제 정보 수집 유지</text>
+  <path d="M1125 414 V442" class="redArrow"/>
+  <rect x="855" y="442" width="250" height="62" rx="12" class="box new"/>
+  <text x="980" y="480" text-anchor="middle" class="head newText">ws_overflow = true</text>
+  <rect x="1145" y="442" width="250" height="62" rx="12" class="box log"/>
+  <text x="1270" y="469" text-anchor="middle" class="head">STATEMENT 정보</text>
+  <text x="1270" y="491" text-anchor="middle" class="small">repl_records에 수집</text>
+
+  <path d="M980 504 V548" class="redArrow"/>
+  <text x="1000" y="539" class="small">COMMIT에서 상태 소비</text>
+  <rect x="825" y="548" width="600" height="102" rx="14" class="box commit"/>
+  <text x="1125" y="578" text-anchor="middle" class="head">log_commit_local()</text>
+  <text x="1125" y="608" text-anchor="middle" class="body">probe: commit-order dependency 확정</text>
+  <text x="1125" y="633" text-anchor="middle" class="body">flush: history 제거 · history_start 전진</text>
+
+  <text x="375" y="592" text-anchor="middle" class="small">행 키가 없는 statement도 기존 복제 정보는 수집한다.</text>
+  <text x="375" y="618" text-anchor="middle" class="small">writeset 기반 dependency 처리는 존재하지 않는다.</text>
+</svg>

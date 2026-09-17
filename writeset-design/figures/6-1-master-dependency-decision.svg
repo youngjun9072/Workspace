@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1700" height="940" viewBox="0 0 1700 940">
+  <defs>
+    <style>
+      .title{font:700 30px sans-serif;fill:#0f172a}
+      .sub{font:500 17px sans-serif;fill:#475569}
+      .head{font:700 20px sans-serif;fill:#0f172a}
+      .body{font:500 16px sans-serif;fill:#334155}
+      .small{font:500 14px sans-serif;fill:#64748b}
+      .box{fill:#fff;stroke:#94a3b8;stroke-width:2;rx:14}
+      .entry{fill:#eff6ff;stroke:#3b82f6}
+      .history{fill:#fff7ed;stroke:#ea580c}
+      .ref{fill:#f0fdf4;stroke:#16a34a}
+      .write{fill:#f5f3ff;stroke:#7c3aed}
+      .output{fill:#f8fafc;stroke:#475569}
+      .decision{fill:#fff;stroke:#64748b;stroke-width:2}
+      .arrow{fill:none;stroke:#475569;stroke-width:2.5;marker-end:url(#arrow)}
+      .refArrow{fill:none;stroke:#15803d;stroke-width:2.5;marker-end:url(#green)}
+      .writeArrow{fill:none;stroke:#6d28d9;stroke-width:2.5;marker-end:url(#purple)}
+      .join{fill:none;stroke:#64748b;stroke-width:2.2;stroke-dasharray:8 6}
+      .merge{fill:none;stroke:#64748b;stroke-width:2.2;stroke-dasharray:8 6;marker-end:url(#arrow)}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L9,3 L0,6 Z" fill="#475569"/>
+    </marker>
+    <marker id="green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L9,3 L0,6 Z" fill="#15803d"/>
+    </marker>
+    <marker id="purple" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L9,3 L0,6 Z" fill="#6d28d9"/>
+    </marker>
+  </defs>
+
+  <rect width="1700" height="940" fill="#fff"/>
+  <text x="50" y="52" class="title">WRITE·REF entry의 dependency 판정</text>
+  <text x="50" y="84" class="sub">현재 entry의 kind에 따라 history에서 읽을 슬롯과 슬레이브의 완료 판정 방식을 함께 정한다</text>
+
+  <rect x="50" y="250" width="230" height="150" class="box entry"/>
+  <text x="165" y="292" text-anchor="middle" class="head">현재 entry</text>
+  <text x="165" y="330" text-anchor="middle" class="body">{ hash, kind }</text>
+  <text x="165" y="366" text-anchor="middle" class="small">트랜잭션의 각 entry를 순회</text>
+
+  <path d="M280 325 H340" class="arrow"/>
+
+  <rect x="340" y="225" width="300" height="200" class="box history"/>
+  <text x="490" y="267" text-anchor="middle" class="head">history[entry.hash]</text>
+  <text x="385" y="315" class="body">write_seq</text>
+  <text x="385" y="352" class="body">read_seq</text>
+  <text x="490" y="394" text-anchor="middle" class="small">같은 충돌 키의 두 이력 슬롯</text>
+
+  <path d="M640 325 H700" class="arrow"/>
+
+  <polygon points="790,245 880,325 790,405 700,325" class="decision"/>
+  <text x="790" y="316" text-anchor="middle" class="head">현재 kind?</text>
+  <text x="790" y="345" text-anchor="middle" class="small">REF / WRITE</text>
+
+  <path d="M790 245 V195 H940" class="refArrow"/>
+  <text x="845" y="181" text-anchor="middle" class="small">REF</text>
+
+  <rect x="940" y="120" width="350" height="180" class="box ref"/>
+  <text x="1115" y="160" text-anchor="middle" class="head">현재 REF</text>
+  <text x="1115" y="198" text-anchor="middle" class="body">후보 = write_seq</text>
+  <text x="1115" y="232" text-anchor="middle" class="body">from_read_seq = false</text>
+  <text x="1115" y="270" text-anchor="middle" class="small">슬레이브: 해당 트랜잭션의 개별 완료 확인</text>
+
+  <path d="M790 405 V458 H900" class="writeArrow"/>
+  <text x="842" y="443" text-anchor="middle" class="small">WRITE</text>
+
+  <polygon points="1010,378 1120,458 1010,538 900,458" class="decision"/>
+  <text x="1010" y="449" text-anchor="middle" class="head">read_seq가</text>
+  <text x="1010" y="478" text-anchor="middle" class="body">write_seq보다 큰가?</text>
+
+  <path d="M1120 430 H1240" class="writeArrow"/>
+  <text x="1177" y="414" text-anchor="middle" class="small">아니요</text>
+
+  <rect x="1240" y="330" width="390" height="180" class="box write"/>
+  <text x="1435" y="370" text-anchor="middle" class="head">write_seq에서 선택</text>
+  <text x="1435" y="408" text-anchor="middle" class="body">후보 = write_seq</text>
+  <text x="1435" y="442" text-anchor="middle" class="body">from_read_seq = false</text>
+  <text x="1435" y="480" text-anchor="middle" class="small">슬레이브: 해당 트랜잭션의 개별 완료 확인</text>
+
+  <path d="M1010 538 V610 H1240" class="writeArrow"/>
+  <text x="1060" y="594" text-anchor="middle" class="small">예</text>
+
+  <rect x="1240" y="550" width="390" height="180" class="box write"/>
+  <text x="1435" y="590" text-anchor="middle" class="head">read_seq에서 선택</text>
+  <text x="1435" y="628" text-anchor="middle" class="body">후보 = read_seq</text>
+  <text x="1435" y="662" text-anchor="middle" class="body">from_read_seq = true</text>
+  <text x="1435" y="700" text-anchor="middle" class="small">슬레이브: 해당 위치까지 연속 완료 확인</text>
+
+  <path d="M1290 210 H1660" class="join"/>
+  <path d="M1630 420 H1660" class="join"/>
+  <path d="M1630 640 H1660" class="join"/>
+  <path d="M1660 210 V827 H1160" class="merge"/>
+
+  <rect x="430" y="765" width="730" height="125" class="box output"/>
+  <text x="795" y="805" text-anchor="middle" class="head">트랜잭션 전체 dependency 구성</text>
+  <text x="795" y="840" text-anchor="middle" class="body">entry별 후보 LSA와 슬롯 출처를 함께 누적하여 WS_LABEL에 전달</text>
+  <text x="795" y="870" text-anchor="middle" class="small">다중 entry의 최종 축약 규칙과 폴백은 9.2.4절에서 다룬다</text>
+
+  <text x="50" y="925" class="small">probe 단계에서는 history를 조회만 하며, 현재 트랜잭션의 본인 시퀀스 게시는 COMMIT 이후에 수행한다</text>
+</svg>

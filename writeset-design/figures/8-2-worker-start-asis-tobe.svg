@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="684" viewBox="0 0 2000 684">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>.title{font:700 27px Arial,"Noto Sans KR",sans-serif;fill:#172033}.head{font:700 21px Arial,"Noto Sans KR",sans-serif;fill:#172033}.code{font-family:"DejaVu Sans Mono","Noto Sans Mono CJK KR",monospace;font-size:17px;fill:#253047}.new{fill:#b91c1c}</style>
+<text x="36" y="43" class="title">applylogdb 초기화와 worker thread 시작</text>
+<line x1="1000" y1="68" x2="1000" y2="662" stroke="#cbd5e1" stroke-width="2"/>
+<text x="500" y="94" text-anchor="middle" class="head">AS-IS</text>
+<text x="1500" y="94" text-anchor="middle" class="head">TO-BE</text>
+<text x="42" y="130" class="code" xml:space="preserve">la_apply_log_file()</text>
+<text x="42" y="158" class="code" xml:space="preserve">└─ la_init()</text>
+<text x="42" y="186" class="code" xml:space="preserve">   ├─ la_Info 메모리·로그 경로 초기화</text>
+<text x="42" y="214" class="code" xml:space="preserve">   ├─ 로그 페이지 크기·volume descriptor 초기화</text>
+<text x="42" y="242" class="code" xml:space="preserve">   ├─ 진행·재시작 LSA를 NULL로 초기화</text>
+<text x="42" y="270" class="code" xml:space="preserve">   ├─ 메모리 한도·시작 시각 초기화</text>
+<text x="42" y="298" class="code" xml:space="preserve">   └─ 복제 객체·filter 상태 초기화</text>
+<text x="1042" y="130" class="code" xml:space="preserve">reader thread</text>
+<text x="1042" y="158" class="code" xml:space="preserve">la_apply_log_file()     </text>
+<text x="1042" y="186" class="code" xml:space="preserve">├─ la_init()</text>
+<text x="1042" y="214" class="code" xml:space="preserve">│  ├─ la_Info 메모리·로그 경로 초기화</text>
+<text x="1042" y="242" class="code" xml:space="preserve">│  ├─ 로그 페이지 크기·volume descriptor 초기화</text>
+<text x="1042" y="270" class="code" xml:space="preserve">│  ├─ 진행·재시작 LSA를 NULL로 초기화</text>
+<text x="1042" y="298" class="code new" xml:space="preserve">│  ├─ recovery·drain 상태 초기화</text>
+<text x="1042" y="326" class="code" xml:space="preserve">│  ├─ 메모리 한도·시작 시각 초기화</text>
+<text x="1042" y="354" class="code" xml:space="preserve">│  └─ 복제 객체·filter 상태 초기화</text>
+<text x="1042" y="398" class="code new" xml:space="preserve">└─ la_start_apply_workers()   </text>
+<text x="1042" y="426" class="code new" xml:space="preserve">   ├─ la_dispatch_order_init()</text>
+<text x="1042" y="454" class="code new" xml:space="preserve">   ├─ la_gate_init()          </text>
+<text x="1042" y="482" class="code" xml:space="preserve">   └─ worker별 반복</text>
+<text x="1042" y="510" class="code new" xml:space="preserve">      ├─ la_apply_worker_init()   </text>
+<text x="1042" y="538" class="code" xml:space="preserve">      └─ pthread_create()</text>
+<text x="1042" y="566" class="code" xml:space="preserve">             ↓</text>
+<text x="1042" y="594" class="code" xml:space="preserve">worker thread</text>
+<text x="1042" y="622" class="code new" xml:space="preserve">la_apply_worker_main()        </text>
+</svg>

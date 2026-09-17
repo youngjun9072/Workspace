@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="650" viewBox="0 0 1500 650" role="img" aria-labelledby="title desc">
+  <title id="title">develop과 병렬 적용의 LSA 전진 차이</title>
+  <desc id="desc">develop에서는 reader가 DB 적용을 끝낸 뒤 committed LSA와 final LSA를 차례로 전진시킨다. 병렬 적용에서는 reader가 task를 전달하고 final LSA를 먼저 전진시키며, worker 완료 결과로 연속 완료 경계를 계산한 뒤 committed LSA를 전진시킨다.</desc>
+  <defs>
+    <style>
+      text{font-family:"Pretendard","Noto Sans KR",sans-serif;fill:#1f2a36}
+      .title{font-size:30px;font-weight:700}.subtitle{font-size:17px;fill:#647385}.laneTitle{font-size:22px;font-weight:700}
+      .head{font-size:18px;font-weight:700}.body{font-size:15px}.small{font-size:14px;fill:#647385}
+      .laneOld{fill:#f7f9fc;stroke:#a5b2c0;stroke-width:2}.laneNew{fill:#f4f8fd;stroke:#87acd1;stroke-width:2}
+      .read{fill:#eef5fb;stroke:#5681ad;stroke-width:2}.apply{fill:#f5f0fa;stroke:#8d67a0;stroke-width:2}
+      .done{fill:#edf8f0;stroke:#3f9d5a;stroke-width:2}.frontier{fill:#fff5e9;stroke:#d9822b;stroke-width:2}
+      .line{fill:none;stroke:#536273;stroke-width:2.7;marker-end:url(#arrow)}
+      .split{fill:none;stroke:#5681ad;stroke-width:2.7;marker-end:url(#blueArrow)}
+      .repeat{fill:none;stroke:#5681ad;stroke-width:2.4;stroke-dasharray:7 5;marker-end:url(#blueArrow)}
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#536273"/></marker>
+    <marker id="blueArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#5681ad"/></marker>
+  </defs>
+  <rect width="1500" height="650" fill="#fff"/>
+  <text x="50" y="48" class="title">읽기 위치와 적용 완료 위치가 움직이는 방식</text>
+  <text x="50" y="79" class="subtitle">병렬 적용에서는 reader의 진행과 worker의 완료가 서로 다른 시점에 일어난다.</text>
+
+  <rect x="45" y="115" width="1410" height="190" rx="18" class="laneOld"/>
+  <text x="75" y="153" class="laneTitle">develop · 하나의 순차 흐름</text>
+  <rect x="85" y="190" width="250" height="75" rx="12" class="read"/>
+  <text x="210" y="220" text-anchor="middle" class="head">COMMIT 읽기</text><text x="210" y="246" text-anchor="middle" class="body">reader</text>
+  <rect x="415" y="190" width="250" height="75" rx="12" class="apply"/>
+  <text x="540" y="220" text-anchor="middle" class="head">DB 적용·COMMIT</text><text x="540" y="246" text-anchor="middle" class="body">완료될 때까지 대기</text>
+  <rect x="745" y="190" width="270" height="75" rx="12" class="done"/>
+  <text x="880" y="220" text-anchor="middle" class="head">committed_lsa 전진</text><text x="880" y="246" text-anchor="middle" class="body">적용 완료 위치</text>
+  <rect x="1095" y="190" width="270" height="75" rx="12" class="read"/>
+  <text x="1230" y="220" text-anchor="middle" class="head">final_lsa 전진</text><text x="1230" y="246" text-anchor="middle" class="body">다음 로그 읽기</text>
+  <path d="M335 227H415" class="line"/><path d="M665 227H745" class="line"/><path d="M1015 227H1095" class="line"/>
+
+  <rect x="45" y="335" width="1410" height="255" rx="18" class="laneNew"/>
+  <text x="75" y="373" class="laneTitle">병렬 적용 · reader 진행과 worker 완료 분리</text>
+  <rect x="85" y="415" width="250" height="75" rx="12" class="read"/>
+  <text x="210" y="445" text-anchor="middle" class="head">COMMIT 읽기</text><text x="210" y="471" text-anchor="middle" class="body">task 완성</text>
+  <rect x="415" y="395" width="250" height="75" rx="12" class="read"/>
+  <text x="540" y="425" text-anchor="middle" class="head">final_lsa 전진</text><text x="540" y="451" text-anchor="middle" class="body">다음 로그 계속 읽기</text>
+  <rect x="415" y="500" width="250" height="75" rx="12" class="apply"/>
+  <text x="540" y="530" text-anchor="middle" class="head">worker DB COMMIT</text><text x="540" y="556" text-anchor="middle" class="body">완료 결과 반환</text>
+  <rect x="745" y="500" width="270" height="75" rx="12" class="frontier"/>
+  <text x="880" y="530" text-anchor="middle" class="head">연속 완료 경계 계산</text><text x="880" y="556" text-anchor="middle" class="body">COMMIT 순서의 홀 확인</text>
+  <rect x="1095" y="500" width="270" height="75" rx="12" class="done"/>
+  <text x="1230" y="530" text-anchor="middle" class="head">committed_lsa 전진</text><text x="1230" y="556" text-anchor="middle" class="body">빈 구간 없는 위치만</text>
+  <path d="M335 452H415" class="split"/>
+  <path d="M665 416 C715 382 360 380 210 415" class="repeat"/>
+  <text x="430" y="392" text-anchor="middle" class="small">다음 COMMIT을 계속 읽으며 반복</text>
+  <path d="M210 490V537H415" class="line"/>
+  <path d="M665 537H745" class="line"/><path d="M1015 537H1095" class="line"/>
+
+  <text x="750" y="625" text-anchor="middle" class="small">final_lsa가 앞서더라도 committed_lsa는 worker 성공 결과로 계산한 연속 완료 경계까지만 전진한다.</text>
+</svg>

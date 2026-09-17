@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="760" viewBox="0 0 1500 760">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L10,3 L0,6 Z" fill="#475569"/></marker>
+    <marker id="stateArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L10,3 L0,6 Z" fill="#2563eb"/></marker>
+    <style>
+      text{font-family:'Droid Sans','Noto Sans KR','Malgun Gothic',sans-serif;fill:#172033;font-size:15px}
+      .title{font-size:25px;font-weight:700}.side{font-size:21px;font-weight:700}.head{font-size:16px;font-weight:700}.small{font-size:13px;fill:#64748b}.newText{font-size:13px;font-weight:700;fill:#b91c1c}
+      .base{fill:#f8fafc;stroke:#64748b;stroke-width:2}.log{fill:#eff6ff;stroke:#3b82f6;stroke-width:2}.new{fill:#fef2f2;stroke:#dc2626;stroke-width:2.5}.history{fill:#fff7ed;stroke:#f97316;stroke-width:2}.added{fill:#dc2626;fill-opacity:.035;stroke:#dc2626;stroke-width:3}
+      .arrow{fill:none;stroke:#475569;stroke-width:2.2;marker-end:url(#arrow)}.stateArrow{fill:none;stroke:#2563eb;stroke-width:2.2;marker-end:url(#stateArrow)}.divider{stroke:#cbd5e1;stroke-width:2}
+    </style>
+  </defs>
+
+  <rect width="1500" height="760" fill="#fff"/>
+  <text x="45" y="45" class="title">log_commit_local()의 AS-IS · TO-BE</text>
+  <line x1="750" y1="72" x2="750" y2="720" class="divider"/>
+  <text x="375" y="100" text-anchor="middle" class="side">AS-IS</text>
+  <text x="1125" y="100" text-anchor="middle" class="side">TO-BE</text>
+
+  <rect x="125" y="125" width="500" height="62" rx="11" class="base"/>
+  <text x="375" y="163" text-anchor="middle" class="head">log_commit() → log_commit_local()</text>
+  <path d="M375 187 V225" class="arrow"/>
+  <rect x="125" y="225" width="500" height="104" rx="12" class="log"/>
+  <text x="375" y="257" text-anchor="middle" class="head">log_append_repl_info_and_commit_log()</text>
+  <text x="375" y="284" text-anchor="middle" class="small">REPL 기록</text>
+  <text x="375" y="307" text-anchor="middle" class="small">COMMIT 기록 · commit_lsa 확정</text>
+  <path d="M375 329 V377" class="arrow"/>
+  <rect x="125" y="377" width="500" height="62" rx="11" class="base"/>
+  <text x="375" y="415" text-anchor="middle" class="head">lock_unlock_all()</text>
+  <path d="M375 439 V487" class="arrow"/>
+  <rect x="125" y="487" width="500" height="72" rx="11" class="base"/>
+  <text x="375" y="516" text-anchor="middle" class="head">log_change_tran_as_completed()</text>
+  <text x="375" y="541" text-anchor="middle" class="small">COMMIT 완료 상태 전환</text>
+
+  <rect x="810" y="112" width="620" height="578" rx="18" class="added"/>
+  <rect x="835" y="100" width="116" height="28" rx="14" fill="#dc2626"/>
+  <text x="893" y="119" text-anchor="middle" class="newText" style="fill:#fff">변경 영역</text>
+
+  <rect x="870" y="135" width="500" height="62" rx="11" class="base"/>
+  <text x="1120" y="173" text-anchor="middle" class="head">log_commit() → log_commit_local()</text>
+  <path d="M1120 197 V229" class="arrow"/>
+
+  <rect x="870" y="229" width="500" height="70" rx="11" class="new"/>
+  <text x="1120" y="256" text-anchor="middle" class="newText">NEW · log_writeset_commit_probe()</text>
+  <text x="1120" y="281" text-anchor="middle" class="small">전역 history 조회 · dependency 저장</text>
+  <path d="M1120 299 V331" class="arrow"/>
+
+  <rect x="870" y="331" width="500" height="106" rx="12" class="log"/>
+  <text x="1120" y="360" text-anchor="middle" class="head">log_append_repl_info_and_commit_log()</text>
+  <text x="1120" y="387" text-anchor="middle" class="small">REPL → WS_LABEL → COMMIT 기록</text>
+  <text x="1120" y="412" text-anchor="middle" class="small">commit_lsa 확정</text>
+  <path d="M1120 437 V469" class="arrow"/>
+
+  <rect x="870" y="469" width="500" height="70" rx="11" class="new"/>
+  <text x="1120" y="496" text-anchor="middle" class="newText">NEW · log_writeset_commit_flush()</text>
+  <text x="1120" y="521" text-anchor="middle" class="small">본인 commit_lsa로 history 게시</text>
+  <path d="M1120 539 V571" class="arrow"/>
+
+  <rect x="870" y="571" width="500" height="54" rx="11" class="base"/>
+  <text x="1120" y="604" text-anchor="middle" class="head">lock_unlock_all()</text>
+  <path d="M1120 625 V649" class="arrow"/>
+  <rect x="870" y="649" width="500" height="54" rx="11" class="base"/>
+  <text x="1120" y="682" text-anchor="middle" class="head">log_change_tran_as_completed()</text>
+
+  <rect x="1385" y="245" width="92" height="278" rx="11" class="history"/>
+  <text x="1431" y="280" text-anchor="middle" class="head">전역</text>
+  <text x="1431" y="304" text-anchor="middle" class="head">history</text>
+  <text x="1431" y="354" text-anchor="middle" class="small">probe</text>
+  <text x="1431" y="377" text-anchor="middle" class="small">조회</text>
+  <text x="1431" y="449" text-anchor="middle" class="small">flush</text>
+  <text x="1431" y="472" text-anchor="middle" class="small">게시</text>
+  <path d="M1385 264 H1370" class="stateArrow"/>
+  <path d="M1370 504 H1385" class="stateArrow"/>
+
+  <text x="375" y="635" text-anchor="middle" class="small">기존 호출 순서</text>
+  <text x="375" y="659" text-anchor="middle" class="small">REPL·COMMIT 기록 뒤 row lock 해제</text>
+</svg>

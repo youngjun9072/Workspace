@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="470" viewBox="0 0 1500 470">
+  <defs>
+    <style>
+      .title{font:700 29px sans-serif;fill:#0f172a}
+      .sub{font:500 16px sans-serif;fill:#475569}
+      .head{font:700 19px sans-serif;fill:#0f172a}
+      .body{font:500 16px sans-serif;fill:#334155}
+      .small{font:500 14px sans-serif;fill:#64748b}
+      .mono{font:600 16px monospace;fill:#334155}
+      .box{fill:#fff;stroke:#94a3b8;stroke-width:2;rx:14}
+      .ws{fill:#eff6ff;stroke:#2563eb}
+      .history{fill:#ecfdf5;stroke:#059669}
+      .calc{fill:#fff7ed;stroke:#ea580c}
+      .binlog{fill:#f5f3ff;stroke:#7c3aed;stroke-width:2.5}
+      .arrow{fill:none;stroke:#475569;stroke-width:2.5;marker-end:url(#arrow)}
+      .purple{fill:none;stroke:#7c3aed;stroke-width:3;marker-end:url(#purple)}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#475569"/></marker>
+    <marker id="purple" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#7c3aed"/></marker>
+  </defs>
+
+  <rect width="1500" height="470" fill="#fff"/>
+  <text x="48" y="50" class="title">MySQL 마스터의 dependency 계산과 binlog 기록</text>
+  <text x="48" y="80" class="sub">writeset 해시 전체를 전달하지 않고, 계산된 트랜잭션 순번과 선행 완료 경계를 기록한다</text>
+
+  <rect x="55" y="135" width="285" height="190" class="box ws"/>
+  <text x="197" y="175" text-anchor="middle" class="head">현재 트랜잭션 writeset</text>
+  <text x="197" y="222" text-anchor="middle" class="mono">{ H(K1), H(K2), ... }</text>
+  <text x="197" y="265" text-anchor="middle" class="body">행 연산에서 수집한 충돌 키</text>
+  <text x="197" y="298" text-anchor="middle" class="small">현재 트랜잭션의 입력</text>
+
+  <rect x="385" y="135" width="285" height="190" class="box history"/>
+  <text x="527" y="175" text-anchor="middle" class="head">전역 writeset history</text>
+  <text x="527" y="222" text-anchor="middle" class="mono">history[H(K)] = seq</text>
+  <text x="527" y="265" text-anchor="middle" class="body">같은 해시의 이전 트랜잭션</text>
+  <text x="527" y="298" text-anchor="middle" class="small">과거 충돌 위치</text>
+
+  <path d="M340 230 H377" class="arrow"/>
+  <path d="M670 230 H725" class="arrow"/>
+
+  <rect x="725" y="125" width="300" height="210" class="box calc"/>
+  <text x="875" y="168" text-anchor="middle" class="head">dependency 계산</text>
+  <text x="875" y="215" text-anchor="middle" class="mono">sequence_number = S</text>
+  <text x="875" y="256" text-anchor="middle" class="mono">last_committed = LC</text>
+  <text x="875" y="302" text-anchor="middle" class="small">현재 순번과 먼저 끝나야 할 경계 확정</text>
+
+  <path d="M1025 230 H1090" class="purple"/>
+  <text x="1057" y="210" text-anchor="middle" class="small" style="fill:#6d28d9">append</text>
+
+  <rect x="1090" y="105" width="355" height="250" class="box binlog"/>
+  <text x="1267" y="148" text-anchor="middle" class="head">binlog 트랜잭션 메타데이터</text>
+  <line x1="1120" y1="172" x2="1415" y2="172" stroke="#c4b5fd" stroke-width="2"/>
+  <text x="1125" y="211" class="mono">sequence_number = S</text>
+  <text x="1125" y="252" class="mono">last_committed = LC</text>
+  <text x="1125" y="299" class="body">+ 해당 트랜잭션의 binlog event</text>
+  <text x="1125" y="333" class="small">슬레이브가 소비할 계산 결과</text>
+
+  <rect x="385" y="380" width="1060" height="55" class="box" style="fill:#f8fafc"/>
+  <text x="915" y="414" text-anchor="middle" class="body">기록 대상은 writeset 해시가 아니라 계산 결과 S·LC다.</text>
+</svg>

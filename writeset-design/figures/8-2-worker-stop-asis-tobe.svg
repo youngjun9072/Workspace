@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="264" viewBox="0 0 2000 264">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>.title{font:700 27px Arial,"Noto Sans KR",sans-serif;fill:#172033}.head{font:700 21px Arial,"Noto Sans KR",sans-serif;fill:#172033}.code{font-family:"DejaVu Sans Mono","Noto Sans Mono CJK KR",monospace;font-size:17px;fill:#253047}.new{fill:#b91c1c}</style>
+<text x="36" y="43" class="title">applylogdb 종료와 worker 자원 회수</text>
+<line x1="1000" y1="68" x2="1000" y2="242" stroke="#cbd5e1" stroke-width="2"/>
+<text x="500" y="94" text-anchor="middle" class="head">AS-IS</text>
+<text x="1500" y="94" text-anchor="middle" class="head">TO-BE</text>
+<text x="42" y="130" class="code" xml:space="preserve">la_apply_log_file()</text>
+<text x="42" y="158" class="code" xml:space="preserve">└─ la_shutdown()</text>
+<text x="1042" y="130" class="code" xml:space="preserve">la_apply_log_file()     </text>
+<text x="1042" y="158" class="code" xml:space="preserve">└─ la_shutdown()        </text>
+<text x="1042" y="186" class="code new" xml:space="preserve">   └─ la_stop_apply_workers() </text>
+</svg>

@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="760" viewBox="0 0 1400 760" role="img" aria-labelledby="title desc">
+  <title id="title">dependency gate의 단계별 판정</title>
+  <desc id="desc">dependency가 없거나 frontier 이하이면 즉시 통과한다. frontier보다 뒤에 있는 dependency만 read_seq 유래 여부와 개별 완료 여부를 추가로 판정한다.</desc>
+  <defs>
+    <style>
+      text{font-family:"Pretendard","Noto Sans KR",sans-serif;fill:#172033}
+      .title{font-size:29px;font-weight:700}.sub{font-size:17px;fill:#64748b}.head{font-size:18px;font-weight:700}.body{font-size:15px}.small{font-size:14px;fill:#64748b}.mono{font:15px ui-monospace,SFMono-Regular,Menlo,monospace}
+      .task{fill:#eff6ff;stroke:#3b82f6;stroke-width:2}.check{fill:#f8fafc;stroke:#64748b;stroke-width:2}.detail{fill:#f5f3ff;stroke:#8b5cf6;stroke-width:2}.pass{fill:#f0fdf4;stroke:#22c55e;stroke-width:2}.hold{fill:#fff7ed;stroke:#f59e0b;stroke-width:2}.note{fill:#fff;stroke:#cbd5e1;stroke-width:2}
+      .line{fill:none;stroke:#475569;stroke-width:2.5;marker-end:url(#arrow)}.green{fill:none;stroke:#16a34a;stroke-width:2.8;marker-end:url(#green)}.orange{fill:none;stroke:#d97706;stroke-width:2.8;marker-end:url(#orange)}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#475569"/></marker>
+    <marker id="green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#16a34a"/></marker>
+    <marker id="orange" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#d97706"/></marker>
+  </defs>
+
+  <rect width="1400" height="760" fill="#fff"/>
+  <text x="48" y="48" class="title">dependency gate는 공통 통과 조건을 먼저 확인한다</text>
+  <text x="48" y="78" class="sub">`dependency_is_read`는 모든 task를 pending으로 보내는 값이 아니라, frontier 뒤에서 개별 완료 통과를 금지하는 출처 표시다.</text>
+
+  <rect x="50" y="145" width="230" height="105" rx="14" class="task"/>
+  <text x="165" y="184" text-anchor="middle" class="head">transaction task</text>
+  <text x="165" y="217" text-anchor="middle" class="mono">dependency</text>
+  <text x="165" y="239" text-anchor="middle" class="mono">dependency_is_read</text>
+
+  <path d="M280 198 H350" class="line"/>
+  <rect x="350" y="135" width="300" height="125" rx="14" class="check"/>
+  <text x="500" y="174" text-anchor="middle" class="head">1. 공통 통과 조건</text>
+  <text x="500" y="207" text-anchor="middle" class="mono">dependency == NULL</text>
+  <text x="500" y="235" text-anchor="middle" class="mono">또는 dependency &lt;= frontier</text>
+
+  <path d="M650 170 H1080" class="green"/>
+  <text x="865" y="154" text-anchor="middle" class="small">예 — 앞선 범위가 이미 안전함</text>
+  <rect x="1080" y="120" width="270" height="100" rx="14" class="pass"/>
+  <text x="1215" y="163" text-anchor="middle" class="head">worker queue</text>
+  <text x="1215" y="193" text-anchor="middle" class="body">즉시 실행 가능</text>
+
+  <path d="M500 260 V335" class="line"/>
+  <text x="520" y="303" class="small">아니오 — frontier보다 뒤</text>
+  <rect x="350" y="335" width="300" height="105" rx="14" class="detail"/>
+  <text x="500" y="376" text-anchor="middle" class="head">2. dependency 출처 확인</text>
+  <text x="500" y="410" text-anchor="middle" class="mono">dependency_is_read ?</text>
+
+  <path d="M650 370 H940 V315 H1080" class="orange"/>
+  <text x="865" y="353" text-anchor="middle" class="small">true — read_seq 유래</text>
+  <rect x="1080" y="265" width="270" height="100" rx="14" class="hold"/>
+  <text x="1215" y="307" text-anchor="middle" class="head">pending</text>
+  <text x="1215" y="337" text-anchor="middle" class="body">frontier 전진을 기다림</text>
+
+  <path d="M500 440 V515" class="line"/>
+  <text x="520" y="482" class="small">false — write_seq 유래</text>
+  <rect x="350" y="515" width="300" height="105" rx="14" class="check"/>
+  <text x="500" y="556" text-anchor="middle" class="head">3. 개별 완료 확인</text>
+  <text x="500" y="590" text-anchor="middle" class="mono">completed_set에 dependency?</text>
+
+  <path d="M650 550 H980 V205 H1080" class="green"/>
+  <text x="865" y="534" text-anchor="middle" class="small">있음 — 선행 WRITE 완료</text>
+  <path d="M650 590 H1020 V345 H1080" class="orange"/>
+  <text x="865" y="617" text-anchor="middle" class="small">없음 — 아직 미완료</text>
+
+  <rect x="50" y="665" width="1300" height="58" rx="12" class="note"/>
+  <text x="700" y="700" text-anchor="middle" class="body">핵심: `dependency_is_read=true`여도 dependency가 없거나 frontier 이하이면 통과한다. 막는 것은 completed set 한 건만으로 통과하는 경로다.</text>
+</svg>

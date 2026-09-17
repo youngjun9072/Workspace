@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="960" viewBox="0 0 1600 960" role="img" aria-labelledby="title desc">
+  <title id="title">MySQL FK 병렬화 한계와 CUBRID 목표 비교</title>
+  <desc id="desc">첫째 행은 동일한 부모 키를 참조하는 자식 트랜잭션이 MySQL에서는 단일 이력 슬롯 때문에 순차 의존성 사슬을 만들지만 CUBRID 목표에서는 자식 간 선행 관계 없이 동시에 실행 가능한 상태를 비교한다. 둘째 행은 부모 변경의 전역 장벽이 무관한 트랜잭션까지 막는 MySQL 동작과, 부모 관련 키의 순서만 보존하면서 무관한 트랜잭션은 통과시키는 CUBRID 목표를 비교한다.</desc>
+  <defs>
+    <style>
+      .title{font:700 28px 'Droid Sans','Noto Sans KR','Malgun Gothic',sans-serif;fill:#243142}
+      .sub{font:15px 'Droid Sans','Noto Sans KR','Malgun Gothic',sans-serif;fill:#526174}
+      .head{font:700 22px 'Droid Sans','Noto Sans KR','Malgun Gothic',sans-serif;fill:#243142}
+      .row{font:700 18px 'Droid Sans','Noto Sans KR','Malgun Gothic',sans-serif;fill:#314157}
+      .body{font:15px 'Droid Sans','Noto Sans KR','Malgun Gothic',sans-serif;fill:#46566a}
+      .strong{font:700 15px 'Droid Sans','Noto Sans KR','Malgun Gothic',sans-serif;fill:#29384a}
+      .mono{font:14px 'Droid Sans Mono','Noto Sans Mono CJK KR',monospace;fill:#3f4d60}
+      .small{font:13px 'Droid Sans','Noto Sans KR','Malgun Gothic',sans-serif;fill:#526174}
+      .panel{fill:#fbfcfe;stroke:#bcc7d4;stroke-width:1.6}
+      .mysql{fill:#fff7f6;stroke:#dea9a2;stroke-width:1.6}
+      .cubrid{fill:#f4fbf6;stroke:#8fc9a0;stroke-width:1.6}
+      .child{fill:#f7eff9;stroke:#9a62a0;stroke-width:1.6}
+      .parent{fill:#fff1e5;stroke:#d9822b;stroke-width:1.7}
+      .history{fill:#eef5fc;stroke:#5d86b3;stroke-width:1.6}
+      .neutral{fill:#f3f5f8;stroke:#8794a5;stroke-width:1.5}
+      .bad{fill:#fff0ef;stroke:#d9534f;stroke-width:1.8}
+      .good{fill:#eaf7ee;stroke:#39995a;stroke-width:1.8}
+      .badline{stroke:#d9534f;stroke-width:3;fill:none;marker-end:url(#red)}
+      .required{stroke:#d9822b;stroke-width:3;fill:none;marker-end:url(#orange)}
+      .parallel{stroke:#2783c5;stroke-width:3;fill:none;marker-end:url(#blue)}
+      .barrier{stroke:#d9534f;stroke-width:7}
+      .guide{stroke:#c7d0db;stroke-width:1.5;stroke-dasharray:5 5;fill:none}
+    </style>
+    <marker id="red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#d9534f"/></marker>
+    <marker id="orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#d9822b"/></marker>
+    <marker id="blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2783c5"/></marker>
+  </defs>
+
+  <rect width="1600" height="960" fill="#fff"/>
+  <text x="50" y="48" class="title">FK 병렬화: MySQL의 두 한계와 CUBRID의 목표</text>
+  <text x="50" y="78" class="sub">왼쪽은 불필요하게 확장되는 대기 관계, 오른쪽은 정합성을 보존하면서 대기를 줄이는 목표를 보여준다.</text>
+
+  <rect x="55" y="105" width="720" height="54" rx="10" class="mysql"/>
+  <text x="415" y="140" text-anchor="middle" class="head">MySQL 한계</text>
+  <rect x="825" y="105" width="720" height="54" rx="10" class="cubrid"/>
+  <text x="1185" y="140" text-anchor="middle" class="head">CUBRID 목표</text>
+
+  <!-- Row 1: sibling chain versus independent runnable lanes -->
+  <rect x="55" y="178" width="720" height="320" rx="15" class="panel"/>
+  <text x="80" y="214" class="row">같은 부모를 참조하는 자식이 순차 의존성 사슬을 형성</text>
+  <rect x="100" y="252" width="145" height="66" rx="10" class="child"/>
+  <text x="172" y="278" text-anchor="middle" class="strong">자식 T4</text><text x="172" y="301" text-anchor="middle" class="mono">parent_id=7</text>
+  <rect x="335" y="252" width="145" height="66" rx="10" class="child"/>
+  <text x="407" y="278" text-anchor="middle" class="strong">자식 T5</text><text x="407" y="301" text-anchor="middle" class="mono">parent_id=7</text>
+  <rect x="570" y="252" width="145" height="66" rx="10" class="child"/>
+  <text x="642" y="278" text-anchor="middle" class="strong">자식 T6</text><text x="642" y="301" text-anchor="middle" class="mono">parent_id=7</text>
+  <path d="M245 285 H335" class="badline"/>
+  <path d="M480 285 H570" class="badline"/>
+  <text x="290" y="265" text-anchor="middle" class="small">T4 완료 대기</text>
+  <text x="525" y="265" text-anchor="middle" class="small">T5 완료 대기</text>
+  <rect x="135" y="354" width="560" height="79" rx="10" class="history"/>
+  <text x="415" y="381" text-anchor="middle" class="strong">동일한 부모 키 해시의 단일 이력 슬롯</text>
+  <text x="415" y="405" text-anchor="middle" class="mono">slot[H(parent, PRIMARY, 7)] owner: T4 → T5 → T6</text>
+  <text x="415" y="469" text-anchor="middle" class="strong">자식 행은 서로 달라도 실행은 T4 → T5 → T6 순서로 제한</text>
+
+  <rect x="825" y="178" width="720" height="320" rx="15" class="panel"/>
+  <text x="850" y="214" class="row">같은 부모를 참조해도 자식 간 선행 관계는 만들지 않음</text>
+  <text x="858" y="247" class="small">동일한 parent_id=7 · 서로 다른 자식 행</text>
+  <text x="858" y="286" class="strong">T4</text>
+  <line x1="900" y1="281" x2="1440" y2="281" class="guide"/>
+  <rect x="980" y="257" width="185" height="48" rx="9" class="child"/><text x="1072" y="286" text-anchor="middle" class="mono">child id=101</text>
+  <path d="M1165 281 H1455" class="parallel"/>
+  <text x="858" y="352" class="strong">T5</text>
+  <line x1="900" y1="347" x2="1440" y2="347" class="guide"/>
+  <rect x="980" y="323" width="185" height="48" rx="9" class="child"/><text x="1072" y="352" text-anchor="middle" class="mono">child id=102</text>
+  <path d="M1165 347 H1455" class="parallel"/>
+  <text x="858" y="418" class="strong">T6</text>
+  <line x1="900" y1="413" x2="1440" y2="413" class="guide"/>
+  <rect x="980" y="389" width="185" height="48" rx="9" class="child"/><text x="1072" y="418" text-anchor="middle" class="mono">child id=103</text>
+  <path d="M1165 413 H1455" class="parallel"/>
+  <rect x="1010" y="449" width="350" height="35" rx="8" class="good"/>
+  <text x="1185" y="472" text-anchor="middle" class="strong">자식 간 의존성 화살표 없음 · 모두 실행 가능</text>
+
+  <!-- Row 2: global barrier versus key-scoped wait -->
+  <rect x="55" y="520" width="720" height="330" rx="15" class="panel"/>
+  <text x="80" y="558" class="row">부모 변경의 전역 장벽이 무관한 트랜잭션까지 차단</text>
+  <rect x="90" y="606" width="160" height="70" rx="10" class="parent"/>
+  <text x="170" y="634" text-anchor="middle" class="strong">부모 T7 변경</text><text x="170" y="658" text-anchor="middle" class="mono">parent id=7</text>
+  <rect x="295" y="587" width="235" height="108" rx="10" class="bad"/>
+  <text x="412" y="616" text-anchor="middle" class="strong">보수적 처리</text>
+  <text x="412" y="643" text-anchor="middle" class="mono">COMMIT_ORDER 유지</text>
+  <text x="412" y="669" text-anchor="middle" class="mono">history clear · 하한선 갱신</text>
+  <path d="M250 641 H295" class="badline"/>
+  <line x1="578" y1="580" x2="578" y2="787" class="barrier"/>
+  <rect x="620" y="590" width="120" height="68" rx="9" class="child"/>
+  <text x="680" y="617" text-anchor="middle" class="strong">자식 T8</text><text x="680" y="641" text-anchor="middle" class="mono">parent_id=7</text>
+  <rect x="620" y="701" width="120" height="68" rx="9" class="neutral"/>
+  <text x="680" y="728" text-anchor="middle" class="strong">무관 T9</text><text x="680" y="752" text-anchor="middle" class="mono">parent_id=99</text>
+  <path d="M578 624 H620" class="badline"/>
+  <path d="M578 735 H620" class="badline"/>
+  <text x="594" y="808" class="small">전역 장벽</text>
+  <text x="415" y="831" text-anchor="middle" class="strong">T8의 필요한 대기뿐 아니라 부모 id=99의 T9도 함께 지연</text>
+
+  <rect x="825" y="520" width="720" height="330" rx="15" class="panel"/>
+  <text x="850" y="558" class="row">부모 관련 키의 순서만 보존하고 무관한 작업은 통과</text>
+  <text x="858" y="595" class="small">관련 키 lane · parent id=7</text>
+  <rect x="875" y="615" width="160" height="66" rx="10" class="parent"/>
+  <text x="955" y="642" text-anchor="middle" class="strong">부모 T7 변경</text><text x="955" y="665" text-anchor="middle" class="mono">parent id=7</text>
+  <path d="M1035 648 H1310" class="required"/>
+  <text x="1172" y="633" text-anchor="middle" class="small">부모 변경 완료 후 실행</text>
+  <rect x="1310" y="615" width="165" height="66" rx="10" class="child"/>
+  <text x="1392" y="642" text-anchor="middle" class="strong">자식 T8</text><text x="1392" y="665" text-anchor="middle" class="mono">parent_id=7</text>
+
+  <text x="858" y="730" class="small">무관 키 lane · parent id=99</text>
+  <rect x="875" y="747" width="165" height="62" rx="9" class="neutral"/>
+  <text x="957" y="773" text-anchor="middle" class="strong">무관 T9</text><text x="957" y="796" text-anchor="middle" class="mono">parent_id=99</text>
+  <path d="M1040 778 H1470" class="parallel"/>
+  <text x="1255" y="763" text-anchor="middle" class="small">id=7 대기와 무관하게 실행</text>
+  <text x="1185" y="831" text-anchor="middle" class="strong">대기 범위를 parent id=7과 관련된 트랜잭션으로 한정</text>
+
+  <!-- Legend -->
+  <rect x="55" y="879" width="1490" height="51" rx="10" fill="#f7f9fb" stroke="#d4dbe4"/>
+  <path d="M92 905 H145" class="badline"/><text x="160" y="911" class="body">불필요한 순차 의존성·차단</text>
+  <path d="M470 905 H523" class="required"/><text x="538" y="911" class="body">정합성에 필요한 선행 관계</text>
+  <path d="M855 905 H908" class="parallel"/><text x="923" y="911" class="body">다른 트랜잭션을 기다리지 않는 실행 lane</text>
+</svg>

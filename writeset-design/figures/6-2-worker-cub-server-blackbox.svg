@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="500" viewBox="0 0 1400 500">
+  <defs>
+    <style>
+      .title{font:700 27px 'Pretendard','Noto Sans KR',sans-serif;fill:#0f172a}
+      .sub{font:500 15px 'Pretendard','Noto Sans KR',sans-serif;fill:#475569}
+      .head{font:700 17px 'Pretendard','Noto Sans KR',sans-serif;fill:#0f172a}
+      .body{font:500 15px 'Pretendard','Noto Sans KR',sans-serif;fill:#334155}
+      .small{font:500 14px 'Pretendard','Noto Sans KR',sans-serif;fill:#64748b}
+      .box{fill:#fff;stroke:#94a3b8;stroke-width:2}
+      .worker{fill:#f8fafc;stroke:#475569;stroke-width:2}
+      .server{fill:#ecfdf5;stroke:#059669;stroke-width:2.5}
+      .queue{fill:#eff6ff;stroke:#2563eb;stroke-width:2}
+      .result{fill:#f5f3ff;stroke:#7c3aed;stroke-width:2}
+      .line{fill:none;stroke:#475569;stroke-width:2.5;marker-end:url(#arrow)}
+      .return{fill:none;stroke:#7c3aed;stroke-width:2.5;marker-end:url(#purple)}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#475569"/></marker>
+    <marker id="purple" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#7c3aed"/></marker>
+  </defs>
+  <rect width="1400" height="500" fill="#fff"/>
+  <text x="45" y="48" class="title">여러 worker가 기존 적용 코어로 slave DB에 반영한다</text>
+  <text x="45" y="78" class="sub">worker별 DB session에서 task를 적용하고 flush·COMMIT한 결과만 reader에 반환한다</text>
+
+  <rect x="55" y="145" width="210" height="82" rx="12" class="queue"/>
+  <text x="160" y="179" text-anchor="middle" class="head">worker queue[0]</text>
+  <text x="160" y="207" text-anchor="middle" class="body">LA_APPLY_TASK</text>
+  <rect x="55" y="278" width="210" height="82" rx="12" class="queue"/>
+  <text x="160" y="312" text-anchor="middle" class="head">worker queue[N]</text>
+  <text x="160" y="340" text-anchor="middle" class="body">LA_APPLY_TASK</text>
+
+  <rect x="360" y="120" width="395" height="130" rx="14" class="worker"/>
+  <text x="557" y="155" text-anchor="middle" class="head">worker[0] · 적용 블랙박스</text>
+  <text x="557" y="188" text-anchor="middle" class="body">기존 복제 항목 적용 → flush → DB COMMIT</text>
+  <text x="557" y="220" text-anchor="middle" class="small">develop의 적용 로직 재사용</text>
+  <rect x="360" y="255" width="395" height="130" rx="14" class="worker"/>
+  <text x="557" y="290" text-anchor="middle" class="head">worker[N] · 적용 블랙박스</text>
+  <text x="557" y="323" text-anchor="middle" class="body">기존 복제 항목 적용 → flush → DB COMMIT</text>
+  <text x="557" y="355" text-anchor="middle" class="small">worker별 독립 DB session</text>
+
+  <rect x="885" y="150" width="430" height="210" rx="16" class="server"/>
+  <text x="1100" y="194" text-anchor="middle" class="head">슬레이브 cub_server</text>
+  <text x="1100" y="235" text-anchor="middle" class="body">INSERT · UPDATE · DELETE · statement</text>
+  <text x="1100" y="273" text-anchor="middle" class="body">변경 flush</text>
+  <text x="1100" y="311" text-anchor="middle" class="body">DB transaction COMMIT</text>
+  <text x="1100" y="340" text-anchor="middle" class="small">worker별 task를 각각 하나의 DB 트랜잭션으로 확정</text>
+
+  <path d="M265 186 H350" class="line"/>
+  <path d="M265 319 H350" class="line"/>
+  <path d="M755 185 H875" class="line"/>
+  <path d="M755 320 H875" class="line"/>
+
+  <rect x="445" y="420" width="470" height="55" rx="12" class="result"/>
+  <text x="680" y="454" text-anchor="middle" class="head">result queue · DB COMMIT 성공 또는 오류 반환</text>
+  <path d="M1100 360 V400 H920" class="return"/>
+</svg>

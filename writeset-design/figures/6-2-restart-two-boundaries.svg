@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="390" viewBox="0 0 1400 390">
+  <defs>
+    <style>
+      .title{font:700 27px 'Pretendard','Noto Sans KR',sans-serif;fill:#0f172a}
+      .sub{font:500 15px 'Pretendard','Noto Sans KR',sans-serif;fill:#475569}
+      .head{font:700 17px 'Pretendard','Noto Sans KR',sans-serif;fill:#0f172a}
+      .body{font:500 15px 'Pretendard','Noto Sans KR',sans-serif;fill:#334155}
+      .mono{font:600 15px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#334155}
+      .axis{stroke:#475569;stroke-width:3}
+      .tick{stroke:#334155;stroke-width:3}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L9,3 L0,6 Z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect width="1400" height="390" fill="#ffffff"/>
+  <text x="45" y="46" class="title">재시작에 필요한 두 경계</text>
+  <text x="45" y="75" class="sub">안전하게 완료된 아래 경계 C0와 이전 reader가 도달한 읽기 상한 R을 함께 보존한다</text>
+
+  <rect x="70" y="125" width="305" height="105" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="2"/>
+  <rect x="375" y="125" width="565" height="105" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
+  <rect x="940" y="125" width="390" height="105" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+
+  <text x="222" y="164" text-anchor="middle" class="head">트랜잭션 전체 skip</text>
+  <text x="222" y="196" text-anchor="middle" class="mono">commit_lsa ≤ C0</text>
+
+  <text x="657" y="158" text-anchor="middle" class="head">전체 item 재적용</text>
+  <text x="657" y="188" text-anchor="middle" class="mono">C0 &lt; commit_lsa ≤ R</text>
+  <text x="657" y="214" text-anchor="middle" class="body">허용된 재적용 오류만 skip</text>
+
+  <text x="1135" y="164" text-anchor="middle" class="head">정상 적용·오류 처리</text>
+  <text x="1135" y="196" text-anchor="middle" class="mono">R &lt; commit_lsa</text>
+
+  <line x1="70" y1="270" x2="1330" y2="270" class="axis" marker-end="url(#arrow)"/>
+  <line x1="375" y1="250" x2="375" y2="292" class="tick"/>
+  <line x1="940" y1="250" x2="940" y2="292" class="tick"/>
+
+  <text x="375" y="320" text-anchor="middle" class="head">C0 · last_committed_lsa</text>
+  <text x="375" y="346" text-anchor="middle" class="sub">빈 구간 없이 완료·영속된 아래 경계</text>
+
+  <text x="940" y="320" text-anchor="middle" class="head">R · recovery_boundary_lsa</text>
+  <text x="940" y="346" text-anchor="middle" class="sub">이전 실행의 final_lsa · reader 읽기 HWM</text>
+</svg>

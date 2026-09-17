@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="900" viewBox="0 0 1800 900" role="img" aria-labelledby="title desc">
+  <title id="title">MySQL FK 부모 변경과 자식 참조의 의존성 판정</title>
+  <desc id="desc">부모 행을 변경한 T1은 부모 키 해시를 만들지만 commit-order로 폴백하면서 그 해시를 전역 이력에 게시하지 않고 이력을 비운 뒤 하한선을 1로 설정한다. 뒤의 자식 트랜잭션 T2는 같은 부모 키 형태의 FK 해시를 만들지만 직접 매칭할 부모 해시가 없으며, T1이 세운 하한선 때문에 LC 1을 받아 T1 뒤에서 실행된다.</desc>
+
+  <defs>
+    <style>
+      .bg { fill: #f7f9fc; }
+      .frame { fill: #f4f7fb; stroke: #7f8da1; stroke-width: 2; }
+      .panel { fill: #ffffff; stroke: #bcc7d4; stroke-width: 1.5; }
+      .header { fill: #e7edf5; }
+      .hash { fill: #edf4ff; stroke: #4d83c5; stroke-width: 1.5; }
+      .fallback { fill: #fff7e6; stroke: #d69a28; stroke-width: 1.7; }
+      .missing { fill: #fff0ef; stroke: #d85b50; stroke-width: 1.7; }
+      .ready { fill: #e7f6ed; stroke: #28935d; stroke-width: 1.7; }
+      .title { font: 700 30px 'Noto Sans CJK KR', 'Malgun Gothic', sans-serif; fill: #172033; }
+      .subtitle { font: 400 16px 'Noto Sans CJK KR', 'Malgun Gothic', sans-serif; fill: #536174; }
+      .zone { font: 700 22px 'Noto Sans CJK KR', 'Malgun Gothic', sans-serif; fill: #263449; }
+      .stage { font: 700 18px 'Noto Sans CJK KR', 'Malgun Gothic', sans-serif; fill: #263449; }
+      .body { font: 400 15px 'Noto Sans CJK KR', 'Malgun Gothic', sans-serif; fill: #263449; }
+      .small { font: 400 13px 'Noto Sans CJK KR', 'Malgun Gothic', sans-serif; fill: #536174; }
+      .tiny { font: 400 12px 'Noto Sans CJK KR', 'Malgun Gothic', sans-serif; fill: #536174; }
+      .mono { font: 600 14px monospace; fill: #263449; }
+      .mono-small { font: 600 12px monospace; fill: #263449; }
+      .arrow { fill: none; stroke: #75859a; stroke-width: 2.3; marker-end: url(#arrow); }
+      .arrow-orange { fill: none; stroke: #d69a28; stroke-width: 2.4; marker-end: url(#arrow-orange); }
+      .arrow-green { fill: none; stroke: #28935d; stroke-width: 2.4; marker-end: url(#arrow-green); }
+      .arrow-red { fill: none; stroke: #d85b50; stroke-width: 2.2; marker-end: url(#arrow-red); }
+      .dash { stroke-dasharray: 7 5; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#75859a"/></marker>
+    <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#d69a28"/></marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#28935d"/></marker>
+    <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#d85b50"/></marker>
+  </defs>
+
+  <rect class="bg" width="1800" height="900"/>
+  <text class="title" x="50" y="50">FK 부모·자식 순서: 해시 매칭이 아니라 하한선으로 연결</text>
+  <text class="subtitle" x="50" y="79">부모 변경 T1은 해시를 게시하지 않고 이력 장벽을 남긴다. 자식 T2는 그 장벽 때문에 T1 뒤에 선다.</text>
+
+  <rect class="frame" x="40" y="110" width="1720" height="710" rx="18"/>
+  <text class="zone" x="68" y="150">MASTER · 의존성 라벨 생성</text>
+
+  <!-- Schema and input -->
+  <rect class="panel" x="70" y="180" width="310" height="565" rx="12"/>
+  <rect class="header" x="70" y="180" width="310" height="48" rx="12"/>
+  <rect class="header" x="70" y="216" width="310" height="12"/>
+  <text class="stage" x="225" y="211" text-anchor="middle">1. 스키마와 커밋 순서</text>
+
+  <rect class="hash" x="95" y="255" width="260" height="95" rx="9"/>
+  <text class="stage" x="225" y="283" text-anchor="middle">parent</text>
+  <text class="mono-small" x="225" y="310" text-anchor="middle">id=7 (PRIMARY KEY)</text>
+  <text class="small" x="225" y="334" text-anchor="middle">초기 행 존재</text>
+
+  <rect class="panel" x="95" y="385" width="260" height="95" rx="9"/>
+  <text class="stage" x="225" y="413" text-anchor="middle">child</text>
+  <text class="mono-small" x="225" y="440" text-anchor="middle">id PK · pid FK</text>
+  <text class="small" x="225" y="464" text-anchor="middle">pid → parent.id</text>
+  <path class="arrow" d="M 225 385 C 225 368, 285 368, 285 350"/>
+  <text class="tiny" x="300" y="370">참조</text>
+
+  <rect class="fallback" x="95" y="525" width="260" height="75" rx="9"/>
+  <text class="stage" x="115" y="553">T1 · seq=1</text>
+  <text class="mono-small" x="115" y="580">UPDATE parent(id=7)</text>
+
+  <path class="arrow" d="M 225 600 L 225 630"/>
+  <rect class="ready" x="95" y="630" width="260" height="75" rx="9"/>
+  <text class="stage" x="115" y="658">T2 · seq=2</text>
+  <text class="mono-small" x="115" y="685">INSERT child(100, pid=7)</text>
+
+  <!-- T1 extraction -->
+  <path class="arrow-orange" d="M 380 562 L 430 300"/>
+  <rect class="panel" x="430" y="180" width="355" height="250" rx="12"/>
+  <rect class="header" x="430" y="180" width="355" height="48" rx="12"/>
+  <rect class="header" x="430" y="216" width="355" height="12"/>
+  <text class="stage" x="607" y="211" text-anchor="middle">2. T1 · 부모 행 변경</text>
+  <text class="body" x="455" y="260">PK 해시 추출</text>
+  <rect class="hash" x="455" y="280" width="305" height="55" rx="8"/>
+  <text class="mono" x="607" y="313" text-anchor="middle">H(parent, PRIMARY, 7)</text>
+  <text class="body" x="455" y="370">부모 역할 표시</text>
+  <rect class="fallback" x="455" y="385" width="305" height="30" rx="7"/>
+  <text class="mono-small" x="607" y="405" text-anchor="middle">has_related_foreign_keys = true</text>
+
+  <!-- T1 fallback -->
+  <path class="arrow-orange" d="M 785 305 L 840 305"/>
+  <rect class="fallback" x="840" y="180" width="390" height="250" rx="12"/>
+  <text class="stage" x="1035" y="211" text-anchor="middle">3. commit-order 폴백</text>
+  <text class="mono" x="1035" y="250" text-anchor="middle">can_use_writesets = false</text>
+  <line x1="875" y1="272" x2="1195" y2="272" stroke="#e4c276"/>
+  <text class="body" x="875" y="304">① T1의 해시를 이력에 게시하지 않음</text>
+  <text class="body" x="875" y="338">② 기존 전역 이력을 비움</text>
+  <text class="body" x="875" y="372">③ history_start = seq(T1) = 1</text>
+  <rect class="missing" x="875" y="388" width="320" height="28" rx="6"/>
+  <text class="mono-small" x="1035" y="407" text-anchor="middle">history = { } · floor = 1</text>
+
+  <!-- T2 extraction -->
+  <path class="arrow-green" d="M 380 667 L 430 575"/>
+  <rect class="panel" x="430" y="475" width="355" height="270" rx="12"/>
+  <rect class="header" x="430" y="475" width="355" height="48" rx="12"/>
+  <rect class="header" x="430" y="511" width="355" height="12"/>
+  <text class="stage" x="607" y="506" text-anchor="middle">4. T2 · 자식 행 삽입</text>
+  <text class="body" x="455" y="555">자기 PK 해시</text>
+  <rect class="hash" x="455" y="570" width="305" height="48" rx="8"/>
+  <text class="mono-small" x="607" y="599" text-anchor="middle">H(child, PRIMARY, 100)</text>
+  <text class="body" x="455" y="650">부모 키 형태의 FK 해시</text>
+  <rect class="hash" x="455" y="665" width="305" height="48" rx="8"/>
+  <text class="mono-small" x="607" y="694" text-anchor="middle">H(parent, PRIMARY, 7)</text>
+
+  <!-- T2 dependency decision -->
+  <path class="arrow" d="M 785 610 L 840 610"/>
+  <path class="arrow-orange dash" d="M 1035 430 L 1035 475"/>
+  <rect class="panel" x="840" y="475" width="390" height="270" rx="12"/>
+  <rect class="header" x="840" y="475" width="390" height="48" rx="12"/>
+  <rect class="header" x="840" y="511" width="390" height="12"/>
+  <text class="stage" x="1035" y="506" text-anchor="middle">5. T2 · 전역 이력 조회</text>
+  <text class="mono-small" x="875" y="557">lookup H(parent, PRIMARY, 7)</text>
+  <rect class="missing" x="875" y="575" width="320" height="46" rx="8"/>
+  <text class="body" x="1035" y="604" text-anchor="middle">T1 해시 없음 → 직접 매칭 실패</text>
+  <text class="body" x="875" y="660">그러나 이력 하한선은 1에서 시작</text>
+  <rect class="fallback" x="875" y="680" width="320" height="46" rx="8"/>
+  <text class="mono" x="1035" y="709" text-anchor="middle">T2: seq=2, LC=1</text>
+
+  <!-- Result -->
+  <path class="arrow-green" d="M 1230 610 L 1290 610"/>
+  <rect class="ready" x="1290" y="265" width="420" height="380" rx="14"/>
+  <text class="stage" x="1500" y="300" text-anchor="middle">6. 복제 로그의 실행 순서</text>
+  <rect class="panel" x="1320" y="330" width="360" height="70" rx="8"/>
+  <text class="mono" x="1500" y="359" text-anchor="middle">T1: seq=1, LC=0</text>
+  <text class="small" x="1500" y="384" text-anchor="middle">부모 행 변경</text>
+  <path class="arrow-green" d="M 1500 400 L 1500 445"/>
+  <rect class="panel" x="1320" y="445" width="360" height="70" rx="8"/>
+  <text class="mono" x="1500" y="474" text-anchor="middle">T2: seq=2, LC=1</text>
+  <text class="small" x="1500" y="499" text-anchor="middle">seq=1 완료 후 실행 가능</text>
+  <rect class="fallback" x="1320" y="550" width="360" height="68" rx="8"/>
+  <text class="body" x="1500" y="578" text-anchor="middle">T1 → T2 순서는 보장됨</text>
+  <text class="small" x="1500" y="602" text-anchor="middle">원인: 해시 일치가 아니라 floor=1</text>
+
+  <rect x="430" y="770" width="1280" height="72" rx="10" fill="#172033"/>
+  <text x="1070" y="799" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="16" font-weight="700" fill="#ffffff">핵심</text>
+  <text x="1070" y="824" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="14" fill="#ffffff">부모와 자식은 같은 형태의 키를 만들지만, 부모 해시는 게시되지 않는다. 실제 선행 관계는 부모가 남긴 이력 하한선이 만든다.</text>
+</svg>

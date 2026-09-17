@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="850" viewBox="0 0 1500 850">
+  <defs><style>
+    .title{font:700 30px sans-serif;fill:#172033}.sub{font:18px sans-serif;fill:#536078}.h{font:700 18px sans-serif;fill:#172033}.t{font:16px sans-serif;fill:#44516a}.small{font:15px sans-serif;fill:#657086}
+    .cause{fill:#edf6ff;stroke:#3978b8;stroke-width:2}.ok{fill:#eef9f1;stroke:#43835a;stroke-width:2}.safe{fill:#fff4df;stroke:#bc7c1d;stroke-width:2}.stop{fill:#fff0f0;stroke:#b45252;stroke-width:2}.result{fill:#f5f1ff;stroke:#7455a6;stroke-width:2}.arrow{fill:none;stroke:#43516b;stroke-width:3;marker-end:url(#a)}
+  </style><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#43516b"/></marker></defs>
+  <rect x="0" y="0" width="1500" height="850" fill="#ffffff"/>
+  <text x="55" y="55" class="title">history의 안전한 생명주기</text>
+  <text x="55" y="88" class="sub">정상 COMMIT만 키별 이력에 게시하고, 불완전한 정보는 보수 경계로 전환한다</text>
+  <text x="170" y="135" text-anchor="middle" class="small">발생 조건</text><text x="710" y="135" text-anchor="middle" class="small">처리</text><text x="1290" y="135" text-anchor="middle" class="small">후속 상태</text>
+
+  <rect x="45" y="155" width="250" height="95" rx="12" class="cause"/><text x="170" y="212" text-anchor="middle" class="h">완전한 키 · 정상 COMMIT</text>
+  <rect x="430" y="155" width="555" height="95" rx="12" class="ok"/><text x="707" y="190" text-anchor="middle" class="h">키별 dependency 계산</text><text x="707" y="221" text-anchor="middle" class="t">WRITE·REF 슬롯에 현재 COMMIT LSA 게시</text>
+  <rect x="1120" y="155" width="335" height="95" rx="12" class="result"/><text x="1287" y="212" text-anchor="middle" class="h">유효한 키별 history</text>
+
+  <rect x="45" y="285" width="250" height="95" rx="12" class="cause"/><text x="170" y="327" text-anchor="middle" class="h">불완전한 키 · overflow</text><text x="170" y="354" text-anchor="middle" class="small">정상 빈 writeset과 구분</text>
+  <rect x="430" y="285" width="555" height="95" rx="12" class="safe"/><text x="707" y="320" text-anchor="middle" class="h">키별 계산 포기</text><text x="707" y="351" text-anchor="middle" class="t">보수 dependency 선택 · 이력 하한 유지</text>
+  <rect x="1120" y="285" width="335" height="95" rx="12" class="result"/><text x="1287" y="342" text-anchor="middle" class="h">안전한 보수 경계</text>
+
+  <rect x="45" y="415" width="250" height="95" rx="12" class="cause"/><text x="170" y="457" text-anchor="middle" class="h">전역 history map 포화</text><text x="170" y="484" text-anchor="middle" class="small">새 entry를 더 보관할 수 없음</text>
+  <rect x="430" y="415" width="555" height="95" rx="12" class="safe"/><text x="707" y="450" text-anchor="middle" class="h">history_start = 현재 COMMIT LSA</text><text x="707" y="481" text-anchor="middle" class="t">map 전체 clear · 새 하한 설정</text>
+  <rect x="1120" y="415" width="335" height="95" rx="12" class="result"/><text x="1287" y="457" text-anchor="middle" class="h">새 history 재축적</text><text x="1287" y="484" text-anchor="middle" class="small">이후 WRITE·REF 게시로 다시 채움</text>
+
+  <rect x="45" y="545" width="250" height="95" rx="12" class="cause"/><text x="170" y="587" text-anchor="middle" class="h">DDL로 인덱스 식별자 변경</text><text x="170" y="614" text-anchor="middle" class="small">drop · recreate · rebuild</text>
+  <rect x="430" y="545" width="555" height="95" rx="12" class="safe"/><text x="707" y="580" text-anchor="middle" class="h">기존 history 무효화</text><text x="707" y="611" text-anchor="middle" class="t">새 이력 하한 설정</text>
+  <rect x="1120" y="545" width="335" height="95" rx="12" class="result"/><text x="1287" y="587" text-anchor="middle" class="h">새 식별자의 history 시작</text><text x="1287" y="614" text-anchor="middle" class="small">이전 이력과 혼합 금지</text>
+
+  <rect x="45" y="675" width="250" height="95" rx="12" class="cause"/><text x="170" y="732" text-anchor="middle" class="h">abort · 로그 기록 실패</text>
+  <rect x="430" y="675" width="555" height="95" rx="12" class="stop"/><text x="707" y="732" text-anchor="middle" class="h">현재 트랜잭션을 publish하지 않음</text>
+  <rect x="1120" y="675" width="335" height="95" rx="12" class="result"/><text x="1287" y="717" text-anchor="middle" class="h">직전 history 유지</text><text x="1287" y="744" text-anchor="middle" class="small">실패한 COMMIT LSA 노출 금지</text>
+
+  <path d="M295 202 H430" class="arrow"/><path d="M985 202 H1120" class="arrow"/>
+  <path d="M295 332 H430" class="arrow"/><path d="M985 332 H1120" class="arrow"/>
+  <path d="M295 462 H430" class="arrow"/><path d="M985 462 H1120" class="arrow"/>
+  <path d="M295 592 H430" class="arrow"/><path d="M985 592 H1120" class="arrow"/>
+  <path d="M295 722 H430" class="arrow"/><path d="M985 722 H1120" class="arrow"/>
+</svg>

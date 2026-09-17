@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="540" viewBox="0 0 1400 540">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#475569"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:Arial,'Noto Sans KR',sans-serif;fill:#172033}
+    .title{font-size:26px;font-weight:700}.sub{font-size:15px;fill:#526174}
+    .head{font-size:18px;font-weight:700}.body{font-size:15px}.small{font-size:13px;fill:#526174}
+    .mono{font-family:'SFMono-Regular',Consolas,monospace;font-size:14px}
+    .arrow{fill:none;stroke:#475569;stroke-width:2.4;marker-end:url(#arrow)}
+    .dash{fill:none;stroke:#94a3b8;stroke-width:2;stroke-dasharray:7 6}
+  </style>
+  <rect width="1400" height="540" fill="#fff"/>
+  <text x="42" y="46" class="title">COMMIT을 확인한 트랜잭션만 task로 닫는다</text>
+  <text x="42" y="76" class="sub">reader는 여러 trid의 replication item을 동시에 모으지만, 여기서는 COMMIT을 만난 T2만 LA_APPLY_TASK가 된다.</text>
+
+  <text x="55" y="118" class="head">reader의 trid별 수집 상태</text>
+
+  <rect x="55" y="140" width="650" height="92" rx="13" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/>
+  <text x="82" y="174" class="head">T1 · LA_APPLY</text>
+  <rect x="250" y="155" width="115" height="42" rx="8" fill="#eff6ff" stroke="#3b82f6"/><text x="307" y="182" text-anchor="middle" class="mono">LA_ITEM R1</text>
+  <path d="M365 176H398" class="arrow"/>
+  <rect x="398" y="155" width="115" height="42" rx="8" fill="#eff6ff" stroke="#3b82f6"/><text x="455" y="182" text-anchor="middle" class="mono">LA_ITEM R2</text>
+  <text x="550" y="181" class="small">COMMIT 미도착 · 계속 수집</text>
+
+  <rect x="55" y="253" width="650" height="112" rx="13" fill="#eff6ff" stroke="#2563eb" stroke-width="2.5"/>
+  <text x="82" y="288" class="head">T2 · LA_APPLY</text>
+  <rect x="250" y="268" width="115" height="42" rx="8" fill="#fff" stroke="#3b82f6"/><text x="307" y="295" text-anchor="middle" class="mono">LA_ITEM R1</text>
+  <path d="M365 289H398" class="arrow"/>
+  <rect x="398" y="268" width="115" height="42" rx="8" fill="#fff" stroke="#3b82f6"/><text x="455" y="295" text-anchor="middle" class="mono">LA_ITEM R2</text>
+  <path d="M513 289H546" class="arrow"/>
+  <rect x="546" y="268" width="125" height="42" rx="8" fill="#fff7ed" stroke="#f97316"/><text x="608" y="295" text-anchor="middle" class="mono">COMMIT C2</text>
+  <text x="250" y="340" class="small">같은 trid의 COMMIT 확인 · T2 task 생성 가능</text>
+
+  <rect x="55" y="386" width="650" height="92" rx="13" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/>
+  <text x="82" y="420" class="head">T3 · LA_APPLY</text>
+  <rect x="250" y="401" width="115" height="42" rx="8" fill="#eff6ff" stroke="#3b82f6"/><text x="307" y="428" text-anchor="middle" class="mono">LA_ITEM R1</text>
+  <text x="400" y="427" class="small">COMMIT 미도착 · 계속 수집</text>
+
+  <path d="M705 309H855" class="arrow"/>
+  <text x="780" y="288" text-anchor="middle" class="small">T2 COMMIT에서 생성</text>
+
+  <rect x="855" y="215" width="470" height="190" rx="15" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2.5"/>
+  <text x="1090" y="253" text-anchor="middle" class="head">LA_APPLY_TASK · T2</text>
+  <line x1="885" y1="270" x2="1295" y2="270" stroke="#c4b5fd"/>
+  <text x="895" y="305" class="mono">tranid = T2</text>
+  <text x="895" y="338" class="mono">commit_lsa = C2</text>
+  <text x="895" y="371" class="mono">apply ── T2의 LA_APPLY를 가리킴</text>
+
+  <path d="M855 371H780V335H705" class="dash"/>
+  <text x="780" y="397" text-anchor="middle" class="small">목록을 복사하지 않고 포인터로 연결</text>
+
+  <text x="55" y="516" class="small">T1과 T3은 replication item을 계속 보관하고, COMMIT을 확인한 T2만 task로 닫아 dependency 판정으로 넘긴다.</text>
+</svg>

@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2100" height="900" viewBox="0 0 2100 900">
+  <style>
+    text{font-family:Arial,'Noto Sans KR',sans-serif;fill:#172033}
+    .title{font-size:27px;font-weight:700}
+    .head{font-size:21px;font-weight:700}
+    .code{font-family:'DejaVu Sans Mono','Noto Sans Mono CJK KR',monospace;font-size:16px;fill:#253047}
+    .new{fill:#b91c1c}
+    .muted{fill:#64748b}
+    .note{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.5}
+  </style>
+  <rect width="2100" height="900" fill="#ffffff"/>
+  <text x="38" y="45" class="title">로그 수집과 COMMIT 시점의 transaction task 생성</text>
+  <line x1="1050" y1="70" x2="1050" y2="805" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="525" y="98" text-anchor="middle" class="head">AS-IS</text>
+  <text x="1575" y="98" text-anchor="middle" class="head">TO-BE</text>
+
+  <text x="45" y="140" class="code">reader thread</text>
+  <text x="45" y="170" class="code">la_apply_log_file()</text>
+  <text x="45" y="200" class="code">└─ 로그 레코드 반복</text>
+  <text x="45" y="230" class="code">   ├─ LOG_GET_LOG_RECORD_HEADER()</text>
+  <text x="45" y="260" class="code">   └─ la_log_record_process()</text>
+  <text x="45" y="300" class="code">      ├─ REPLICATION_DATA·STATEMENT</text>
+  <text x="45" y="330" class="code">      │  └─ la_set_repl_log()</text>
+  <text x="45" y="360" class="code">      │     └─ trid별 LA_APPLY에 item 연결</text>
+  <text x="45" y="410" class="code">      └─ LOG_COMMIT</text>
+  <text x="45" y="440" class="code">         ├─ la_retrieve_eot_time()</text>
+  <text x="45" y="470" class="code">         ├─ la_add_node_into_la_commit_list()</text>
+  <text x="45" y="500" class="code">         └─ la_apply_commit_list()</text>
+  <text x="45" y="530" class="code">            └─ la_apply_repl_log()</text>
+
+  <text x="1090" y="140" class="code">reader/coordinator thread</text>
+  <text x="1090" y="170" class="code">la_apply_log_file()</text>
+  <text x="1090" y="200" class="code">└─ 로그 레코드 반복</text>
+  <text x="1090" y="230" class="code">   ├─ LOG_GET_LOG_RECORD_HEADER()</text>
+  <text x="1090" y="260" class="code">   └─ la_log_record_process()</text>
+  <text x="1090" y="300" class="code">      ├─ REPLICATION_DATA·STATEMENT</text>
+  <text x="1090" y="330" class="code">      │  └─ la_set_repl_log()</text>
+  <text x="1090" y="360" class="code">      │     └─ trid별 LA_APPLY에 item 연결</text>
+  <text x="1090" y="410" class="code new">      ├─ LOG_DUMMY_WS_LABEL        </text>
+  <text x="1090" y="440" class="code new">      │  └─ la_retrieve_ws_label() </text>
+  <text x="1090" y="470" class="code new">      │     └─ trid·dependency를 COMMIT까지 보관</text>
+  <text x="1090" y="520" class="code">      └─ LOG_COMMIT</text>
+  <text x="1090" y="550" class="code">         ├─ la_retrieve_eot_time()</text>
+  <text x="1090" y="580" class="code">         ├─ la_add_node_into_la_commit_list()</text>
+  <text x="1090" y="610" class="code new">         └─ LA_APPLY_TASK 필드 구성</text>
+  <text x="1090" y="640" class="code new">            ├─ COMMIT 정보 저장</text>
+  <text x="1090" y="670" class="code new">            ├─ 같은 trid의 LA_APPLY 연결</text>
+  <text x="1090" y="700" class="code new">            └─ 같은 trid의 WS_LABEL dependency 연결</text>
+
+  <rect x="340" y="820" width="1420" height="52" rx="10" class="note"/>
+  <text x="1050" y="853" text-anchor="middle" class="code muted">완성된 task의 dependency 판정과 queue 배정은 다음 단계에서 수행</text>
+</svg>

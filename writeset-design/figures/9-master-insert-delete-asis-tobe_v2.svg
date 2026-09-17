@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1160" viewBox="0 0 1400 1160">
+  <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#475569"/></marker></defs>
+  <style>
+    text{font-family:Arial,'Noto Sans KR',sans-serif;fill:#172033}.title{font-size:26px;font-weight:700}.head{font-size:22px;font-weight:700}.body{font-size:16px}.small{font-size:14px}.mark{font-size:22px;font-weight:700;fill:#dc2626}
+    .boundary{rx:16;fill:#fff;stroke:#94a3b8;stroke-width:2}.fn{rx:10;fill:#f8fafc;stroke:#64748b;stroke-width:2}.key{rx:10;fill:#eff6ff;stroke:#3b82f6;stroke-width:2}.state{rx:10;fill:#ecfdf5;stroke:#10b981;stroke-width:2}.flow{stroke:#475569;stroke-width:2;fill:none;marker-end:url(#arrow)}
+  </style>
+  <rect width="1400" height="1160" fill="#fff"/>
+  <text x="32" y="40" class="title">INSERT·DELETE: 인덱스별 순차 처리에 writeset 수집 호출 추가</text>
+  <line x1="700" y1="70" x2="700" y2="1100" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="350" y="82" text-anchor="middle" class="head">AS-IS</text><text x="1050" y="82" text-anchor="middle" class="head">TO-BE</text>
+  <rect x="30" y="105" width="640" height="950" class="boundary"/><text x="55" y="140" class="body">INSERT·DELETE 인덱스 처리</text>
+  <rect x="730" y="105" width="640" height="950" class="boundary"/><text x="755" y="140" class="body">INSERT·DELETE 인덱스 처리</text>
+  <rect x="795" y="358" width="510" height="124" rx="18" fill="#ef4444" fill-opacity="0.08" stroke="#dc2626" stroke-width="3"/>
+  <rect x="795" y="713" width="510" height="106" rx="18" fill="#ef4444" fill-opacity="0.08" stroke="#dc2626" stroke-width="3"/>
+  <rect x="140" y="175" width="420" height="58" class="fn"/><text x="350" y="211" text-anchor="middle" class="body">인덱스 1개 선택 · 종류 확인</text>
+  <rect x="840" y="175" width="420" height="58" class="fn"/><text x="1050" y="211" text-anchor="middle" class="body">인덱스 1개 선택 · 종류 확인</text>
+  <path d="M350 233V275" class="flow"/><path d="M1050 233V275" class="flow"/>
+  <rect x="140" y="275" width="420" height="66" class="key"/><text x="350" y="302" text-anchor="middle" class="body">현재 row의 index key 추출</text><text x="350" y="327" text-anchor="middle" class="small">INSERT: new key · DELETE: old key</text>
+  <rect x="840" y="275" width="420" height="66" class="key"/><text x="1050" y="302" text-anchor="middle" class="body">현재 row의 index key 추출</text><text x="1050" y="327" text-anchor="middle" class="small">INSERT: new key · DELETE: old key</text>
+  <path d="M350 341V505" class="flow"/><path d="M1050 341V375" class="flow"/>
+  <rect x="815" y="375" width="470" height="80" class="fn"/><text x="825" y="402" class="mark">①</text><text x="1050" y="407" text-anchor="middle" class="body">index 종류에 따라 writeset 동기 수집</text><text x="1050" y="436" text-anchor="middle" class="small">UNIQUE·REVERSE UNIQUE → WRITE · child FK → REF</text>
+  <path d="M1050 455V505" class="flow"/>
+  <rect x="140" y="505" width="420" height="62" class="fn"/><text x="350" y="543" text-anchor="middle" class="body">기존 btree INSERT / DELETE</text>
+  <rect x="840" y="505" width="420" height="62" class="fn"/><text x="1050" y="543" text-anchor="middle" class="body">기존 btree INSERT / DELETE</text>
+  <path d="M350 567V625" class="flow"/><path d="M1050 567V625" class="flow"/><text x="365" y="607" class="small">PK 인덱스일 때</text><text x="1065" y="607" class="small">PK 인덱스일 때</text>
+  <rect x="140" y="625" width="420" height="66" class="fn"/><text x="350" y="666" text-anchor="middle" class="body">트랜잭션 복제 정보 생성</text>
+  <rect x="840" y="625" width="420" height="66" class="fn"/><text x="1050" y="666" text-anchor="middle" class="body">트랜잭션 복제 정보 생성</text>
+  <path d="M350 691V845" class="flow"/><path d="M1050 691V730" class="flow"/>
+  <rect x="815" y="730" width="470" height="68" class="fn"/><text x="825" y="757" class="mark">②</text><text x="1050" y="772" text-anchor="middle" class="body">성공한 PK key를 WRITE로 동기 수집</text>
+  <path d="M1050 798V845" class="flow"/>
+  <rect x="140" y="845" width="420" height="68" class="state"/><text x="350" y="886" text-anchor="middle" class="body">트랜잭션 복제 정보 유지</text>
+  <rect x="840" y="845" width="420" height="68" class="state"/><text x="1050" y="872" text-anchor="middle" class="body">복제 정보 + writeset 항목 유지</text><text x="1050" y="898" text-anchor="middle" class="small">현재 LOG_TDES가 commit/abort까지 소유</text>
+  <path d="M350 913V970" class="flow"/><path d="M1050 913V970" class="flow"/>
+  <rect x="140" y="970" width="420" height="50" class="fn"/><text x="350" y="1001" text-anchor="middle" class="body">다음 인덱스 처리</text>
+  <rect x="840" y="970" width="420" height="50" class="fn"/><text x="1050" y="1001" text-anchor="middle" class="body">다음 인덱스 처리</text>
+  <rect x="755" y="1090" width="20" height="14" class="state"/><text x="785" y="1102" class="small">transaction-local state</text><rect x="985" y="1090" width="20" height="14" class="fn"/><text x="1015" y="1102" class="small">동기 함수 호출</text>
+</svg>
