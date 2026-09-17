@@ -494,12 +494,18 @@ struct log_rec_ws_label
 
 ```text
 log_writeset_commit_probe()
-├─ writeset overflow
-│  └─ [알고리즘 3] commit-order 폴백 라벨 확정
-└─ 정상 writeset
+├─ tdes.ws_overflow 확인
+│
+├─ true
+│  └─ 알고리즘 1·2 생략
+│     └─ [알고리즘 3] 폴백 분기
+│        └─ lc = prev_commit
+│
+└─ false
    ├─ [알고리즘 1] 트랜잭션 전체에서 가장 늦은 선행 충돌 후보 선택
    │  └─ 각 entry마다 [알고리즘 2] 선행 충돌 후보 선택
-   └─ [알고리즘 3] 최종 dependency 라벨 확정
+   └─ [알고리즘 3] 정상 분기
+      └─ parent와 prev_commit으로 최종 lc 확정
 ```
 
 **알고리즘 1 — 트랜잭션 전체 선행 후보 선택**
@@ -555,6 +561,8 @@ select_entry_candidate(entry, history):
 **알고리즘 3 — 폴백과 최종 dependency 라벨(`lc`) 확정**
 
 알고리즘 3은 `{dependency_seq, dependency_is_read}`를 반환한다. `dependency_seq`가 현재 트랜잭션의 최종 `lc`이며, `dependency_is_read`는 이 `lc`를 슬레이브에서 연속 완료 경계로 기다려야 하는지를 나타낸다.
+
+첫 번째 `if tdes.ws_overflow`가 폴백 분기다. 이 조건에 해당하지 않으면 알고리즘 1·2로 `parent`를 계산한 뒤 정상 분기에서 최종 `lc`를 확정한다.
 
 ```text
 if tdes.ws_overflow:
