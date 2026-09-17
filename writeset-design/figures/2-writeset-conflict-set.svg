@@ -72,21 +72,29 @@
   <text x="850" y="550" class="body">H(...)</text>
   <text x="1040" y="550" class="body">}</text>
 
-  <path d="M1095 232 H1170" class="arrow"/>
-  <path d="M1095 492 H1170" class="arrow"/>
+  <path d="M1095 232 H1125 Q1145 232 1145 252 V300" class="arrow"/>
+  <path d="M1095 492 H1125 Q1145 492 1145 472 V420" class="arrow"/>
 
-  <rect x="1170" y="170" width="375" height="180" class="box hit"/>
-  <text x="1357" y="212" text-anchor="middle" class="head">교집합 있음</text>
-  <text x="1357" y="254" text-anchor="middle" class="body">H(parent.PK, 7)이 같음</text>
-  <text x="1357" y="294" text-anchor="middle" class="head">→ 보수적으로 선행 관계 생성</text>
-  <text x="1357" y="326" text-anchor="middle" class="small">동일 키 접근 또는 해시 충돌</text>
+  <rect x="1145" y="300" width="220" height="120" class="box note"/>
+  <text x="1255" y="338" text-anchor="middle" class="head">두 writeset 비교</text>
+  <text x="1255" y="374" text-anchor="middle" class="body">T1 ∩ T2</text>
+  <text x="1255" y="404" text-anchor="middle" class="small">공통 해시가 있는가?</text>
 
-  <rect x="1170" y="405" width="375" height="150" class="box free"/>
-  <text x="1357" y="447" text-anchor="middle" class="head">교집합 없음</text>
-  <text x="1357" y="489" text-anchor="middle" class="head">→ 서로 독립으로 판정 가능</text>
-  <text x="1357" y="526" text-anchor="middle" class="small">필요한 키를 빠짐없이 수집했다는 전제</text>
+  <path d="M1365 340 H1385 V235 H1405" class="arrow"/>
+  <text x="1383" y="272" text-anchor="end" class="small">있음</text>
+  <path d="M1365 380 H1385 V485 H1405" class="arrow"/>
+  <text x="1383" y="462" text-anchor="end" class="small">없음</text>
 
-  <path d="M1128 335 V390" class="dash"/>
+  <rect x="1405" y="155" width="170" height="160" class="box hit"/>
+  <text x="1490" y="192" text-anchor="middle" class="head">교집합 있음</text>
+  <text x="1490" y="226" text-anchor="middle" class="small">H(parent.PK, 7)</text>
+  <text x="1490" y="264" text-anchor="middle" class="body">선행 관계 생성</text>
+  <text x="1490" y="292" text-anchor="middle" class="small">보수적 충돌 판정</text>
+
+  <rect x="1405" y="425" width="170" height="120" class="box free"/>
+  <text x="1490" y="465" text-anchor="middle" class="head">교집합 없음</text>
+  <text x="1490" y="505" text-anchor="middle" class="body">독립 실행 가능</text>
+  <text x="1490" y="530" text-anchor="middle" class="small">키 수집 완료 전제</text>
   <rect x="375" y="635" width="1170" height="55" class="box note"/>
   <text x="960" y="669" text-anchor="middle" class="body">판정 단계는 해시의 원래 제약 종류를 다시 해석하지 않고, 같은 충돌 식별자인지만 비교한다.</text>
 </svg>
