@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="760" viewBox="0 0 1500 760" role="img" aria-labelledby="title desc">
+  <title id="title">역할 변경 신호 감지부터 drain 완료와 DONE 통보까지의 전후 비교</title>
+  <desc id="desc">develop은 HA server-state 로그와 active log header 상태를 확인한 뒤 동기화된 로그 끝에서 DONE으로 전환한다. 개선안은 같은 신호와 반복 루프를 유지하되 DONE 전에 pending, dispatch order와 gate order가 모두 빌 때까지 결과 수거, pending 재판정과 worker 적용을 반복한다.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#475569"/></marker>
+    <style>
+      text{font-family:Arial,'Noto Sans KR',sans-serif;fill:#172033}.title{font-size:27px;font-weight:700}.col{font-size:23px;font-weight:700}.head{font-size:17px;font-weight:700}.body{font-size:15px}.small{font-size:13px;fill:#526174}.box{fill:#f8fafc;stroke:#64748b;stroke-width:2}.signal{fill:#eff6ff;stroke:#3b82f6;stroke-width:2}.changed{fill:#fff7ed;stroke:#f97316;stroke-width:2}.done{fill:#ecfdf5;stroke:#10b981;stroke-width:2}.line{fill:none;stroke:#475569;stroke-width:2.5;marker-end:url(#arrow)}.loop{fill:none;stroke:#f97316;stroke-width:2.8;stroke-dasharray:8 6;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1500" height="760" fill="#ffffff"/>
+  <text x="45" y="48" class="title">HA 역할 변경 신호를 감지한 applylogdb가 `DONE`을 통보하기까지</text>
+  <line x1="750" y1="80" x2="750" y2="720" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="375" y="92" text-anchor="middle" class="col">AS-IS</text>
+  <text x="1125" y="92" text-anchor="middle" class="col">TO-BE</text>
+
+  <rect x="90" y="125" width="570" height="82" rx="13" class="signal"/>
+  <text x="375" y="155" text-anchor="middle" class="head">마스터 HA 상태 변경</text>
+  <text x="375" y="181" text-anchor="middle" class="body">LOG_DUMMY_HA_SERVER_STATE · active log header 상태 갱신</text>
+  <path d="M375 207V245" class="line"/>
+  <rect x="90" y="245" width="570" height="100" rx="13" class="box"/>
+  <text x="375" y="276" text-anchor="middle" class="head">la_log_record_process()</text>
+  <text x="375" y="302" text-anchor="middle" class="body">state record 확인 → is_role_changed=true → ER_INTERRUPTED</text>
+  <text x="375" y="326" text-anchor="middle" class="small">reader 반복으로 복귀</text>
+  <path d="M375 345V383" class="line"/>
+  <rect x="90" y="383" width="570" height="105" rx="13" class="box"/>
+  <text x="375" y="414" text-anchor="middle" class="head">반복마다 la_change_state()</text>
+  <text x="375" y="440" text-anchor="middle" class="body">로그 끝 · SYNCHRONIZED · DEAD/STANDBY/MAINTENANCE 확인</text>
+  <text x="375" y="465" text-anchor="middle" class="small">조건을 만족하면 바로 DONE 전환 준비</text>
+  <path d="M375 488V526" class="line"/>
+  <rect x="90" y="526" width="570" height="105" rx="13" class="done"/>
+  <text x="375" y="558" text-anchor="middle" class="head">la_log_commit(true) → DONE 통보</text>
+  <text x="375" y="585" text-anchor="middle" class="body">apply-info 영속 · boot_notify_ha_log_applier_state(DONE)</text>
+  <text x="375" y="611" text-anchor="middle" class="small">외부 HA 역할 전환 절차가 승격 진행</text>
+
+  <rect x="840" y="125" width="570" height="82" rx="13" class="signal"/>
+  <text x="1125" y="155" text-anchor="middle" class="head">마스터 HA 상태 변경</text>
+  <text x="1125" y="181" text-anchor="middle" class="body">LOG_DUMMY_HA_SERVER_STATE · active log header 상태 갱신</text>
+  <path d="M1125 207V245" class="line"/>
+  <rect x="840" y="245" width="570" height="100" rx="13" class="box"/>
+  <text x="1125" y="276" text-anchor="middle" class="head">la_log_record_process()</text>
+  <text x="1125" y="302" text-anchor="middle" class="body">state record 확인 → is_role_changed=true → ER_INTERRUPTED</text>
+  <text x="1125" y="326" text-anchor="middle" class="small">현재 레코드 처리를 중단하고 reader 반복으로 복귀</text>
+  <path d="M1125 345V383" class="line"/>
+  <rect x="840" y="383" width="570" height="105" rx="13" class="box"/>
+  <text x="1125" y="414" text-anchor="middle" class="head">반복마다 la_change_state()</text>
+  <text x="1125" y="440" text-anchor="middle" class="body">로그 끝 · SYNCHRONIZED · DEAD/STANDBY/MAINTENANCE 확인</text>
+  <text x="1125" y="465" text-anchor="middle" class="small">같은 조건에서 la_gate_drain_complete() 추가 확인</text>
+  <path d="M1125 488V520" class="line"/>
+  <rect x="840" y="520" width="570" height="105" rx="13" class="changed"/>
+  <text x="1125" y="551" text-anchor="middle" class="head">drain 미완료: DONE 보류</text>
+  <text x="1125" y="577" text-anchor="middle" class="body">결과 수거 → pending 재판정 → worker 적용 반복</text>
+  <text x="1125" y="602" text-anchor="middle" class="small">pending 없음 · Dispatch Order 비움 · Gate Order 비움</text>
+  <path d="M1410 572H1450V435H1410" class="loop"/>
+  <path d="M1125 625V657" class="line"/>
+  <rect x="840" y="657" width="570" height="70" rx="13" class="done"/>
+  <text x="1125" y="686" text-anchor="middle" class="head">drain 완료 → 영속 → DONE 통보</text>
+  <text x="1125" y="711" text-anchor="middle" class="small">외부 HA 역할 전환 절차가 승격 진행</text>
+
+</svg>

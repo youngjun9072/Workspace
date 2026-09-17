@@ -662,39 +662,58 @@ la_gate_drain_ready():
 
 ## 8-2.8 역할 전환 drain과 `DONE` 전환
 
-이 절은 그림 8-2-1의 **⑦ `la_change_state()`**에서 역할 전환 시 신규 작업 유입을 멈추고 이미 받아들인 작업이 모두 끝날 때까지 `DONE` 전환을 보류하는 하위 구조를 설명한다.
+이 절은 그림 8-2-1의 **⑦ 역할 전환 경로**를 설명한다. 마스터의 HA 상태 변경은 `LOG_DUMMY_HA_SERVER_STATE`와 active log header 상태로 슬레이브에 전달된다. applylogdb는 reader 반복에서 이 상태를 확인하고, 병렬 적용이 받아들인 작업을 모두 끝낸 뒤 `DONE`을 통보해야 한다.
 
 정상 실행 중 pending task를 다시 배정하는 `la_gate_drain_ready()`와 역할 전환 drain은 목적이 다르다. 역할 전환 drain은 별도의 적용 알고리즘을 실행하지 않고, ⑤ 결과 수거 → ⑥ pending 재배정 → ④ worker 적용 순환이 남은 작업을 소진할 때까지 기존 상태 전환을 보류해야 한다.
 
+역할 전환의 개념 흐름은 6-2.7의 역할 변경 감지·drain·승격 준비 그림에서 설명한다. 이 절에서는 그 흐름이 `la_log_record_process()`, reader 반복과 `la_change_state()`에 대응하는 위치를 설명한다.
+
+![8-2-role-change-drain-asis-tobe](./figures/8-2-role-change-drain-asis-tobe.svg)
+
+*그림 8-2-9. develop의 역할 변경 신호 감지 경로를 유지하면서, 병렬 적용에서는 `DONE` 전환 전에 이미 받아들인 task의 drain 완료를 추가로 확인하는 구조*
+
 ### 기능 진입 call stack
 
-```text
-AS-IS
-
-la_apply_log_file()
-└─ la_change_state()
-   └─ 동기화된 로그 끝에서 서버 상태가 DEAD·STANDBY·MAINTENANCE
-      ├─ apply_state = DONE
-      └─ repl·commit list 정리
-
-TO-BE
-
-la_apply_log_file()
-└─ la_change_state()
-   └─ is_end_of_record=true이고 로그 상태가 SYNCHRONIZED
-      └─ 서버 상태가 DEAD·STANDBY·MAINTENANCE
-      └─ la_gate_drain_complete()
-         ├─ false
-         │  └─ DONE 전환 보류
-         │     └─ ⑤ 결과 수거 → ⑥ pending 재배정 → ④ worker 적용 반복
-         └─ true
-            ├─ new_state = DONE
-            ├─ repl·commit list 정리
-            ├─ la_log_commit(true)
-            │  └─ committed_lsa를 포함한 apply-info 영속
-            ├─ boot_notify_ha_log_applier_state(DONE)
-            └─ apply_state = DONE
-```
+> [!NOTE]-
+> **호출 관계 원문**
+> ```text
+> AS-IS
+>
+> la_apply_log_file()
+> └─ reader 로그 반복
+>    ├─ la_log_record_process()
+>    │  └─ LOG_DUMMY_HA_SERVER_STATE
+>    │     ├─ la_Info.is_role_changed = true
+>    │     └─ ER_INTERRUPTED 반환
+>    └─ la_change_state()
+>       └─ 로그 끝 + SYNCHRONIZED + DEAD·STANDBY·MAINTENANCE
+>          ├─ new_state = DONE
+>          ├─ la_log_commit(true)
+>          ├─ boot_notify_ha_log_applier_state(DONE)
+>          └─ apply_state = DONE
+> ```
+>
+> ```text
+> TO-BE
+>
+> la_apply_log_file()
+> └─ reader/coordinator 반복
+>    ├─ la_collect_apply_results()
+>    ├─ la_log_record_process()
+>    │  └─ LOG_DUMMY_HA_SERVER_STATE
+>    │     ├─ la_Info.is_role_changed = true
+>    │     └─ ER_INTERRUPTED 반환
+>    └─ la_change_state()
+>       └─ 로그 끝 + SYNCHRONIZED + DEAD·STANDBY·MAINTENANCE
+>          └─ la_gate_drain_complete()
+>             ├─ false → DONE 전환 보류
+>             │  └─ ⑤ 결과 수거 → ⑥ pending 재배정 → ④ worker 적용 반복
+>             └─ true
+>                ├─ new_state = DONE
+>                ├─ la_log_commit(true)
+>                ├─ boot_notify_ha_log_applier_state(DONE)
+>                └─ apply_state = DONE
+> ```
 
 ### 주요 구현 흐름
 
@@ -720,23 +739,23 @@ worker queue와 실행 중 task는 dispatch order에 대응 항목이 남아 있
 
 ![8-2-recovery-error-skip-step-1](./figures/8-2-recovery-error-skip-step-1.svg)
 
-*그림 8-2-9a. 장애 직전 `committed_lsa=C0` 뒤에 미완료 C1과 먼저 완료된 C2·C3이 남고, reader가 읽은 위치 R이 `final_lsa`로 저장된 상태*
+*그림 8-2-10a. 장애 직전 `committed_lsa=C0` 뒤에 미완료 C1과 먼저 완료된 C2·C3이 남고, reader가 읽은 위치 R이 `final_lsa`로 저장된 상태*
 
 ![8-2-recovery-error-skip-step-2](./figures/8-2-recovery-error-skip-step-2.svg)
 
-*그림 8-2-9b. 재시작 시 reader 위치를 안전 경계 C0로 되감고, 이전 실행의 `final_lsa=R`을 `recovery_boundary_lsa`로 고정하는 단계*
+*그림 8-2-10b. 재시작 시 reader 위치를 안전 경계 C0로 되감고, 이전 실행의 `final_lsa=R`을 `recovery_boundary_lsa`로 고정하는 단계*
 
 ![8-2-recovery-error-skip-step-3](./figures/8-2-recovery-error-skip-step-3.svg)
 
-*그림 8-2-9c. `(C0, R]`의 task를 다시 구성·적용하고, 복구 구간에서 허용한 재적용 오류만 로그와 `fail_counter` 증가 없이 건너뛰는 단계*
+*그림 8-2-10c. `(C0, R]`의 task를 다시 구성·적용하고, 복구 구간에서 허용한 재적용 오류만 로그와 `fail_counter` 증가 없이 건너뛰는 단계*
 
 ![8-2-recovery-error-skip-step-4](./figures/8-2-recovery-error-skip-step-4.svg)
 
-*그림 8-2-9d. C1의 hole이 닫히면 Gate Order의 앞에서부터 이미 완료된 C2·C3을 연속으로 흡수해 frontier를 R 범위까지 전진시키는 단계*
+*그림 8-2-10d. C1의 hole이 닫히면 Gate Order의 앞에서부터 이미 완료된 C2·C3을 연속으로 흡수해 frontier를 R 범위까지 전진시키는 단계*
 
 ![8-2-recovery-error-skip-step-5](./figures/8-2-recovery-error-skip-step-5.svg)
 
-*그림 8-2-9e. R 범위의 task와 연속 완료 경계 처리를 마친 뒤, R 다음 로그부터 기존 오류 처리로 전환하는 단계*
+*그림 8-2-10e. R 범위의 task와 연속 완료 경계 처리를 마친 뒤, R 다음 로그부터 기존 오류 처리로 전환하는 단계*
 
 ### 기능 진입 call stack
 
