@@ -506,15 +506,24 @@ log_writeset_commit_probe()
 
 현재 트랜잭션의 각 충돌 키를 전역 history와 대조해, 현재 트랜잭션보다 먼저 완료돼야 할 과거 COMMIT LSA 중 가장 늦은 값을 선택한다.
 
+`select_latest_transaction_candidate(entries, history, history_start)`의 입력은 다음과 같다.
+
+- `entries`: 현재 트랜잭션에서 수집한 모든 WRITE·REF 항목이다.
+- `history`: 충돌 키별 과거 `write_seq`·`read_seq`를 보관하는 전역 history다.
+- `history_start`: history를 비우면서 사라진 과거 이력을 대신하는 보수적 하한이다.
+
+이 함수는 `{lsa, from_read_seq}`를 반환한다. `lsa`는 모든 entry의 선행 후보 중 가장 늦은 COMMIT LSA이며, `from_read_seq`는 그 최종 후보가 `read_seq`에서 선택됐는지를 나타낸다.
+
 ```text
-parent = {history_start, false}             # {lsa, from_read_seq}
+select_latest_transaction_candidate(entries, history, history_start):
+    parent = {history_start, false}         # {lsa, from_read_seq}
 
-for each entry in entries:
-    candidate = select_entry_candidate(entry, history)  # 알고리즘 2
-    if candidate.lsa is not NULL and candidate.lsa > parent.lsa:
-        parent = candidate
+    for each entry in entries:
+        candidate = select_entry_candidate(entry, history)  # 알고리즘 2
+        if candidate.lsa is not NULL and candidate.lsa > parent.lsa:
+            parent = candidate
 
-return parent
+    return parent
 ```
 
 **알고리즘 2 — entry 하나의 선행 후보 선택**
@@ -543,11 +552,13 @@ select_entry_candidate(entry, history):
 
 `from_read_seq`는 슬레이브의 대기 방식을 결정한다. `true`이면 frontier가 해당 LSA까지 도달하기를 기다리고, `false`이면 해당 WRITE 트랜잭션 한 건의 완료도 충족 조건으로 사용할 수 있다.
 
-**알고리즘 3 — 폴백과 최종 라벨 확정**
+**알고리즘 3 — 폴백과 최종 dependency 라벨(`lc`) 확정**
+
+알고리즘 3은 `{dependency_seq, dependency_is_read}`를 반환한다. `dependency_seq`가 현재 트랜잭션의 최종 `lc`이며, `dependency_is_read`는 이 `lc`를 슬레이브에서 연속 완료 경계로 기다려야 하는지를 나타낸다.
 
 ```text
 if tdes.ws_overflow:
-    return {prev_commit, true}  # commit-order 폴백은 prev_commit까지 frontier 대기
+    return {prev_commit, true}  # lc=prev_commit: 직전 COMMIT까지 연속 완료 대기
 
 parent = select_latest_transaction_candidate(entries, history, history_start)
 
