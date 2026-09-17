@@ -681,14 +681,19 @@ TO-BE
 
 la_apply_log_file()
 └─ la_change_state()
-   └─ 동기화된 로그 끝에서 서버 상태가 DEAD·STANDBY·MAINTENANCE
+   └─ is_end_of_record=true이고 로그 상태가 SYNCHRONIZED
+      └─ 서버 상태가 DEAD·STANDBY·MAINTENANCE
       └─ la_gate_drain_complete()
          ├─ false
          │  └─ DONE 전환 보류
          │     └─ ⑤ 결과 수거 → ⑥ pending 재배정 → ④ worker 적용 반복
          └─ true
-            ├─ apply_state = DONE
-            └─ repl·commit list 정리
+            ├─ new_state = DONE
+            ├─ repl·commit list 정리
+            ├─ la_log_commit(true)
+            │  └─ committed_lsa를 포함한 apply-info 영속
+            ├─ boot_notify_ha_log_applier_state(DONE)
+            └─ apply_state = DONE
 ```
 
 ### 주요 구현 흐름
@@ -702,6 +707,10 @@ and COMMIT 순서 FIFO가 비어 있음
 ```
 
 worker queue와 실행 중 task는 dispatch order에 대응 항목이 남아 있으므로 별도 조건으로 중복 검사하지 않는다. drain이 끝나지 않은 상태에서 로그 입력도 더 이상 전진하지 않으면, reader loop는 설정한 제한 시간까지 기존 결과 수거와 pending 재배정을 계속해야 한다. 제한 시간을 넘기면 무한 대기 상태로 두지 않고 오류를 기록한 뒤 재시작 경로로 전환해야 한다.
+
+`la_gate_drain_complete()`만 true라고 해서 즉시 승격하면 안 된다. `la_change_state()`는 로그 끝에 도달했고 active log가 `SYNCHRONIZED`이며 서버 상태가 `DEAD`, `STANDBY` 또는 `MAINTENANCE`인지 먼저 확인해야 한다. drain 완료 뒤에도 `la_log_commit(true)`가 안전한 `committed_lsa`와 apply-info를 DB에 영속하고, `boot_notify_ha_log_applier_state(DONE)`이 성공해야 `apply_state`를 `DONE`으로 바꿔야 한다.
+
+`DONE`은 applylogdb가 남은 적용 작업과 COMMIT 순서의 홀을 모두 정리했다는 통보다. 실제 마스터 승격은 이 통보를 확인한 외부 HA 역할 전환 절차가 수행해야 한다.
 
 ## 8-2.9 비정상 종료 뒤 재시작 범위와 error skip
 
