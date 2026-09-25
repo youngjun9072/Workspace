@@ -41,7 +41,7 @@
   <text x="1150" y="443" class="code">│        ├─ la_apply_repl_log()</text>
   <text x="1890" y="443" class="code num">— ⑧ error skip</text>
   <text x="1150" y="478" class="code new">│        ├─ la_commit_transaction()</text>
-  <text x="1150" y="513" class="code new">│        └─ la_enqueue_apply_result()</text>
+  <text x="1150" y="513" class="code new">│        └─ la_enqueue_apply_result() → 첫 미수거 result만 signal</text>
 
   <text x="1140" y="580" class="code new">├─ la_get_last_ha_applied_info()</text>
   <text x="2100" y="580" class="code num">— ⑧</text>
@@ -52,7 +52,7 @@
   <rect x="1130" y="670" width="1100" height="330" rx="12" class="repeat"/>
   <text x="1150" y="703" class="code muted">reader 로그 반복</text>
   <text x="1150" y="738" class="code new">│  └─ reader 로그 반복</text>
-  <text x="1150" y="773" class="code new">│     ├─ la_collect_apply_results()</text>
+  <text x="1150" y="773" class="code new">│     ├─ result_pending 확인 → batch 결과 수거</text>
   <text x="2100" y="773" class="code num">— ⑤</text>
   <text x="1150" y="808" class="code">│     ├─ LOG_GET_LOG_RECORD_HEADER()</text>
   <text x="1150" y="843" class="code">│     ├─ la_log_record_process()</text>
@@ -68,7 +68,7 @@
   <text x="2100" y="1080" class="code num">— ①</text>
 
   <rect x="1130" y="1125" width="1100" height="95" rx="12" class="repeat"/>
-  <text x="1150" y="1162" class="code new">⑤ 결과 수거 → ⑥ la_gate_drain_ready() → pending 재판정·재배정</text>
+  <text x="1150" y="1162" class="code new">⑤ batch 수거 → ⑥ la_gate_dispatch_ready_pending() → pending 재판정·배정</text>
   <text x="1150" y="1198" class="code new">                         ③과 같은 조건 사용 └─ 통과 → ④ worker 반복</text>
   <text x="1140" y="1260" class="code muted">⑦은 이 순환이 모두 끝날 때까지 DONE 전환을 보류한다</text>
 </svg>

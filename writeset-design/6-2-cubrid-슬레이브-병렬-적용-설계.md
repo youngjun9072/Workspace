@@ -211,16 +211,16 @@ R 이하의 task가 모두 끝나고 frontier가 R 이하의 마지막 COMMIT까
 슬레이브는 마스터의 충돌 키나 WRITE·REF history를 다시 계산하지 않는다. reader는 복제 로그를 물리적 순서대로 읽으면서 일반 복제 레코드, `LOG_DUMMY_WS_LABEL`, COMMIT을 같은 `trid`로 연결해 COMMIT 단위의 task를 완성한다.
 
 - **변경 목록**: `LOG_REPLICATION_DATA`·`LOG_REPLICATION_STATEMENT`에서 모은 한 트랜잭션의 복제 항목
-- **선행 조건**: `LOG_DUMMY_WS_LABEL`의 `dependency_seq`와 `dependency_is_read`
+- **선행 조건**: `LOG_DUMMY_WS_LABEL`의 `dependency_seq`와 `dependency_is_ref`
 - **자신의 순서 좌표**: 해당 트랜잭션의 COMMIT LSA
 
 ![6-2-reader-task-assembly](./figures/6-2-reader-task-assembly.svg)
 
 *그림 6-2-3. reader가 같은 trid의 복제 항목과 dependency 라벨을 모으고 COMMIT에서 하나의 transaction task로 닫는 과정*
 
-`LOG_DUMMY_WS_LABEL`의 payload는 writeset 해시 전체가 아니라 마스터가 계산한 `dependency_seq`와 `dependency_is_read`만 전달한다. `trid`는 payload에 중복 저장하지 않고 모든 로그 레코드가 가진 공통 헤더에서 읽는다. reader는 공통 헤더의 `trid`와 dependency를 함께 보관하다가 같은 `trid`의 COMMIT을 만나면 본인 COMMIT LSA까지 묶어 task를 완성한다. task를 만들거나 로그 읽기 위치가 전진한 사실만으로 적용 완료 위치를 바꾸지는 않는다.
+`LOG_DUMMY_WS_LABEL`의 payload는 writeset 해시 전체가 아니라 마스터가 계산한 `dependency_seq`와 `dependency_is_ref`만 전달한다. `trid`는 payload에 중복 저장하지 않고 모든 로그 레코드가 가진 공통 헤더에서 읽는다. reader는 공통 헤더의 `trid`와 dependency를 함께 보관하다가 같은 `trid`의 COMMIT을 만나면 본인 COMMIT LSA까지 묶어 task를 완성한다. task를 만들거나 로그 읽기 위치가 전진한 사실만으로 적용 완료 위치를 바꾸지는 않는다.
 
-WS_LABEL을 읽는 순간에는 DB 적용이나 task 실행이 일어나지 않는다. reader는 `trid`, `dependency_seq`, `dependency_is_read`를 임시 보관하고, 뒤이어 같은 `trid`의 COMMIT을 확인한 경우에만 task로 옮긴다. 현재 task의 `commit_lsa`는 COMMIT 레코드 위치에서 얻고, 선행 조건은 WS_LABEL에서 얻는다. 라벨을 소비한 뒤에는 다음 트랜잭션과 섞이지 않도록 임시 상태를 초기화한다.
+WS_LABEL을 읽는 순간에는 DB 적용이나 task 실행이 일어나지 않는다. reader는 `trid`, `dependency_seq`, `dependency_is_ref`를 임시 보관하고, 뒤이어 같은 `trid`의 COMMIT을 확인한 경우에만 task로 옮긴다. 현재 task의 `commit_lsa`는 COMMIT 레코드 위치에서 얻고, 선행 조건은 WS_LABEL에서 얻는다. 라벨을 소비한 뒤에는 다음 트랜잭션과 섞이지 않도록 임시 상태를 초기화한다.
 
 복제 변경이 있는데 같은 `trid`의 라벨이 없거나 다른 라벨이 연결되면 dependency를 알 수 없다. 이를 `NULL` dependency로 통과시키지 않고 오류 또는 commit-order 폴백으로 전환해야 한다. 중복 라벨, 소비되지 않은 이전 라벨, `trid` 불일치와 payload decode 실패도 정상적인 `dependency_seq=NULL`과 구분한다. 복제 항목이 없는 빈 COMMIT은 별도로 구분하며, 혼합 버전에서는 알 수 없는 WS_LABEL 형식을 조용히 독립 task로 바꾸지 않는다.
 
@@ -250,8 +250,8 @@ if dependency 없음:
 if dependency <= 연속 완료 경계:
     통과
 
-if dependency_is_read == true:
-    pending  # 최종 dependency가 과거 read_seq에서 선택됐다는 뜻이다.
+if dependency_is_ref == true:
+    pending  # 최종 dependency가 과거 ref_seq에서 선택됐다는 뜻이다.
              # 완료 집합의 해당 LSA 한 건만으로는 앞선 REF 전체의 완료를 보장할 수 없다.
 
 if 완료 집합에 dependency LSA가 있음:

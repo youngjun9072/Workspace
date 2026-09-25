@@ -38,7 +38,7 @@
   <path d="M1125 207V245" class="line"/>
   <rect x="840" y="245" width="570" height="100" rx="13" class="box"/>
   <text x="1125" y="276" text-anchor="middle" class="head">reader/coordinator 반복</text>
-  <text x="1125" y="302" text-anchor="middle" class="body">결과 수거 · copy log header 확인 · 도착한 로그 처리</text>
+  <text x="1125" y="302" text-anchor="middle" class="body">로그 경계에서 result 알림 확인 · copy log 처리</text>
   <text x="1125" y="326" text-anchor="middle" class="small">파일 용량과 관계없이 수신 범위까지 계속 읽기</text>
   <path d="M1125 345V383" class="line"/>
   <rect x="840" y="383" width="570" height="105" rx="13" class="box"/>
@@ -47,8 +47,8 @@
   <text x="1125" y="465" text-anchor="middle" class="small">같은 조건에서 la_gate_drain_complete() 추가 확인</text>
   <path d="M1125 488V520" class="line"/>
   <rect x="840" y="520" width="570" height="105" rx="13" class="changed"/>
-  <text x="1125" y="551" text-anchor="middle" class="head">drain 미완료: DONE 보류</text>
-  <text x="1125" y="577" text-anchor="middle" class="body">결과 수거 → pending 재판정 → worker 적용 반복</text>
+  <text x="1125" y="551" text-anchor="middle" class="head">DRAINING: DONE 보류 · result condition 대기</text>
+  <text x="1125" y="577" text-anchor="middle" class="body">batch 결과 수거 → pending 재판정 → worker 적용 반복</text>
   <text x="1125" y="602" text-anchor="middle" class="small">pending 없음 · Dispatch Order 비움 · Gate Order 비움</text>
   <path d="M1410 572H1450V295H1410" class="loop"/>
   <path d="M1125 625V657" class="line"/>

@@ -38,7 +38,7 @@ writeset 상태는 수명이 다른 두 영역으로 나눠야 한다. 현재 �
 typedef UINT64 LOG_WRITESET_HASH;
 ```
 
-충돌 키 하나의 FNV-1a 64비트 해시. 입력은 `class_oid` + index VFID + 정규화한 키의 packed 값이다. 정수 typedef이므로 `std::unordered_map`의 키로 그대로 쓸 수 있다.
+충돌 키 하나의 FNV-1a 64비트 해시. 입력은 `class_oid` + index VFID + 정규화한 키의 packed 값이다. 정수 typedef이며 전역 `tbb::concurrent_hash_map`의 키로 사용한다.
 
 
 ```c
@@ -78,7 +78,9 @@ struct log_tdes
 }
 ```
 
-LOG_TDES`는 트랜잭션 하나의 실행 상태를 담는 서버 측 transaction descriptor다.
+정식 설계 용어는 `ref_seq`·`dependency_is_ref`다. PoC 코드의 필드명은 `read_seq`·`dependency_is_read`이며 위 인용은 코드 그대로다.
+
+`LOG_TDES`는 트랜잭션 하나의 실행 상태를 담는 서버 측 transaction descriptor다. 로컬 writeset은 `std::vector<LOG_WRITESET_ENTRY>`를 유지한다. 한 트랜잭션이 항목을 추가하고 COMMIT에서 순회한 뒤 일괄 정리하므로, 전역 history에 필요한 동시 접근용 map을 로컬에 도입하지 않는다.
 
 커밋된 트랜잭션들이 충돌 키별로 남긴 WRITE·REF COMMIT LSA 이력은 트랜잭션 사이에서 공유하므로 `LOG_TDES`가 아니라 별도의 서버 전역 구조 `LOG_WRITESET_HISTORY`로 둬야 한다.
 
@@ -91,26 +93,86 @@ struct log_writeset_slots
 };
 ```
 
-`LOG_WRITESET_SLOTS`는 충돌 키 하나의 WRITE·REF 슬롯이다. `write_seq`·`read_seq`에는 정수 순번이 아니라 해당 트랜잭션의 COMMIT LSA를 저장한다.
+`LOG_WRITESET_SLOTS`는 충돌 키 하나의 WRITE·REF 슬롯이다. `write_seq`·`ref_seq`에는 정수 순번이 아니라 해당 트랜잭션의 COMMIT LSA를 저장한다.
 
 ```c
 typedef struct log_writeset_history LOG_WRITESET_HISTORY;
 struct log_writeset_history
 {
-  std::unordered_map<LOG_WRITESET_HASH, LOG_WRITESET_SLOTS> map;  /* 충돌 키 해시별 WRITE·REF 슬롯 */
+  tbb::concurrent_hash_map<LOG_WRITESET_HASH, LOG_WRITESET_SLOTS> map;
+  /* 충돌 키 history entry별 WRITE·REF 슬롯 */
   LOG_LSA history_start;    /* map을 비운 뒤 사라진 이력을 대신하는 보수적 하한 */
-  pthread_mutex_t latch;    /* history 조회·게시와 초기화를 보호하는 mutex */
+  /* 별도 세대 보호: 정상 접근은 공유, clear·history_start 전환은 배타 */
+  /* 용량 판정용 entry 수·예약 수는 동시 갱신을 보호해야 한다. */
 };
 ```
 
-`LOG_WRITESET_HISTORY`는 커밋된 트랜잭션들이 남긴 키별 이력이다. 커밋하려는 트랜잭션은 자기 `ws_hashes`로 여기를 조회해 선행 dependency를 정하고, COMMIT LSA가 확정되면 같은 키에 자기 LSA를 게시한다. 서버 전역에 하나만 두고 `latch`로 보호한다.
+`LOG_WRITESET_HISTORY`는 커밋된 트랜잭션들이 남긴 키별 이력이다. 커밋하려는 트랜잭션은 자기 `ws_hashes`로 여기를 조회해 선행 dependency를 정하고, COMMIT LSA가 확정되면 같은 키에 자기 LSA를 게시한다. 서버 전역 map은 `tbb::concurrent_hash_map`을 채택한다. 조회는 `const_accessor`, 삽입과 슬롯 갱신은 `accessor`로 충돌 키 history entry를 보호하고, 한 번에 entry 하나만 잡아 사용 후 즉시 해제해야 한다. accessor 범위 밖으로 entry 참조를 보관해서는 안 된다.
+
+자료구조 선택 이유와 동기화 범위는 [전역 history map 대안 비교](#전역-history-map-대안-비교)에서 설명한다.
+
+> [!NOTE]
+> 검증에 사용한 기존 구현은 `std::unordered_map`과 하나의 `pthread_mutex_t latch`로 전체 조회·게시를 보호한다. 위 TBB 구조는 정식 반영 설계이며 기존 실측 결과를 TBB 성능으로 해석해서는 안 된다.
+
+> [!NOTE]
+> **map 크기 설정과 HA 게이팅 (코드 확인 완료).** map 크기는 `ha_writeset_history_size`(가칭) 같은 **`ha_*` 시스템 파라미터**(플래그 `PRM_FOR_SERVER | PRM_FOR_HA`, `cubrid_ha.conf`에 명시)로 받아야 한다 — 이 map은 **마스터 서버**에 살아 `PRM_FOR_SERVER`가 필요하다(슬레이브용 `ha_apply_max_mem_size`는 `PRM_FOR_CLIENT`라 선례가 아니고, 서버가 읽는 HA 파라미터 선례는 `ha_mode`다). 수집(`log_writeset_commit_probe`)과 게시(`log_writeset_commit_flush`)는 이미 `log_does_allow_replication()` 게이트와 `#if SERVER_MODE||SA_MODE` 안에 있어, **복제하지 않는 서버에서는 map을 만들지도 수집하지도 않는다** — 별도 게이팅은 불필요하다.
 
 ```c
 LOG_WRITESET_HISTORY log_Writeset_history;
 LOG_LSA log_Writeset_prev_commit_lsa;
 ```
 
-`log_Writeset_history`는 서버 전역 history 인스턴스다. `log_Writeset_prev_commit_lsa`는 최근 history 게시 COMMIT LSA이며 commit-order 폴백의 기준이다. `LOG_WRITESET_HISTORY`의 필드는 아니지만 같은 `latch`로 보호하는 동반 전역 상태다.
+#### 자료구조 선택: 트랜잭션 로컬 writeset과 전역 history
+
+두 영역은 소유자, 동시성과 수명이 다르므로 자료구조도 구분한다.
+
+- **트랜잭션 로컬 writeset**: `LOG_TDES` 하나가 소유하고 행 연산이 수집한다. 공유 갱신이 없고 append, 커밋 시 순차 순회, commit·abort 시 일괄 폐기가 주 동작이므로 연속 메모리인 `std::vector<LOG_WRITESET_ENTRY>`를 유지한다. TBB concurrent container를 사용할 이유가 없다.
+- **전역 history**: 여러 커밋 트랜잭션이 서버 수명 동안 공유한다. 서로 다른 충돌 키에는 동시에 접근할 수 있어야 하고, 같은 충돌 키의 슬롯 조회·갱신은 일관성을 유지해야 한다.
+
+MySQL 9.7도 로컬 writeset은 `std::vector<uint64_t>`, 전역 history는 `ankerl::unordered_dense::map<uint64, int64>`로 분리한다. CUBRID도 이 소유권 구분은 유지하되, 다중 commit 경로가 전역 history에 동시에 진입할 수 있으므로 전역 history의 구현은 별도로 선택한다.
+
+로컬 writeset에 동일한 `{hash, kind}`가 반복돼도 정합성은 깨지지 않는다. 메모리와 probe 비용이 실제 병목으로 확인되면 보조 set 또는 정렬 후 중복 제거를 검토한다. 단, 같은 hash의 WRITE와 REF는 의미가 다르므로 hash만으로 합쳐서는 안 된다. 중복을 제거하더라도 `{hash, kind}`를 보존해야 한다.
+
+#### 전역 history map 대안 비교
+
+- **`std::unordered_map` + 전역 history mutex**: 외부 의존성이 없고 구현이 단순하다. 검증 대상 브랜치도 이 구조를 사용하며, `log_writeset_commit_probe()`와 `log_writeset_commit_flush()`가 하나의 `pthread_mutex_t latch`로 map 전체를 보호한다. `log_writeset_commit_probe()`는 `prior_lsa_mutex` 밖에서 호출되므로 여러 commit 경로가 이 latch에 진입할 수 있다. 반면 node 기반 구조의 메모리·cache 부담이 있고, 서로 다른 키를 처리하는 독립 트랜잭션도 probe·publish 구간에서 직렬화된다.
+- **MySQL식 `ankerl::unordered_dense::map` + 전역 lock**: 조밀한 배치와 cache locality 때문에 단일 lock 구간의 `find`·`insert`와 메모리 효율에 유리하다. MySQL 9.7은 `Writeset_history = ankerl::unordered_dense::map<uint64, int64>`로 정의하지만, binlog flush leader가 `LOCK_log`를 보유한 채 commit group을 순차 처리한다. map 자체는 concurrent read/write를 보장하지 않으므로 CUBRID에 자료구조만 가져오면 안전하지 않으며 전역 lock이 계속 필요하다.
+- **`tbb::concurrent_hash_map`**: 정상 경로의 `find`·`insert`와 슬롯 갱신을 충돌 키 history entry별 accessor로 보호한다. 같은 충돌 키는 직렬화하고 서로 다른 충돌 키는 병렬 처리할 수 있다. CUBRID가 이미 oneTBB 2021.11.0을 사용하므로 새로운 외부 라이브러리를 도입하지 않아도 된다.
+
+정식 설계는 **`tbb::concurrent_hash_map`**을 선택한다. history clear는 capacity 도달이나 폴백에 한정된 드문 경로이고, 정상 workload의 대부분은 키별 `find`·`insert`·probe·publish이다. 따라서 CUBRID의 다중 commit 구조에서 독립 키의 정상 경로를 전역 mutex로 묶지 않는 편이 설계 목적에 맞다. 다만 TBB가 항상 빠르다고 전제하지 않고 아래 실측으로 최종 확인한다.
+
+#### TBB history의 동시성 구조
+
+accessor가 보호하는 단위는 DB 행이 아니라 **충돌 키 history entry**다. 한 행에서 PK·UNIQUE·FK에 해당하는 여러 entry가 생길 수 있고, 부모 PK의 WRITE와 자식 FK의 REF는 같은 entry를 공유한다. 서로 다른 키가 같은 64비트 hash를 만들면 같은 entry에서 보수적으로 직렬화되지만 정합성은 유지된다.
+
+```text
+정상 probe·publish
+→ generation shared lock
+→ 충돌 키 하나의 TBB accessor 획득
+→ 슬롯 조회 또는 비교·갱신
+→ accessor 즉시 해제
+→ generation shared lock 해제
+
+history clear·reset
+→ generation exclusive lock
+→ 진행 중인 probe·publish 종료 대기
+→ map clear·history_start·entry_count 갱신
+→ generation exclusive lock 해제
+```
+
+- `log_writeset_commit_probe()`는 `const_accessor`로 `write_seq`·`ref_seq`의 일관된 값을 읽는다.
+- `log_writeset_commit_flush()`는 `accessor` 안에서 기존 LSA와 현재 COMMIT LSA의 비교·갱신을 함께 수행한다. `LOG_LSA`는 `pageid`와 `offset`으로 구성되므로 무잠금 일반 대입을 원자 연산으로 간주하지 않는다. 여러 REF가 같은 entry의 `ref_seq`를 갱신할 때는 accessor 안에서 최댓값을 선택해 lost update를 막고, `write_seq`도 값이 되돌아가지 않도록 단조 증가시킨다.
+- 한 트랜잭션이 여러 키를 갖더라도 accessor는 하나씩 획득하고 즉시 해제한다. 여러 entry의 accessor를 동시에 보유하지 않아 다중 키 잠금 순서에서 발생할 수 있는 deadlock을 피한다.
+- CUBRID에 기존 사용 사례가 있는 `tbb::concurrent_unordered_map` 대신 `concurrent_hash_map`을 선택한다. 이 history는 컨테이너 삽입·검색뿐 아니라 mutable value인 `{write_seq, ref_seq}`의 비교·갱신을 키 단위로 보호해야 하며, `concurrent_hash_map`의 accessor가 이 요구를 직접 표현한다.
+- TBB accessor는 map 밖의 `history_start`와 `log_Writeset_prev_commit_lsa`를 보호하지 않는다. `clear()`와 `history_start` 전환에는 별도의 generation shared/exclusive lock이 필요하고, `log_Writeset_prev_commit_lsa`에는 짧은 별도 동기화 또는 기존 커밋 순서 보호 구간이 필요하다.
+- capacity는 atomic entry count로 판정하되, 상한을 감지하면 shared lock을 놓고 exclusive lock을 획득한 뒤 다시 확인해야 한다. clear가 삭제하는 이력의 최대 COMMIT LSA를 `history_start`에 반영해야 하므로, 단순히 clear를 촉발한 트랜잭션의 LSA만 기록해서는 안 된다.
+
+다음 항목을 기존 `std::unordered_map + 전역 mutex` 기준선과 비교한다.
+
+- 독립 키의 동시 commit thread 수에 따른 probe·publish latency, lock wait와 throughput
+- 같은 키 contention과 서로 다른 키 병렬 처리의 차이
+- 최대 history 용량에서의 메모리 사용량과 재해시 시 peak memory
+- capacity 도달 시 exclusive 전환 대기와 clear latency
 
 #### 상태 생명주기 요약
 
@@ -182,14 +244,14 @@ logtb_initialize_tdes()
 
 `log_writeset_tdes_initialize()`는 정식 설계에서 사용하는 개념적 함수명이다. 현재 구현에서는 이 초기화가 `logtb_initialize_tdes()` 내부 대입으로 처리된다.
 
-전역 history 쪽은 새 `log_writeset_history_initialize()`가 map, 기준 LSA와 latch를 초기화해야 한다.
+전역 history 쪽은 `log_writeset_history_initialize()`가 TBB map, 기준 LSA와 별도 동기화 상태를 초기화해야 한다. 동시 접근을 허용하기 전에 다음 준비를 끝낸다.
 
-```c
-/* log_writeset_history_initialize(): 서버 전역 상태 */
-log_Writeset_history.map.clear ();
-LSA_SET_NULL (&log_Writeset_history.history_start);
-pthread_mutex_init (&log_Writeset_history.latch, NULL);
-LSA_SET_NULL (&log_Writeset_prev_commit_lsa);
+```text
+log_writeset_history_initialize():
+    빈 tbb::concurrent_hash_map 준비
+    history_start와 prev_commit_lsa를 NULL로 초기화
+    세대 보호와 prev_commit_lsa 보호 상태 준비
+    entry 수·용량 예약 상태를 0으로 초기화
 ```
 
 #### 정리 함수와 수행 내용
@@ -204,19 +266,18 @@ LSA_SET_NULL (&tdes->ws_dependency_seq);
 tdes->ws_dependency_is_read = false;
 ```
 
-서버 종료 시 `logtb_undefine_trantable()`이 `log_writeset_history_finalize()`를 호출해야 한다. finalize는 map과 기준 LSA를 비우고 latch를 해제해야 한다.
+서버 종료 시 `logtb_undefine_trantable()`이 `log_writeset_history_finalize()`를 호출해야 한다. finalize는 모든 probe·publish와 accessor 사용이 종료된 뒤 map, 기준 LSA와 별도 동기화 자원을 정리해야 한다.
 
 ```text
 logtb_undefine_trantable()                      [CHANGED]
 └─ log_writeset_history_finalize()             ✓ NEW
 ```
 
-```c
-/* log_writeset_history_finalize(): 서버 전역 상태 정리 */
-log_Writeset_history.map.clear ();
-LSA_SET_NULL (&log_Writeset_history.history_start);
-pthread_mutex_destroy (&log_Writeset_history.latch);
-LSA_SET_NULL (&log_Writeset_prev_commit_lsa);
+```text
+log_writeset_history_finalize():
+    새 history 접근 차단 → 진행 중 probe·publish 종료 확인
+    TBB map과 기준 LSA·entry 수·용량 예약 상태 정리
+    세대 보호와 prev_commit_lsa 보호 자원 해제
 ```
 
 ### 8-1.2.2 행 연산과 writeset 수집
@@ -354,7 +415,7 @@ log_writeset_push_hash(tdes, class_oid, hash, kind):
 - **한도 도달**: `ws_overflow=true`로 전환하고 지금까지 모은 `ws_hashes` 전체를 제거해야 한다. 부분 writeset을 남기면 누락된 키를 충돌하지 않은 것으로 오판할 수 있기 때문이다.
 - **overflow 전환 이후**: 같은 트랜잭션에서 WRITE·REF 수집 함수가 다시 호출되더라도 `ws_overflow`를 확인하고 항목을 더 추가하지 않아야 한다.
 
-`LOG_WRITESET_TX_LIMIT`과 `LOG_WRITESET_HISTORY_CAP`은 PoC에서 각각 1000만이다(`log_writeset.h:101-102`). 초기 PoC는 25만·200만이었으나 MySQL 9.x가 두 한도를 `binlog_transaction_dependency_history_size` 하나(기본 1000만)로 공유하므로 동등 조건 비교를 위해 맞췼다. 트랜잭션 하나가 1000만 키에 가까워지면 probe·flush가 latch를 초 단위로 쥘 수 있어, 운영 값은 워크로드의 변경 행 수에 따라 별도로 정해야 한다.
+`LOG_WRITESET_TX_LIMIT`과 `LOG_WRITESET_HISTORY_CAP`은 검증 코드에서 각각 1000만이다(`log_writeset.h:101-102`). 초기 25만·200만에서 MySQL의 기본 한도와 비교하기 위해 맞춘 값이다. 기존 전체 latch 구현에서는 큰 트랜잭션이 긴 조회·게시 임계 구간을 만들었다. TBB 설계에서도 많은 키의 순회 비용과 세대 공유 보호 때문에 clear가 기다리는 시간은 남으므로, 운영 한도는 해당 동시성 구조로 다시 측정해 정해야 한다.
 
 트랜잭션별 writeset 수집 공간이 한도에 도달하면 완전한 충돌 키 목록을 만들 수 없으므로 키별 병렬 판정을 계속하면 안 된다. 이 시점에는 `ws_overflow`를 설정하고 수집을 중단해야 한다. 실제 보수 처리는 COMMIT 단계에서 수행해야 한다. COMMIT 전 probe에서는 직전 COMMIT까지 기다리는 commit-order dependency를 만들고, COMMIT 성공 후 flush에서는 불완전한 키 이력을 제거하기 위해 전역 history를 비운 뒤 `history_start`를 본인 COMMIT LSA까지 올려야 한다. 상세 처리는 [dependency 계산](#dependency-계산)과 [COMMIT 성공 뒤 history 게시](#commit-성공-뒤-history-게시)에서 설명한다.
 
@@ -413,7 +474,7 @@ struct log_rec_ws_label
 
 *코드 8-1-1. 선행 COMMIT 위치와 슬레이브의 대기 판정 종류를 전달하는 WS_LABEL payload*
 
-`dependency_seq`는 현재 트랜잭션이 기다려야 할 선행 COMMIT LSA다. `dependency_is_read=false`이면 슬레이브는 그 선행 트랜잭션의 개별 완료를 확인하고, `true`이면 해당 LSA까지 빈 구간 없이 완료된 frontier를 확인한다. 하나의 LSA와 bool로 여러 키의 후보를 축약하는 안전성은 8-1.2.4의 검증 항목으로 남긴다.
+`dependency_seq`는 현재 트랜잭션이 기다려야 할 선행 COMMIT LSA다. `dependency_is_ref=false`이면 슬레이브는 그 선행 트랜잭션의 개별 완료를 확인하고, `true`이면 해당 LSA까지 빈 구간 없이 완료된 frontier를 확인한다. 하나의 LSA와 bool로 여러 키의 후보를 축약하는 안전성은 8-1.2.4의 검증 항목으로 남긴다.
 
 그림 8-1-5는 COMMIT 로그 기록 함수 `log_append_repl_info_and_commit_log()` 안에서 WS_LABEL 레코드를 어디에 끼워 넣는지를 AS-IS와 TO-BE로 비교한 것이다. 왼쪽 AS-IS는 `prior_lsa_mutex` 한 구간에서 REPL 레코드와 COMMIT 레코드를 연속 기록하는 기존 경로다. 오른쪽 TO-BE는 같은 구간 안에서 두 레코드 사이에 `log_append_ws_label_with_lock()` 호출을 추가해, REPL → WS_LABEL → COMMIT 순서로 세 레코드를 끊김 없이 기록한다. 이때 WS_LABEL에는 COMMIT 직전 probe가 `LOG_TDES`에 저장한 `ws_dependency_seq`와 `ws_dependency_is_read`를 기록한다. 세 레코드를 한 mutex 구간에서 기록하는 이유는 다른 트랜잭션의 로그가 그 사이에 끼어들어 WS_LABEL과 COMMIT이 떨어지는 것을 막기 위해서다.
 
@@ -490,7 +551,7 @@ struct log_rec_ws_label
 
 #### dependency 계산
 
-다음 수도코드는 커밋 직전에 전역 history를 조회해 하나의 dependency 라벨을 만드는 계산을 설명한다. 알고리즘 1~3은 실제 함수 세 개가 아니라 `log_writeset_commit_probe()` 내부 로직을 나눈 것이다.
+다음 수도코드는 커밋 직전에 전역 history를 조회해 하나의 dependency 라벨을 만드는 계산을 설명한다. 알고리즘 1~3은 실제 함수 세 개가 아니라 `log_writeset_commit_probe()` 내부 로직을 나눈 것이다. 호출부는 probe 동안 세대 공유 보호를 유지하고 `history_start`를 읽으며, `prev_commit`은 별도 보호 아래 스냅샷으로 읽어야 한다. 아래 `find_slots_copy()`는 TBB `const_accessor`로 슬롯 두 값을 복사한 뒤 accessor를 해제하는 설명용 연산이다.
 
 ```text
 log_writeset_commit_probe()
@@ -515,14 +576,14 @@ log_writeset_commit_probe()
 `select_latest_transaction_candidate(entries, history, history_start)`의 입력은 다음과 같다.
 
 - `entries`: 현재 트랜잭션에서 수집한 모든 WRITE·REF 항목이다.
-- `history`: 충돌 키별 과거 `write_seq`·`read_seq`를 보관하는 전역 history다.
+- `history`: 충돌 키별 과거 `write_seq`·`ref_seq`를 보관하는 전역 history다.
 - `history_start`: history를 비우면서 사라진 과거 이력을 대신하는 보수적 하한이다.
 
-이 함수는 `{lsa, from_read_seq}`를 반환한다. `lsa`는 모든 entry의 선행 후보 중 가장 늦은 COMMIT LSA이며, `from_read_seq`는 그 최종 후보가 `read_seq`에서 선택됐는지를 나타낸다.
+이 함수는 `{lsa, from_ref_seq}`를 반환한다. `lsa`는 모든 entry의 선행 후보 중 가장 늦은 COMMIT LSA이며, `from_ref_seq`는 그 최종 후보가 `ref_seq`에서 선택됐는지를 나타낸다.
 
 ```text
 select_latest_transaction_candidate(entries, history, history_start):
-    parent = {history_start, false}         # {lsa, from_read_seq}
+    parent = {history_start, false}         # {lsa, from_ref_seq}
 
     for each entry in entries:
         candidate = select_entry_candidate(entry, history)  # 알고리즘 2
@@ -534,33 +595,33 @@ select_latest_transaction_candidate(entries, history, history_start):
 
 **알고리즘 2 — entry 하나의 선행 후보 선택**
 
-반환값은 `{lsa, from_read_seq}` 형식의 선행 후보다.
+반환값은 `{lsa, from_ref_seq}` 형식의 선행 후보다.
 
 - `lsa`: 현재 entry보다 먼저 완료돼야 하는 과거 트랜잭션의 COMMIT LSA다. 선행 충돌이 없으면 `NULL`을 반환한다.
-- `from_read_seq`: 반환한 `lsa`가 history의 `read_seq`에서 선택됐으면 `true`, `write_seq`에서 선택됐거나 선행 충돌이 없으면 `false`다. 현재 entry의 종류나 함수 성공 여부를 나타내는 값이 아니다.
+- `from_ref_seq`: 반환한 `lsa`가 history의 `ref_seq`에서 선택됐으면 `true`, `write_seq`에서 선택됐거나 선행 충돌이 없으면 `false`다. 현재 entry의 종류나 함수 성공 여부를 나타내는 값이 아니다.
 
 ```text
 select_entry_candidate(entry, history):
-    # return: {dependency COMMIT LSA, dependency가 read_seq에서 선택됐는지}
-    slots = history.find(entry.hash)
+    # return: {dependency COMMIT LSA, dependency가 ref_seq에서 선택됐는지}
+    slots = history.find_slots_copy(entry.hash)  # const_accessor에서 복사 후 해제
     if slots does not exist:
         return {NULL, false}               # 이 키의 선행 충돌 없음
 
     if entry.kind == REF:
         return {slots.write_seq, false}    # 현재 REF는 이전 WRITE만 기다림
 
-    if slots.read_seq > slots.write_seq:
-        return {slots.read_seq, true}      # 현재 WRITE: 이전 REF가 이전 WRITE보다 늦음
+    if slots.ref_seq > slots.write_seq:
+        return {slots.ref_seq, true}      # 현재 WRITE: 이전 REF가 이전 WRITE보다 늦음
 
-    return {slots.write_seq, false}        # 현재 WRITE: write_seq >= read_seq
+    return {slots.write_seq, false}        # 현재 WRITE: write_seq >= ref_seq
                                            # 이전 WRITE를 선행 후보로 반환
 ```
 
-`from_read_seq`는 슬레이브의 대기 방식을 결정한다. `true`이면 frontier가 해당 LSA까지 도달하기를 기다리고, `false`이면 해당 WRITE 트랜잭션 한 건의 완료도 충족 조건으로 사용할 수 있다.
+`from_ref_seq`는 슬레이브의 대기 방식을 결정한다. `true`이면 frontier가 해당 LSA까지 도달하기를 기다리고, `false`이면 해당 WRITE 트랜잭션 한 건의 완료도 충족 조건으로 사용할 수 있다.
 
 **알고리즘 3 — 폴백과 최종 dependency 라벨(`lc`) 확정**
 
-알고리즘 3은 `{dependency_seq, dependency_is_read}`를 반환한다. `dependency_seq`가 현재 트랜잭션의 최종 `lc`이며, `dependency_is_read`는 이 `lc`를 슬레이브에서 연속 완료 경계로 기다려야 하는지를 나타낸다.
+알고리즘 3은 `{dependency_seq, dependency_is_ref}`를 반환한다. `dependency_seq`가 현재 트랜잭션의 최종 `lc`이며, `dependency_is_ref`는 이 `lc`를 슬레이브에서 연속 완료 경계로 기다려야 하는지를 나타낸다.
 
 첫 번째 `if tdes.ws_overflow`가 폴백 분기다. 이 조건에 해당하지 않으면 알고리즘 1·2로 `parent`를 계산한 뒤 정상 분기에서 최종 `lc`를 확정한다.
 
@@ -570,7 +631,7 @@ if tdes.ws_overflow:
 
 parent = select_latest_transaction_candidate(entries, history, history_start)
 
-if parent.from_read_seq:
+if parent.from_ref_seq:
     return {parent.lsa, true}
 else:
     return {min(parent.lsa, prev_commit), false}
@@ -588,27 +649,36 @@ COMMIT LSA가 확정되면 `log_writeset_commit_flush()`가 현재 트랜잭션�
 
 ```text
 log_writeset_commit_flush(tdes, my_commit_lsa):
-    prev_commit_lsa = max(prev_commit_lsa, my_commit_lsa)
+    prev_commit_lsa를 별도 보호 아래 max(prev_commit_lsa, my_commit_lsa)로 갱신
 
     if tdes.ws_overflow:
-        history.clear()
-        history_start = max(history_start, my_commit_lsa)
+        세대 배타 보호 아래 map.clear()와 history_start 단조 전진 수행
+        entry 수·용량 예약 상태를 새 세대로 초기화
         return
 
-    if history.size + tdes.ws_hashes.size > LOG_WRITESET_HISTORY_CAP:
-        history.clear()
-        history_start = my_commit_lsa
+    세대 공유 보호 획득
+    if 현재 세대에 게시 용량을 원자적으로 예약할 수 없음:
+        공유 보호 해제 → 세대 배타 보호 획득
+        용량 재확인 후 필요하면 clear·history_start 단조 전진·개수 초기화
+        현재 writeset을 게시할 용량 확보  # 이 경로는 배타 보호 유지
 
     for entry in tdes.ws_hashes:
-        slots = history.get_or_create(entry.hash)
+        accessor로 entry.hash를 find 또는 insert  # 새 슬롯은 NULL 초기화
+        slots = accessor가 보호하는 슬롯
 
         if entry.kind == WRITE:
             slots.write_seq = my_commit_lsa
         else:  # REF
-            slots.read_seq = max(slots.read_seq, my_commit_lsa)
+            slots.ref_seq = max(slots.ref_seq, my_commit_lsa)
+        accessor 해제
+
+    실제 신규 entry 수를 반영하고 남은 용량 예약 반환
+    세대 보호 해제
 ```
 
-`writeset_overflow`는 현재 트랜잭션의 writeset 용량 초과 또는 statement replication에 사용하는 폴백 상태다. 이 경우 게시할 키 목록이 없으므로 전역 history를 비우고 `history_start`를 본인 COMMIT LSA까지 단조 증가시켜야 한다. 반면 전역 history 용량 도달은 `history.size + entries.size`가 상한을 넘는지 게시 직전에 판정해야 한다. 두 경우 모두 map을 비우지만 발생 위치와 상태가 다르므로 별도 상태와 로그로 구분해야 한다.
+`writeset_overflow`는 현재 트랜잭션의 writeset 용량 초과 또는 statement replication에 사용하는 폴백 상태다. 이 경우 게시할 키 목록이 없으므로 전역 history를 비우고 `history_start`를 단조 증가시켜야 한다. 정상 publish의 용량은 동시 게시분을 포함해 예약·집계해야 한다. 단순한 `map.size() + entries.size()` 확인만으로는 여러 publish의 동시 삽입을 제한할 수 없다. 배타 보호로 전환할 때는 공유 보호를 먼저 놓고 조건을 재확인한다. 세대 전환과 용량 예약은 설명용 절차이며 기존 함수로 구현돼 있다는 뜻은 아니다.
+
+TBB accessor는 슬롯 값의 데이터 경쟁을 막지만 여러 키를 하나의 원자적 스냅샷으로 만들지는 않는다. probe와 publish 사이의 논리적 순서 보장은 기존 row lock·COMMIT 순서 규칙과 함께 검증해야 한다. `clear()` 시 제거되는 이력을 대신할 하한의 안전성과 대기 방식은 [9.1.6절](./9-미해결-리스크.md#916-history-용량-포화-뒤-연속-완료-하한-보존)의 별도 검증 대상이다.
 
 `log_writeset_commit_flush()`는 history 갱신까지만 수행해야 한다. row lock 해제는 이 함수가 반환된 뒤 `log_commit_local()`이 수행해야 하며, history 게시과 map 초기화는 정상 COMMIT LSA가 확정된 뒤 row lock을 해제하기 전에 끝나야 한다.
 
@@ -617,7 +687,7 @@ log_writeset_commit_flush(tdes, my_commit_lsa):
 ### 8-1.3.1 미확정 및 보강 대상
 
 - 여러 WRITE·REF 후보를 하나의 dependency와 종류로 축약하는 규칙의 정합성 검증이 진행 중이다.
-- REF를 게시하지 않는다고 적힌 일부 주석은 실제 `read_seq` publish 코드와 다르다.
+- REF를 게시하지 않는다고 적힌 일부 주석은 실제 `ref_seq` publish 코드와 다르다.
 - 트랜잭션 writeset overflow와 전역 history map 포화를 서로 다른 상태와 로그로 구분해야 한다.
 - UPDATE의 `repl_old_key` 재추출 예외 경로는 `repl_log_insert()` 반환값을 확인하지 않고 old PK를 수집한다. INSERT·DELETE 경로와 같이 성공 조건을 확인해야 한다.
 - 동일한 `{hash, kind}`가 반복될 때 트랜잭션별 목록의 중복 제거 위치와 비용을 결정해야 한다.
@@ -771,7 +841,7 @@ NULL을 UNIQUE writeset에서 제외하면 서로 다른 NULL 행의 불필요�
 
 ## 8-1.6 해시 비용 실측
 
-행마다 해시를 만들고(collect) 커밋에서 history를 조회·갱신하는(probe·flush) 비용을 PoC에서 측정했다(2026-09-01~04). 측정 방법·환경·원시 표는 [10.6](./10-코드-및-실측-부록.md#106-cubrid-마스터-해시-비용-원시-실측)에 원문 그대로 있고, 여기에는 결과 표 셋만 둔다.
+행마다 해시를 만들고(collect) 커밋에서 history를 조회·갱신하는(probe·flush) 비용을 기존 `std::unordered_map`·전체 latch 구현에서 측정했다(2026-09-01~04). 다음 표는 TBB 적용 전 기준선이며 TBB 성능 수치가 아니다. 측정 방법·환경·원시 표는 [10.6](./10-코드-및-실측-부록.md#106-cubrid-마스터-해시-비용-원시-실측)에 원문 그대로 있고, 여기에는 결과 표 셋만 둔다.
 
 ### 8-1.6.1 세 구성의 오버헤드
 

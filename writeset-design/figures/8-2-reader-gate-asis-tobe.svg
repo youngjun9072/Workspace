@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="830" viewBox="0 0 2200 830">
+  <style>
+    text{font-family:Arial,'Noto Sans KR',sans-serif;fill:#172033}
+    .title{font-size:28px;font-weight:700}
+    .head{font-size:22px;font-weight:700}
+    .code{font-family:'DejaVu Sans Mono','Noto Sans Mono CJK KR',monospace;font-size:16px;fill:#253047}
+    .new{fill:#b91c1c}
+    .muted{fill:#64748b}
+    .panel{fill:#f8fafc;stroke:#cbd5e1;stroke-width:2}
+  </style>
+  <rect width="2200" height="830" fill="#ffffff"/>
+  <text x="42" y="48" class="title">reader의 COMMIT 처리 · 직접 적용에서 실행 가능 판정과 queue 전달로 변경</text>
+  <line x1="1100" y1="72" x2="1100" y2="800" stroke="#cbd5e1" stroke-width="2"/>
+
+  <rect x="35" y="88" width="1025" height="680" rx="16" class="panel"/>
+  <rect x="1140" y="88" width="1025" height="680" rx="16" class="panel"/>
+  <text x="548" y="125" text-anchor="middle" class="head">AS-IS</text>
+  <text x="1653" y="125" text-anchor="middle" class="head">TO-BE</text>
+
+  <text x="70" y="170" class="code">reader thread</text>
+  <text x="70" y="202" class="code">la_apply_log_file()</text>
+  <text x="70" y="234" class="code">└─ 로그 레코드 반복</text>
+  <text x="70" y="266" class="code">   └─ la_log_record_process()</text>
+  <text x="70" y="298" class="code">      └─ LOG_COMMIT</text>
+  <text x="70" y="330" class="code">         ├─ la_add_node_into_la_commit_list()</text>
+  <text x="70" y="362" class="code">         └─ la_apply_commit_list()</text>
+  <text x="70" y="394" class="code">            └─ la_apply_repl_log()</text>
+  <text x="70" y="454" class="code muted">COMMIT을 읽은 reader가 같은 호출 흐름에서 직접 적용</text>
+
+  <text x="1175" y="170" class="code">reader/coordinator thread</text>
+  <text x="1175" y="202" class="code">la_apply_log_file()</text>
+  <text x="1175" y="234" class="code">└─ 로그 레코드 반복</text>
+  <text x="1175" y="266" class="code new">   ├─ la_collect_apply_results()   </text>
+  <text x="1175" y="298" class="code">   └─ la_log_record_process()</text>
+  <text x="1175" y="330" class="code">      └─ LOG_COMMIT</text>
+  <text x="1175" y="362" class="code new">         ├─ LA_APPLY_TASK 구성     </text>
+  <text x="1175" y="394" class="code new">         ├─ la_gate_order_push()   </text>
+  <text x="1175" y="426" class="code new">         └─ la_gate_is_satisfied() </text>
+  <text x="1175" y="458" class="code new">            ├─ 충족: la_gate_dispatch_now()     </text>
+  <text x="1175" y="490" class="code new">            │  ├─ la_gate_choose_worker()       </text>
+  <text x="1175" y="522" class="code new">            │  ├─ la_dispatch_order_push()      </text>
+  <text x="1175" y="554" class="code new">            │  └─ la_enqueue_apply_task()       </text>
+  <text x="1175" y="586" class="code new">            └─ 미충족: la_gate_enqueue_pending()</text>
+  <text x="1175" y="646" class="code muted">reader는 실행 가능 여부를 판정한 뒤 worker queue 또는 pending으로 전달</text>
+</svg>

@@ -1,43 +1,34 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="390" viewBox="0 0 1400 390">
+<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="590" viewBox="0 0 1480 590" role="img" aria-labelledby="title desc">
+  <title id="title">재시작 시 세 LSA 복원과 로그 처리 구간</title>
+  <desc id="desc">저장된 required LSA는 reader 시작 위치, committed LSA는 last committed LSA, final LSA는 recovery boundary LSA로 복원한다. reader는 이미 확정된 구간을 transaction 단위로 건너뛰고, 복구 구간은 item 전체를 재적용하며, 경계 뒤는 정상 처리한다.</desc>
   <defs>
     <style>
-      .title{font:700 27px 'Pretendard','Noto Sans KR',sans-serif;fill:#0f172a}
-      .sub{font:500 15px 'Pretendard','Noto Sans KR',sans-serif;fill:#475569}
-      .head{font:700 17px 'Pretendard','Noto Sans KR',sans-serif;fill:#0f172a}
-      .body{font:500 15px 'Pretendard','Noto Sans KR',sans-serif;fill:#334155}
-      .mono{font:600 15px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#334155}
-      .axis{stroke:#475569;stroke-width:3}
-      .tick{stroke:#334155;stroke-width:3}
+      text{font-family:"Pretendard","Noto Sans KR",sans-serif;fill:#172033}.title{font-size:28px;font-weight:700}.sub{font-size:15px;fill:#64748b}.head{font-size:17px;font-weight:700}.body{font-size:14px}.small{font-size:13px;fill:#64748b}.mono{font:14px ui-monospace,SFMono-Regular,Menlo,monospace}.saved{fill:#f8fafc;stroke:#64748b;stroke-width:1.8}.memory{fill:#eff6ff;stroke:#3b82f6;stroke-width:1.8}.skip{fill:#ecfdf5;stroke:#10b981;stroke-width:2}.recover{fill:#fff7ed;stroke:#f97316;stroke-width:2}.normal{fill:#f5f3ff;stroke:#8b5cf6;stroke-width:2}.arrow{fill:none;stroke:#64748b;stroke-width:2.2;marker-end:url(#arrow)}.blueArrow{fill:none;stroke:#2563eb;stroke-width:2.5;marker-end:url(#blueArrow)}.axis{stroke:#475569;stroke-width:3;marker-end:url(#arrow)}.tick{stroke:#334155;stroke-width:3}
     </style>
-    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-      <path d="M0,0 L9,3 L0,6 Z" fill="#475569"/>
-    </marker>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#64748b"/></marker><marker id="blueArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#2563eb"/></marker>
   </defs>
-  <rect width="1400" height="390" fill="#ffffff"/>
-  <text x="45" y="46" class="title">재시작에 필요한 두 경계</text>
-  <text x="45" y="75" class="sub">안전하게 완료된 아래 경계 C0와 이전 reader가 도달한 읽기 상한 R을 함께 보존한다</text>
+  <rect width="1480" height="590" fill="#fff"/>
+  <text x="42" y="47" class="title">저장된 세 LSA를 복원해 reader 시작점과 처리 구간을 정한다</text>
+  <text x="42" y="76" class="sub">Q부터 다시 읽되, C0 이하는 건너뛰고 이전 reader가 읽었던 R까지는 재적용 구간으로 처리한다.</text>
 
-  <rect x="70" y="125" width="305" height="105" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="2"/>
-  <rect x="375" y="125" width="565" height="105" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
-  <rect x="940" y="125" width="390" height="105" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="42" y="119" class="head">_db_ha_apply_info에서 복원</text>
+  <rect x="42" y="138" width="315" height="62" rx="10" class="saved"/><text x="199" y="164" text-anchor="middle" class="mono">required_lsa = Q</text><text x="199" y="187" text-anchor="middle" class="small">보존한 가장 오래된 로그</text>
+  <rect x="401" y="138" width="315" height="62" rx="10" class="saved"/><text x="558" y="164" text-anchor="middle" class="mono">committed_lsa = C0</text><text x="558" y="187" text-anchor="middle" class="small">연속 완료·영속 경계</text>
+  <rect x="760" y="138" width="315" height="62" rx="10" class="saved"/><text x="917" y="164" text-anchor="middle" class="mono">final_lsa = R</text><text x="917" y="187" text-anchor="middle" class="small">이전 reader의 읽기 위치</text>
 
-  <text x="222" y="164" text-anchor="middle" class="head">트랜잭션 전체 skip</text>
-  <text x="222" y="196" text-anchor="middle" class="mono">commit_lsa ≤ C0</text>
+  <path d="M199 200V238" class="blueArrow"/><path d="M558 200V238" class="blueArrow"/><path d="M917 200V238" class="blueArrow"/>
+  <rect x="42" y="246" width="315" height="58" rx="10" class="memory"/><text x="199" y="271" text-anchor="middle" class="head">reader 시작 위치</text><text x="199" y="292" text-anchor="middle" class="mono">Q</text>
+  <rect x="401" y="246" width="315" height="58" rx="10" class="memory"/><text x="558" y="271" text-anchor="middle" class="mono">last_committed_lsa=C0</text><text x="558" y="292" text-anchor="middle" class="small">이번 실행 동안 고정</text>
+  <rect x="760" y="246" width="315" height="58" rx="10" class="memory"/><text x="917" y="271" text-anchor="middle" class="mono">recovery_boundary_lsa=R</text><text x="917" y="292" text-anchor="middle" class="small">이번 실행 동안 고정 · 추가 메모리 값</text>
 
-  <text x="657" y="158" text-anchor="middle" class="head">전체 item 재적용</text>
-  <text x="657" y="188" text-anchor="middle" class="mono">C0 &lt; commit_lsa ≤ R</text>
-  <text x="657" y="214" text-anchor="middle" class="body">허용된 재적용 오류만 skip</text>
+  <text x="42" y="354" class="head">Q부터 다시 읽으며 commit_lsa가 속한 구간으로 처리</text>
+  <rect x="70" y="377" width="350" height="105" rx="12" class="skip"/>
+  <text x="245" y="407" text-anchor="middle" class="head">transaction 전체 skip</text><text x="245" y="437" text-anchor="middle" class="mono">commit_lsa ≤ C0</text><text x="245" y="463" text-anchor="middle" class="small">이미 연속 완료가 확정됨</text>
+  <rect x="420" y="377" width="580" height="105" class="recover"/>
+  <text x="710" y="407" text-anchor="middle" class="head">transaction의 item 전체 재적용</text><text x="710" y="437" text-anchor="middle" class="mono">C0 &lt; commit_lsa ≤ R</text><text x="710" y="463" text-anchor="middle" class="small">허용한 재적용 오류만 recovery skip</text>
+  <rect x="1000" y="377" width="400" height="105" rx="12" class="normal"/>
+  <text x="1200" y="407" text-anchor="middle" class="head">정상 적용·오류 처리</text><text x="1200" y="437" text-anchor="middle" class="mono">R &lt; commit_lsa</text><text x="1200" y="463" text-anchor="middle" class="small">새로 읽는 정상 운영 구간</text>
 
-  <text x="1135" y="164" text-anchor="middle" class="head">정상 적용·오류 처리</text>
-  <text x="1135" y="196" text-anchor="middle" class="mono">R &lt; commit_lsa</text>
-
-  <line x1="70" y1="270" x2="1330" y2="270" class="axis" marker-end="url(#arrow)"/>
-  <line x1="375" y1="250" x2="375" y2="292" class="tick"/>
-  <line x1="940" y1="250" x2="940" y2="292" class="tick"/>
-
-  <text x="375" y="320" text-anchor="middle" class="head">C0 · last_committed_lsa</text>
-  <text x="375" y="346" text-anchor="middle" class="sub">빈 구간 없이 완료·영속된 아래 경계</text>
-
-  <text x="940" y="320" text-anchor="middle" class="head">R · recovery_boundary_lsa</text>
-  <text x="940" y="346" text-anchor="middle" class="sub">이전 실행의 final_lsa · reader 읽기 HWM</text>
+  <line x1="70" y1="520" x2="1400" y2="520" class="axis"/><line x1="199" y1="507" x2="199" y2="539" class="tick"/><line x1="420" y1="507" x2="420" y2="539" class="tick"/><line x1="1000" y1="507" x2="1000" y2="539" class="tick"/>
+  <text x="199" y="565" text-anchor="middle" class="mono">Q · reader 시작</text><text x="420" y="565" text-anchor="middle" class="mono">C0 · 완료 기준선</text><text x="1000" y="565" text-anchor="middle" class="mono">R · 복구 상한</text>
 </svg>

@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="851" viewBox="0 0 1500 851" role="img" aria-labelledby="t d">
+  <title id="t">초기 PoC에서 자식 참조 연산과 부모 키 변경의 순서가 뒤집힐 수 있는 이유</title>
+  <desc id="d">부모 INSERT P0만 부모 슬롯 H(P=1)에 쓴다. 자식 INSERT C와 자식 DELETE T1은 자식 PK 슬롯은 갱신하지만 부모 슬롯은 갱신하지 않는다. 부모 DELETE T2는 부모 슬롯에서 P0만 읽어 LC가 T1이 아니다. 슬레이브는 LC만 보고 T1과 T2를 함께 배정하므로 짧은 T2가 먼저 끝날 수 있다. 그때 생기는 증상은 FK 동작마다 다르다.</desc>
+  <style>
+    .title{font:700 26px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#0f172a}
+    .sub{font:500 14px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#475569}
+    .panel{font:700 19px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#0f172a}
+    .lane{font:700 15px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#334155}
+    .body{font:500 14px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#334155}
+    .small{font:500 13px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#64748b}
+    .mono{font:600 13.5px 'Noto Sans Mono CJK KR',monospace;fill:#334155}
+    .monoB{font:700 13.5px 'Noto Sans Mono CJK KR',monospace;fill:#7c3aed}
+    .monoR{font:700 13.5px 'Noto Sans Mono CJK KR',monospace;fill:#b91c1c}
+    .white{font:700 13px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#ffffff}
+    .dark{font:700 13px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#334155}
+    .red{font:700 14px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#b91c1c}
+    .note{font:600 14px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#0f172a}
+    .box{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.5}
+    .p0{fill:#7c3aed;stroke:#6d28d9;stroke-width:1.5}
+    .prep{fill:#e2e8f0;stroke:#94a3b8;stroke-width:1.5}
+    .t1{fill:#2563eb;stroke:#1d4ed8;stroke-width:1.5}
+    .t2{fill:#ea580c;stroke:#c2410c;stroke-width:1.5}
+    .t2ghost{fill:#ea580c;fill-opacity:.18;stroke:#ea580c;stroke-width:1.6;stroke-dasharray:6 4}
+    .slot{fill:#ede9fe;stroke:#7c3aed;stroke-width:1.8}
+    .empty{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.5;stroke-dasharray:5 4}
+    .on{fill:#dcfce7;stroke:#16a34a;stroke-width:1.5}
+    .off{fill:#f1f5f9;stroke:#94a3b8;stroke-width:1.5;stroke-dasharray:5 4}
+    .danger{fill:#fee2e2;fill-opacity:.35;stroke:#e11d48;stroke-width:2;stroke-dasharray:7 5}
+    .tick{stroke:#94a3b8;stroke-width:1.2;stroke-dasharray:4 4}
+    .axis{stroke:#475569;stroke-width:2;marker-end:url(#ah)}
+  </style>
+  <defs><marker id="ah" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker></defs>
+  <rect width="1500" height="880" fill="#fff"/>
+  <text x="750.0" y="38" text-anchor="middle" class="title">왜 순서가 뒤집힐 수 있는가 — 부모 슬롯에 “이 행을 건드렸다”는 표시가 남지 않는다</text>
+  <text x="750.0" y="62" text-anchor="middle" class="sub">H(P=1): 부모 행 P=1의 키 해시 · H(자식 PK): 자식 행들의 PK 해시 · 슬롯 값: 그 행을 마지막으로 WRITE한 트랜잭션의 commit LSA</text>
+  <rect x="60" y="78" width="18" height="12" rx="3" class="p0"/>
+  <text x="84" y="89" text-anchor="start" class="small">P0 부모 INSERT</text>
+  <rect x="216.39999999999998" y="78" width="18" height="12" rx="3" class="prep"/>
+  <text x="240.39999999999998" y="89" text-anchor="start" class="small">C 자식 참조 연산(준비)</text>
+  <rect x="400.4" y="78" width="18" height="12" rx="3" class="t1"/>
+  <text x="424.4" y="89" text-anchor="start" class="small">T1 자식 참조 연산(긴 트랜잭션)</text>
+  <rect x="630.4" y="78" width="18" height="12" rx="3" class="t2"/>
+  <text x="654.4" y="89" text-anchor="start" class="small">T2 부모 키 변경(짧은 트랜잭션)</text>
+  <rect x="1090.3999999999999" y="78" width="18" height="12" rx="3" class="slot"/>
+  <text x="1114.3999999999999" y="89" text-anchor="start" class="small">슬롯 값</text>
+      <rect x="30" y="105" width="1440" height="386" rx="12" class="box"/>
+  <text x="50" y="135" text-anchor="start" class="panel">마스터 — 커밋 순서 P0 → C → T1 → T2</text>
+  <line x1="330" y1="155" x2="1440" y2="155" class="axis"/>
+  <text x="1436" y="149" text-anchor="end" class="small">시간</text>
+  <text x="318" y="184" text-anchor="end" class="lane">P0 부모 INSERT</text>
+  <rect x="330" y="167" width="70" height="24" rx="6" class="p0"/>
+  <text x="365.0" y="184" text-anchor="middle" class="white">P0</text>
+  <text x="318" y="222" text-anchor="end" class="lane">C 자식 참조 연산</text>
+  <rect x="410" y="205" width="90" height="24" rx="6" class="prep"/>
+  <text x="455.0" y="222" text-anchor="middle" class="dark">C</text>
+  <text x="318" y="272" text-anchor="end" class="lane">T1 자식 참조 연산</text>
+  <rect x="510" y="255" width="470" height="24" rx="6" class="t1"/>
+  <text x="745.0" y="272" text-anchor="middle" class="white">T1</text>
+  <text x="318" y="334" text-anchor="end" class="lane">T2 부모 키 변경</text>
+  <rect x="1000" y="317" width="90" height="24" rx="6" class="t2"/>
+  <text x="1045.0" y="334" text-anchor="middle" class="white">T2</text>
+  <text x="412" y="184" text-anchor="start" class="monoB">commit · publish: 부모 슬롯 ← P0</text>
+  <text x="512" y="216" text-anchor="start" class="mono">commit · probe: 부모 슬롯 → P0 ⇒ LC = P0</text>
+  <text x="512" y="235" text-anchor="start" class="mono">publish: 자식 PK 슬롯 ← C · 부모 슬롯 갱신 없음</text>
+  <text x="992" y="266" text-anchor="start" class="mono">commit · probe: 자식 PK 슬롯 → C · 부모 슬롯 → P0 ⇒ LC = C</text>
+  <text x="992" y="285" text-anchor="start" class="mono">publish: 자식 PK 슬롯 ← T1 · 부모 슬롯 갱신 없음</text>
+  <text x="1102" y="328" text-anchor="start" class="mono">commit · probe: 부모 슬롯 → P0 ⇒ LC = P0</text>
+  <text x="1102" y="347" text-anchor="start" class="monoR">▶ T1이 아님 — 부모 슬롯에 T1 흔적이 없다</text>
+  <text x="318" y="386" text-anchor="end" class="lane">history 슬롯 H(P=1)</text>
+  <rect x="330" y="367" width="70" height="28" rx="6" class="empty"/>
+  <text x="365.0" y="386" text-anchor="middle" class="small">비어 있음</text>
+  <rect x="400" y="367" width="690" height="28" rx="6" class="slot"/>
+  <text x="745" y="386" text-anchor="middle" class="monoB">P0</text>
+  <text x="775" y="386" text-anchor="start" class="small">← C·T1은 읽기만</text>
+  <rect x="1090" y="367" width="350" height="28" rx="6" class="slot"/>
+  <text x="1265" y="386" text-anchor="middle" class="monoB">T2</text>
+  <text x="318" y="428" text-anchor="end" class="lane">history 슬롯 H(자식 PK)</text>
+  <rect x="330" y="409" width="170" height="28" rx="6" class="empty"/>
+  <text x="415.0" y="428" text-anchor="middle" class="small">비어 있음</text>
+  <rect x="500" y="409" width="480" height="28" rx="6" class="slot"/>
+  <text x="740" y="428" text-anchor="middle" class="monoB">C</text>
+  <rect x="980" y="409" width="460" height="28" rx="6" class="slot"/>
+  <text x="1210" y="428" text-anchor="middle" class="monoB">T1</text>
+  <text x="1300" y="428" text-anchor="start" class="small">← 자식 행은 정상 추적</text>
+  <line x1="400" y1="191" x2="400" y2="437" class="tick"/>
+  <line x1="500" y1="229" x2="500" y2="437" class="tick"/>
+  <line x1="980" y1="279" x2="980" y2="437" class="tick"/>
+  <line x1="1090" y1="341" x2="1090" y2="437" class="tick"/>
+  <text x="330" y="469" text-anchor="start" class="note">T2의 LC는 부모 슬롯 값이다. C와 T1이 부모 슬롯을 갱신하지 않았으므로 T2의 LC는 P0에 머물고, T1을 가리킬 수 없다</text>
+  <rect x="30" y="511" width="1440" height="322" rx="12" class="box"/>
+  <text x="50" y="541" text-anchor="start" class="panel">슬레이브(초기 PoC) — 배정은 LC로 정해지고, 결과는 commit 순서로 정해진다</text>
+  <line x1="330" y1="561" x2="1440" y2="561" class="axis"/>
+  <text x="1436" y="555" text-anchor="end" class="small">시간</text>
+  <text x="318" y="590" text-anchor="end" class="lane">P0 부모 INSERT</text>
+  <rect x="330" y="573" width="70" height="24" rx="6" class="p0"/>
+  <text x="365" y="590" text-anchor="middle" class="white">P0</text>
+  <text x="412" y="590" text-anchor="start" class="small">완료</text>
+  <text x="318" y="624" text-anchor="end" class="lane">C 자식 참조 연산</text>
+  <rect x="410" y="607" width="90" height="24" rx="6" class="prep"/>
+  <text x="455" y="624" text-anchor="middle" class="dark">C</text>
+  <text x="512" y="624" text-anchor="start" class="small">완료 · LC = P0 충족</text>
+  <text x="318" y="658" text-anchor="end" class="lane">T1 자식 참조 연산</text>
+  <rect x="510" y="641" width="530" height="24" rx="6" class="t1"/>
+  <text x="775" y="658" text-anchor="middle" class="white">T1 실행 (LC = C 충족)</text>
+  <text x="318" y="692" text-anchor="end" class="lane">T2 부모 키 변경</text>
+  <rect x="525" y="675" width="85" height="24" rx="6" class="t2"/>
+  <text x="567" y="692" text-anchor="middle" class="white">T2</text>
+  <text x="622" y="692" text-anchor="start" class="mono">LC = P0 충족 → gate 통과</text>
+  <text x="835" y="692" text-anchor="start" class="monoR">▶ dependency는 T1이 아닌 P0</text>
+  <line x1="610" y1="671" x2="610" y2="737" stroke="#0f172a" stroke-width="2.4"/>
+  <path d="M610,737 l-7,-9 h14 z" fill="#0f172a"/>
+  <text x="610" y="755" text-anchor="middle" class="note">T2 commit</text>
+  <line x1="1040" y1="637" x2="1040" y2="737" stroke="#0f172a" stroke-width="2.4"/>
+  <path d="M1040,737 l-7,-9 h14 z" fill="#0f172a"/>
+  <text x="1040" y="755" text-anchor="middle" class="note">T1 commit</text>
+  <text x="318" y="727" text-anchor="end" class="lane">역전 구간</text>
+  <rect x="610" y="709" width="430" height="26" rx="6" class="danger"/>
+  <text x="825" y="727" text-anchor="middle" class="red">T2 commit → T1 commit: T2는 반영됐고 T1은 아직인 구간</text>
+  <text x="330" y="783" text-anchor="start" class="lane">commit 순서</text>
+  <text x="440" y="783" text-anchor="start" class="mono">마스터  T1 → T2</text>
+  <text x="660" y="783" text-anchor="start" class="monoR">슬레이브  T2 → T1</text>
+  <text x="850" y="783" text-anchor="start" class="red">← 이 역전이 문제다. 실행이 겹친 것 자체는 문제가 아니다</text>
+  <text x="330" y="811" text-anchor="start" class="body">슬레이브에서 T1과 T2는 서로 dependency가 없어 어느 쪽이 먼저 commit해도 막지 않는다. 짧은 T2가 먼저 commit하면 그 구간에서 생기는 증상은 FK 동작마다 다르다(본문 표)</text>
+</svg>

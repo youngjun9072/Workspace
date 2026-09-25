@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620">
+  <defs>
+    <marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#475569"/></marker>
+    <style>
+      text{font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR",sans-serif;fill:#172033} .t{font-size:25px;font-weight:700}.h{font-size:19px;font-weight:700}.b{font-size:15px}.s{font-size:13px;fill:#475569}.box{rx:12;stroke-width:2}.ln{stroke:#475569;stroke-width:2;fill:none;marker-end:url(#a)}
+    </style>
+  </defs>
+  <rect width="1200" height="620" fill="#fbfdff"/>
+  <text x="40" y="45" class="t">writeset v2 PoC: 수집부터 병렬 적용까지</text>
+  <rect x="35" y="75" width="345" height="500" class="box" fill="#eef6ff" stroke="#4f86c6"/>
+  <text x="60" y="110" class="h">마스터</text>
+  <rect x="65" y="135" width="285" height="78" class="box" fill="#fff" stroke="#76a5dc"/>
+  <text x="85" y="164" class="b">행 연산에서 키 수집</text><text x="85" y="188" class="s">PK·UNIQUE = WRITE / 자식 FK = REF</text>
+  <rect x="65" y="250" width="285" height="88" class="box" fill="#fff" stroke="#76a5dc"/>
+  <text x="85" y="280" class="b">COMMIT probe</text><text x="85" y="304" class="s">write_seq·ref_seq 조회</text><text x="85" y="324" class="s">dependency_seq와 대기 방식 결정</text>
+  <rect x="65" y="375" width="285" height="78" class="box" fill="#fff" stroke="#76a5dc"/>
+  <text x="85" y="405" class="b">WS_LABEL → LOG_COMMIT</text><text x="85" y="429" class="s">dependency를 복제 로그에 기록</text>
+  <rect x="65" y="490" width="285" height="60" class="box" fill="#fff" stroke="#76a5dc"/>
+  <text x="85" y="526" class="b">COMMIT LSA를 history에 publish</text>
+  <path d="M208 213V245M208 338V370M208 453V485" class="ln"/>
+
+  <rect x="425" y="75" width="300" height="500" class="box" fill="#fff8e8" stroke="#d39b2d"/>
+  <text x="450" y="110" class="h">복제 로그</text>
+  <rect x="455" y="155" width="240" height="70" class="box" fill="#fff" stroke="#d9aa4c"/>
+  <text x="478" y="183" class="b">LOG_REPLICATION_DATA …</text><text x="478" y="205" class="s">같은 trid의 변경 항목</text>
+  <rect x="455" y="270" width="240" height="82" class="box" fill="#fff" stroke="#d9aa4c"/>
+  <text x="478" y="299" class="b">LOG_DUMMY_WS_LABEL</text><text x="478" y="323" class="s">dependency_seq</text><text x="478" y="343" class="s">dependency_is_read</text>
+  <rect x="455" y="398" width="240" height="70" class="box" fill="#fff" stroke="#d9aa4c"/>
+  <text x="478" y="427" class="b">LOG_COMMIT</text><text x="478" y="449" class="s">현재 트랜잭션의 COMMIT LSA</text>
+  <path d="M575 225V265M575 352V393" class="ln"/>
+
+  <rect x="770" y="75" width="395" height="500" class="box" fill="#effaf3" stroke="#4a9b67"/>
+  <text x="795" y="110" class="h">슬레이브 reader/coordinator + worker</text>
+  <rect x="805" y="135" width="325" height="70" class="box" fill="#fff" stroke="#62aa7b"/>
+  <text x="827" y="164" class="b">REPL + WS_LABEL + COMMIT → task</text><text x="827" y="187" class="s">같은 trid의 변경 목록과 dependency 결합</text>
+  <rect x="805" y="240" width="150" height="78" class="box" fill="#fff4f4" stroke="#d46b6b"/>
+  <text x="830" y="270" class="b">pending</text><text x="824" y="294" class="s">dependency 미충족</text>
+  <rect x="980" y="240" width="150" height="78" class="box" fill="#fff" stroke="#62aa7b"/>
+  <text x="1000" y="270" class="b">worker queue</text><text x="1007" y="294" class="s">실행 가능 task</text>
+  <rect x="980" y="355" width="150" height="70" class="box" fill="#fff" stroke="#62aa7b"/>
+  <text x="1014" y="385" class="b">workers</text><text x="1001" y="407" class="s">적용 후 DB COMMIT</text>
+  <rect x="805" y="462" width="325" height="86" class="box" fill="#fff" stroke="#62aa7b"/>
+  <text x="827" y="490" class="b">result 수거 → completed set</text><text x="827" y="514" class="s">Gate Order의 연속 완료분만 frontier 전진</text><text x="827" y="535" class="s">완료 상태가 바뀌면 pending 재판정</text>
+  <path d="M968 205V228L880 228V235M968 228H1055V235M1055 318V350M1055 425V457M805 505H780V280H800" class="ln"/>
+  <path d="M380 310H420M725 310H765" class="ln"/>
+</svg>

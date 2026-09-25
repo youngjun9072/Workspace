@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="720" viewBox="0 0 1500 720">
+  <defs>
+    <marker id="s3-arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L10 3L0 6Z" fill="#475569"/></marker>
+    <style>
+      text{font-family:'Droid Sans','Noto Sans KR','Malgun Gothic',sans-serif;fill:#172033}.title{font-size:28px;font-weight:700}.sub{font-size:16px;fill:#64748b}.head{font-size:18px;font-weight:700}.body{font-size:15px}.small{font-size:13px;fill:#64748b}.panel{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.6}.old{fill:#fff7ed;stroke:#f97316;stroke-width:2.3}.clear{fill:#f5f3ff;stroke:#7c3aed;stroke-width:2.4}.new{fill:#f0fdf4;stroke:#22c55e;stroke-width:2.4}.write{fill:#fff1f2;stroke:#e11d48;stroke-width:2.2}.arrow{fill:none;stroke:#475569;stroke-width:2.3;marker-end:url(#s3-arrow)}
+    </style>
+  </defs>
+  <rect width="1500" height="720" fill="#fff"/>
+  <text x="750" y="48" text-anchor="middle" class="title">3. history 세대 교체 뒤 T8의 완전한 writeset을 재게시한다</text>
+  <text x="750" y="78" text-anchor="middle" class="sub">dependency_seq=C3과 commit_lsa=C8이 확정된 상태에서 clear와 재게시를 연속 수행한다</text>
+
+  <rect x="55" y="112" width="405" height="450" rx="18" class="panel"/>
+  <text x="85" y="150" class="head">교체 직전</text>
+  <rect x="85" y="180" width="345" height="114" rx="12" class="old"/>
+  <text x="257" y="216" text-anchor="middle" class="head">기존 세대</text><text x="257" y="248" text-anchor="middle" class="body">history_start = C0</text><text x="257" y="275" text-anchor="middle" class="body">history = 10 / 10 슬롯</text>
+  <rect x="85" y="328" width="345" height="138" rx="12" class="write"/>
+  <text x="257" y="362" text-anchor="middle" class="head">T8 보유 상태</text><text x="257" y="394" text-anchor="middle" class="body">writeset = {H_A:WRITE, H_K:WRITE}</text><text x="257" y="423" text-anchor="middle" class="body">dependency_seq = C3</text><text x="257" y="450" text-anchor="middle" class="body">commit_lsa = C8</text>
+
+  <rect x="550" y="112" width="400" height="450" rx="18" class="panel"/>
+  <text x="580" y="150" class="head">세대 교체</text>
+  <rect x="580" y="202" width="340" height="156" rx="12" class="clear"/>
+  <text x="750" y="241" text-anchor="middle" class="head">history.clear()</text><text x="750" y="279" text-anchor="middle" class="body">모든 기존 슬롯 제거</text><text x="750" y="325" text-anchor="middle" class="head">history_start = C8</text>
+  <text x="750" y="407" text-anchor="middle" class="body">T8 writeset은 완전하므로</text><text x="750" y="437" text-anchor="middle" class="body">clear 뒤에도 그대로 보유</text>
+
+  <rect x="1040" y="112" width="405" height="450" rx="18" class="panel"/>
+  <text x="1070" y="150" class="head">새 세대의 첫 publish</text>
+  <rect x="1070" y="180" width="345" height="100" rx="12" class="new"/>
+  <text x="1242" y="217" text-anchor="middle" class="head">history_start = C8</text><text x="1242" y="251" text-anchor="middle" class="body">history = 2 / 10 슬롯</text>
+  <rect x="1070" y="318" width="345" height="76" rx="12" class="write"/>
+  <text x="1242" y="350" text-anchor="middle" class="head">H_A</text><text x="1242" y="377" text-anchor="middle" class="body">write_seq=C8 · ref_seq=−</text>
+  <rect x="1070" y="418" width="345" height="76" rx="12" class="write"/>
+  <text x="1242" y="450" text-anchor="middle" class="head">H_K</text><text x="1242" y="477" text-anchor="middle" class="body">write_seq=C8 · ref_seq=−</text>
+
+  <path d="M460 338H550" class="arrow"/><path d="M950 338H1040" class="arrow"/>
+  <rect x="260" y="608" width="980" height="64" rx="13" class="new"/>
+  <text x="750" y="635" text-anchor="middle" class="head">순서: 기존 map probe → dependency 확정 → commit_lsa 확정 → clear → 현재 writeset 재게시</text>
+  <text x="750" y="658" text-anchor="middle" class="small">세대 경계 C8과 T8의 H_A·H_K WRITE가 동시에 새 history의 출발점이 된다</text>
+</svg>

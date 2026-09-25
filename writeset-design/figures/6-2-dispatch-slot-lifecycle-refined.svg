@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="640" viewBox="0 0 1500 640" role="img" aria-labelledby="title desc">
+  <title id="title">reader의 replication item 수집과 Dispatch Order를 이용한 transaction slot 정리</title>
+  <desc id="desc">reader가 REPL 로그를 읽어 T1과 T2의 LA_APPLY slot에 item을 쌓는다. T1 COMMIT에서 완성한 task가 dependency gate를 통과하면 Dispatch Order에 대응 정보를 기록하는 경로와 worker에 task를 전달하는 경로로 갈라진다. Dispatch Order는 worker 결과가 돌아올 때까지 T1 slot을 보존하고, result seq 1을 T1 entry에 연결한 뒤 head 확정 시 T1 slot과 item만 정리한다.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#475569"/></marker>
+    <marker id="blueArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#2563eb"/></marker>
+    <marker id="redArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#dc2626"/></marker>
+    <style>
+      text{font-family:Arial,'Noto Sans KR',sans-serif;fill:#172033}.title{font-size:26px;font-weight:700}.head{font-size:19px;font-weight:700}.body{font-size:16px}.small{font-size:14px;fill:#526174}.line{fill:none;stroke:#475569;stroke-width:2.6;marker-end:url(#arrow)}.collect{fill:none;stroke:#2563eb;stroke-width:3;marker-end:url(#blueArrow)}.result{fill:none;stroke:#dc2626;stroke-width:3;marker-end:url(#redArrow)}.retain{fill:none;stroke:#64748b;stroke-width:2.2;stroke-dasharray:7 6;marker-end:url(#arrow)}
+    </style>
+  </defs>
+
+  <rect width="1500" height="640" fill="#ffffff"/>
+  <text x="45" y="45" class="title">worker 결과가 돌아올 때까지 T1 transaction slot을 보존하고 확정 후 정리한다</text>
+
+  <!-- reader -->
+  <rect x="55" y="125" width="225" height="112" rx="16" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
+  <text x="167" y="166" text-anchor="middle" class="head">reader/coordinator</text>
+  <text x="167" y="199" text-anchor="middle" class="body">REPL·COMMIT 로그 읽기</text>
+
+  <!-- transaction slots -->
+  <text x="475" y="89" class="head">la_Info.repl_lists[] · transaction별 LA_APPLY slot</text>
+  <rect x="455" y="110" width="430" height="118" rx="14" fill="#fef2f2" stroke="#ef4444" stroke-width="2"/>
+  <text x="480" y="145" class="head">T1 slot</text>
+  <rect x="570" y="132" width="88" height="44" rx="8" fill="#fff" stroke="#94a3b8"/>
+  <text x="614" y="160" text-anchor="middle" class="body">item 1</text>
+  <rect x="675" y="132" width="88" height="44" rx="8" fill="#fff" stroke="#94a3b8"/>
+  <text x="719" y="160" text-anchor="middle" class="body">item 2</text>
+  <rect x="780" y="132" width="80" height="44" rx="8" fill="#fff" stroke="#94a3b8"/>
+  <text x="820" y="160" text-anchor="middle" class="body">item 3</text>
+  <text x="670" y="204" text-anchor="middle" class="small">T1 COMMIT까지 수집한 replication item</text>
+
+  <rect x="955" y="110" width="425" height="118" rx="14" fill="#ecfdf5" stroke="#10b981" stroke-width="2"/>
+  <text x="980" y="145" class="head">T2 slot</text>
+  <rect x="1070" y="132" width="88" height="44" rx="8" fill="#fff" stroke="#94a3b8"/>
+  <text x="1114" y="160" text-anchor="middle" class="body">item 1</text>
+  <rect x="1175" y="132" width="88" height="44" rx="8" fill="#fff" stroke="#94a3b8"/>
+  <text x="1219" y="160" text-anchor="middle" class="body">item 2</text>
+  <rect x="1280" y="132" width="76" height="44" rx="8" fill="#fff" stroke="#94a3b8"/>
+  <text x="1318" y="160" text-anchor="middle" class="body">item 3</text>
+  <text x="1168" y="204" text-anchor="middle" class="small">reader가 다른 트랜잭션의 item을 계속 수집</text>
+
+  <!-- independent REPL collection paths -->
+  <path d="M280 154 C340 118 390 118 445 145" class="collect"/>
+  <text x="326" y="113" class="small" style="fill:#2563eb">REPL 읽기 · T1 item 적재</text>
+  <path d="M280 188 C500 252 765 255 945 177" class="collect"/>
+  <text x="610" y="270" class="small" style="fill:#2563eb">REPL 읽기 · T2 item 적재</text>
+
+  <!-- T1 commit and dependency gate -->
+  <rect x="270" y="365" width="285" height="102" rx="15" fill="#fff7ed" stroke="#f97316" stroke-width="2"/>
+  <text x="412" y="404" text-anchor="middle" class="head">dependency gate</text>
+  <text x="412" y="437" text-anchor="middle" class="body">T1 task 실행 가능 여부 판정</text>
+  <path d="M167 237 C167 302 242 316 305 356" class="line"/>
+  <text x="181" y="308" class="body">T1 COMMIT 로그</text>
+
+  <!-- branch after gate -->
+  <circle cx="610" cy="416" r="5" fill="#475569"/>
+  <path d="M555 416 H605" class="line"/>
+
+  <!-- Dispatch Order records the task; it does not send the task to worker -->
+  <rect x="670" y="320" width="375" height="128" rx="15" fill="#fff7ed" stroke="#f97316" stroke-width="2"/>
+  <text x="857" y="356" text-anchor="middle" class="head">Dispatch Order FIFO</text>
+  <rect x="710" y="373" width="295" height="52" rx="8" fill="#fff" stroke="#f97316" stroke-width="2"/>
+  <text x="857" y="395" text-anchor="middle" class="body">head · seq 1 · T1</text>
+  <text x="857" y="416" text-anchor="middle" class="small">task.apply와 결과 대응 정보 보존</text>
+  <path d="M615 411 C632 379 642 375 660 375" class="line"/>
+  <text x="632" y="349" class="small">T1 대응 정보 기록</text>
+
+  <!-- task.apply points to T1 only -->
+  <path d="M790 320 C770 282 750 255 735 229" class="retain"/>
+  <text x="789" y="280" class="small">task.apply → T1 slot</text>
+
+  <!-- worker gets the task directly from the gate branch -->
+  <rect x="1175" y="395" width="260" height="105" rx="15" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
+  <text x="1305" y="435" text-anchor="middle" class="head">worker</text>
+  <text x="1305" y="468" text-anchor="middle" class="body">T1 적용·DB COMMIT</text>
+  <path d="M615 421 C760 525 1015 535 1165 460" class="line"/>
+  <text x="854" y="538" text-anchor="middle" class="small">gate를 통과한 T1 task 전달</text>
+
+  <!-- worker result returns to the existing dispatch entry -->
+  <path d="M1175 425 C1125 390 1090 384 1055 390" class="result"/>
+  <text x="1109" y="354" text-anchor="middle" class="body" style="fill:#dc2626">result.seq=1</text>
+  <text x="1126" y="374" text-anchor="middle" class="small" style="fill:#dc2626">기존 T1 entry에 연결</text>
+
+  <!-- retire T1 only -->
+  <path d="M710 373 C625 330 535 286 515 229" class="result"/>
+  <text x="515" y="295" class="body" style="fill:#dc2626">head 결과 확정</text>
+  <text x="510" y="318" class="small" style="fill:#dc2626">T1 slot·item 정리</text>
+
+  <rect x="55" y="574" width="1380" height="42" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="745" y="601" text-anchor="middle" class="small">Dispatch Order는 T1 task를 worker에 보내는 통로가 아니라, worker 결과가 돌아올 때까지 T1의 LA_APPLY slot을 보존하고 결과를 원래 task에 연결하기 위한 순서 상태다.</text>
+</svg>

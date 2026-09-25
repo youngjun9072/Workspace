@@ -42,7 +42,7 @@
   <text x="1090" y="520" class="code">      └─ LOG_COMMIT</text>
   <text x="1090" y="550" class="code">         ├─ la_retrieve_eot_time()</text>
   <text x="1090" y="580" class="code">         ├─ la_add_node_into_la_commit_list()</text>
-  <text x="1090" y="610" class="code new">         └─ LA_APPLY_TASK 필드 구성</text>
+  <text x="1090" y="610" class="code new">         └─ [NEW] la_build_apply_task()</text>
   <text x="1090" y="640" class="code new">            ├─ COMMIT 정보 저장</text>
   <text x="1090" y="670" class="code new">            ├─ 같은 trid의 LA_APPLY 연결</text>
   <text x="1090" y="700" class="code new">            └─ 같은 trid의 WS_LABEL dependency 연결</text>

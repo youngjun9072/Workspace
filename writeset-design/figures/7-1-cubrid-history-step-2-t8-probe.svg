@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="760" viewBox="0 0 1500 760">
+  <defs>
+    <marker id="s2-arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L10 3L0 6Z" fill="#475569"/></marker>
+    <style>
+      text{font-family:'Droid Sans','Noto Sans KR','Malgun Gothic',sans-serif;fill:#172033}.title{font-size:28px;font-weight:700}.sub{font-size:16px;fill:#64748b}.head{font-size:18px;font-weight:700}.body{font-size:15px}.small{font-size:13px;fill:#64748b}.panel{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.6}.write{fill:#fff1f2;stroke:#e11d48;stroke-width:2.2}.probe{fill:#eff6ff;stroke:#3b82f6;stroke-width:2.2}.result{fill:#f5f3ff;stroke:#7c3aed;stroke-width:2.4}.commit{fill:#f0fdf4;stroke:#22c55e;stroke-width:2.4}.arrow{fill:none;stroke:#475569;stroke-width:2.3;marker-end:url(#s2-arrow)}
+    </style>
+  </defs>
+  <rect width="1500" height="760" fill="#fff"/>
+  <text x="750" y="48" text-anchor="middle" class="title">2. T8이 기존 history를 먼저 probe한다</text>
+  <text x="750" y="78" text-anchor="middle" class="sub">가득 찬 map을 지우기 전에 H_A의 충돌 이력 C3을 dependency로 보존한다</text>
+
+  <rect x="55" y="112" width="390" height="526" rx="18" class="panel"/>
+  <text x="85" y="150" class="head">① 행 연산과 현재 writeset</text>
+  <rect x="85" y="178" width="330" height="86" rx="12" class="write"/>
+  <text x="250" y="210" text-anchor="middle" class="head">T8 행 연산</text><text x="250" y="239" text-anchor="middle" class="body">kv(A) INSERT · kv(K) INSERT</text>
+  <rect x="85" y="292" width="330" height="116" rx="12" class="probe"/>
+  <text x="250" y="324" text-anchor="middle" class="head">transaction writeset</text><text x="250" y="355" text-anchor="middle" class="body">H_A : WRITE</text><text x="250" y="382" text-anchor="middle" class="body">H_K : WRITE</text>
+  <text x="85" y="452" class="small">probe 시점</text><text x="85" y="480" class="body">history_start = C0</text><text x="85" y="508" class="body">history = 10 / 10 슬롯</text>
+
+  <rect x="555" y="112" width="390" height="526" rx="18" class="panel"/>
+  <text x="585" y="150" class="head">② 기존 history 후보 P</text>
+  <rect x="585" y="178" width="330" height="112" rx="12" class="write"/>
+  <text x="750" y="211" text-anchor="middle" class="head">H_A : WRITE probe</text><text x="750" y="242" text-anchor="middle" class="body">max(write_seq=C3, ref_seq=−)</text><text x="750" y="270" text-anchor="middle" class="head">후보 C3</text>
+  <rect x="585" y="316" width="330" height="102" rx="12" class="probe"/>
+  <text x="750" y="349" text-anchor="middle" class="head">H_K : WRITE probe</text><text x="750" y="380" text-anchor="middle" class="body">슬롯 없음 → 후보 C0</text>
+  <rect x="585" y="468" width="330" height="86" rx="12" class="result"/>
+  <text x="750" y="501" text-anchor="middle" class="head">P = max(C0, C3, C0)</text><text x="750" y="532" text-anchor="middle" class="head">P = C3</text>
+
+  <rect x="1055" y="112" width="390" height="526" rx="18" class="panel"/>
+  <text x="1085" y="150" class="head">③ dependency와 본인 위치</text>
+  <rect x="1085" y="202" width="330" height="126" rx="12" class="result"/>
+  <text x="1250" y="238" text-anchor="middle" class="body">기본 dependency B = C7</text><text x="1250" y="271" text-anchor="middle" class="head">dependency_seq</text><text x="1250" y="302" text-anchor="middle" class="head">min(C7, C3) = C3</text>
+  <rect x="1085" y="368" width="330" height="104" rx="12" class="commit"/>
+  <text x="1250" y="404" text-anchor="middle" class="head">본인 commit_lsa = C8</text><text x="1250" y="438" text-anchor="middle" class="body">dependency_is_ref = false</text>
+  <text x="1250" y="526" text-anchor="middle" class="body">C3을 확정한 뒤에만</text><text x="1250" y="554" text-anchor="middle" class="body">history 세대를 교체할 수 있다</text>
+
+  <path d="M445 374H555" class="arrow"/><path d="M945 374H1055" class="arrow"/>
+  <rect x="300" y="666" width="900" height="58" rx="13" class="commit"/>
+  <text x="750" y="702" text-anchor="middle" class="head">핵심: T8은 포화로 map을 지우기 전에 기존 H_A.write_seq=C3을 읽는다</text>
+</svg>

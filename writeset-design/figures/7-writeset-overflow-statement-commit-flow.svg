@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="720" viewBox="0 0 1440 720">
+<defs>
+ <marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L10 3L0 6Z" fill="#475569"/></marker>
+ <style>
+ text{font-family:'Noto Sans KR','Apple SD Gothic Neo',sans-serif;fill:#172033}.t{font-size:27px;font-weight:700}.h{font-size:18px;font-weight:700}.b{font-size:15px}.s{font-size:13px;fill:#64748b}
+ .p{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.5}.m{fill:#fff;stroke:#64748b;stroke-width:2}.slot{fill:#eff6ff;stroke:#60a5fa}.stmt{fill:#fff7ed;stroke:#f97316;stroke-width:2.5}.ok{fill:#dcfce7;stroke:#22c55e;stroke-width:2}.hole{fill:#fff;stroke:#ef4444;stroke-width:2.5;stroke-dasharray:6 5}.fresh{fill:#f0fdf4;stroke:#22c55e;stroke-width:2.5}
+ .axis{stroke:#64748b;stroke-width:3}.arr{fill:none;stroke:#475569;stroke-width:2.2;marker-end:url(#a)}.orange{fill:none;stroke:#ea580c;stroke-width:3;marker-end:url(#a)}.x{stroke:#ef4444;stroke-width:4}.dash{stroke:#94a3b8;stroke-width:2;stroke-dasharray:5 5}
+ </style>
+</defs>
+<rect width="1440" height="720" fill="#fff"/>
+<text x="50" y="47" class="t">statement는 키별 충돌을 알 수 없어 이전 COMMIT 구간 전체를 먼저 닫는다</text>
+
+<rect x="40" y="78" width="410" height="590" rx="18" class="p"/>
+<text x="65" y="116" class="h">1  키별 비교를 할 수 없다</text>
+<rect x="72" y="153" width="170" height="190" rx="12" class="m"/>
+<text x="157" y="183" text-anchor="middle" class="h">기존 history</text>
+<rect x="91" y="203" width="132" height="35" rx="5" class="slot"/><text x="157" y="226" text-anchor="middle" class="b">H(A) → C1</text>
+<rect x="91" y="246" width="132" height="35" rx="5" class="slot"/><text x="157" y="269" text-anchor="middle" class="b">H(B) → C2</text>
+<rect x="91" y="289" width="132" height="35" rx="5" class="slot"/><text x="157" y="312" text-anchor="middle" class="b">H(C) → C3</text>
+<rect x="275" y="174" width="140" height="140" rx="70" class="stmt"/>
+<text x="345" y="216" text-anchor="middle" class="h">statement</text>
+<text x="345" y="247" text-anchor="middle" class="b">행 이미지 없음</text>
+<text x="345" y="276" text-anchor="middle" class="b">키 해시 없음</text>
+<path d="M242 244H275" class="arr"/>
+<text x="245" y="382" text-anchor="middle" class="b">어느 슬롯을 조회해야 하는지 알 수 없음</text>
+<line x1="78" y1="483" x2="412" y2="483" class="axis"/>
+<circle cx="126" cy="483" r="13" class="ok"/><text x="126" y="520" text-anchor="middle" class="b">C1</text>
+<circle cx="236" cy="483" r="13" class="ok"/><text x="236" y="520" text-anchor="middle" class="b">C2</text>
+<circle cx="346" cy="483" r="15" class="stmt"/><text x="346" y="520" text-anchor="middle" class="b">C3</text>
+<line x1="346" y1="432" x2="346" y2="462" class="dash"/>
+<text x="346" y="415" text-anchor="middle" class="h">가장 큰 이전 COMMIT</text>
+<rect x="105" y="565" width="280" height="66" rx="11" class="stmt"/>
+<text x="245" y="592" text-anchor="middle" class="h">statement의 선행 위치 = C3</text>
+<text x="245" y="616" text-anchor="middle" class="s">키 비교 대신 COMMIT 순서를 사용</text>
+
+<rect x="485" y="78" width="460" height="590" rx="18" class="p"/>
+<text x="510" y="116" class="h">2  C3 한 건이 아니라 C3까지 기다린다</text>
+<line x1="530" y1="240" x2="900" y2="240" class="axis"/>
+<circle cx="590" cy="240" r="15" class="ok"/><text x="590" y="278" text-anchor="middle" class="b">C1 완료</text>
+<circle cx="715" cy="240" r="15" class="hole"/><text x="715" y="278" text-anchor="middle" class="b">C2 미완료</text>
+<circle cx="840" cy="240" r="15" class="ok"/><text x="840" y="278" text-anchor="middle" class="b">C3 완료</text>
+<rect x="565" y="325" width="300" height="70" rx="12" class="stmt"/>
+<text x="715" y="354" text-anchor="middle" class="h">statement는 아직 대기</text>
+<text x="715" y="380" text-anchor="middle" class="b">앞의 C2가 비어 있음</text>
+<path d="M840 256C840 304 815 304 815 325" class="orange"/>
+<path d="M715 425V472" class="orange"/><text x="738" y="455" class="b">C2 완료</text>
+<line x1="530" y1="516" x2="900" y2="516" class="axis"/>
+<circle cx="590" cy="516" r="15" class="ok"/><circle cx="715" cy="516" r="15" class="ok"/><circle cx="840" cy="516" r="15" class="ok"/>
+<path d="M590 557H840" stroke="#22c55e" stroke-width="8"/>
+<text x="715" y="601" text-anchor="middle" class="h">C1 → C2 → C3 연속 완료</text>
+<text x="715" y="630" text-anchor="middle" class="b">이제 statement 실행</text>
+
+<rect x="980" y="78" width="420" height="590" rx="18" class="p"/>
+<text x="1005" y="116" class="h">3  COMMIT C4에서 history를 새로 시작</text>
+<rect x="1018" y="160" width="145" height="180" rx="12" class="m" opacity=".55"/>
+<text x="1090" y="190" text-anchor="middle" class="h">기존 history</text>
+<rect x="1037" y="210" width="107" height="30" rx="4" class="slot"/><rect x="1037" y="250" width="107" height="30" rx="4" class="slot"/><rect x="1037" y="290" width="107" height="30" rx="4" class="slot"/>
+<line x1="1012" y1="154" x2="1169" y2="346" class="x"/><line x1="1169" y1="154" x2="1012" y2="346" class="x"/>
+<path d="M1182 250H1225" class="arr"/>
+<rect x="1225" y="160" width="140" height="180" rx="12" class="fresh"/>
+<text x="1295" y="190" text-anchor="middle" class="h">새 history</text>
+<text x="1295" y="252" text-anchor="middle" class="b">map = { }</text>
+<text x="1295" y="289" text-anchor="middle" class="s">statement 키는</text><text x="1295" y="309" text-anchor="middle" class="s">게시하지 않음</text>
+<line x1="1020" y1="483" x2="1360" y2="483" class="axis"/>
+<circle cx="1060" cy="483" r="11" class="ok"/><text x="1060" y="518" text-anchor="middle" class="b">C1</text>
+<circle cx="1140" cy="483" r="11" class="ok"/><text x="1140" y="518" text-anchor="middle" class="b">C2</text>
+<circle cx="1220" cy="483" r="11" class="ok"/><text x="1220" y="518" text-anchor="middle" class="b">C3</text>
+<circle cx="1300" cy="483" r="16" class="stmt"/><text x="1300" y="518" text-anchor="middle" class="b">C4</text>
+<line x1="1300" y1="432" x2="1300" y2="462" class="dash"/>
+<text x="1300" y="414" text-anchor="middle" class="h">history_start = C4</text>
+<text x="1190" y="584" text-anchor="middle" class="h">다음 트랜잭션은 C4 이후에서 시작</text>
+<text x="1190" y="614" text-anchor="middle" class="b">초기화 전 이력을 독립 구간으로 오해하지 않음</text>
+
+<path d="M450 375H485" class="orange"/><path d="M945 375H980" class="orange"/>
+</svg>

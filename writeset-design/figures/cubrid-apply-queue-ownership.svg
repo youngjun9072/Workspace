@@ -43,7 +43,7 @@
   <rect x="1040" y="190" width="350" height="155" class="box result"/>
   <text x="1215" y="228" text-anchor="middle" class="head">worker 결과 수거</text>
   <text x="1215" y="260" text-anchor="middle" class="body">완료 등록 · frontier 전진</text>
-  <text x="1215" y="292" text-anchor="middle" class="body">drain_ready()로 pending 재판정</text>
+  <text x="1215" y="292" text-anchor="middle" class="body">dispatch_ready_pending()으로 pending 재판정</text>
   <text x="1215" y="322" text-anchor="middle" class="small">배정 순서의 결과 대응과 retire도 담당</text>
 
   <path d="M1040 268 H930 V330 H905" class="feedback"/>
@@ -77,7 +77,7 @@
   <text x="480" y="438" class="small">충족 task 배정</text>
 
   <path d="M783 330 V390 H445 V550" class="feedback"/>
-  <text x="610" y="378" text-anchor="middle" class="small">drain_ready(): 조건이 풀린 task 재배정</text>
+  <text x="610" y="378" text-anchor="middle" class="small">dispatch_ready_pending(): 조건이 풀린 task 배정</text>
 
   <path d="M1110 550 V390 H1215 V345" class="arrow"/>
   <text x="1160" y="432" class="small">result 회수</text>

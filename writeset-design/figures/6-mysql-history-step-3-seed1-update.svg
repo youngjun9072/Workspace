@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="820" viewBox="0 0 1600 820" role="img">
+  <title>T3: 같은 seed 행 UPDATE</title>
+  <desc>H_S1 충돌로 LC=1을 정하고 H_S1의 SEQ를 1에서 3으로 갱신</desc>
+  <defs>
+    <style>text{font-family:"Pretendard","Noto Sans KR",sans-serif;fill:#17212b}.title{font-size:27px;font-weight:700}.paneltitle{font-size:18px;font-weight:700}.body{font-size:15px}.small{font-size:14px;font-weight:700}.mono{font:14px ui-monospace,SFMono-Regular,Menlo,monospace}.muted{font-size:14px;fill:#64748b}.step{font-size:15px;font-weight:700;fill:#fff}.oldval{font:14px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#dc2626}.newval{font:14px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#059669;font-weight:700}.arrow{fill:none;stroke:#64748b;stroke-width:2.2;marker-end:url(#arr)}</style>
+    <marker id="arr" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L9 3L0 6Z" fill="#64748b"/></marker>
+  </defs>
+  <rect width="1600" height="820" fill="#fff"/>
+  <circle cx="55" cy="45" r="22" fill="#334155"/><text x="55" y="51" class="step" text-anchor="middle">3</text>
+  <text x="93" y="54" class="title">T3: 같은 seed 행 UPDATE</text>
+  <rect x="35" y="90" width="330" height="590" rx="14" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
+  <text x="60" y="128" class="paneltitle">① 행 연산과 로컬 writeset</text>
+  <text x="60" y="166" class="body">seed(id=1) UPDATE</text>
+  <text x="60" y="208" class="small">현재 writeset</text>
+  <rect x="60" y="228" width="275" height="38" rx="7" fill="#fff" stroke="#93c5fd"/><text x="75" y="253" class="mono">H_S1</text>
+  <text x="60" y="360" class="mono">SEQ = 3</text><text x="60" y="392" class="mono">C = 2</text>
+  <text x="60" y="432" class="muted">같은 행을 다시 변경한</text><text x="60" y="456" class="muted">정상적인 writeset 충돌</text>
+  <rect x="395" y="90" width="520" height="590" rx="14" fill="#fff7ed" stroke="#f97316" stroke-width="2"/>
+  <text x="420" y="128" class="paneltitle">② 현재 해시로 전역 history 조회</text><text x="420" y="162" class="mono">history_start = 0</text>
+  <rect x="420" y="180" width="470" height="34" fill="#e2e8f0" stroke="#94a3b8"/><line x1="693" y1="180" x2="693" y2="214" stroke="#94a3b8"/>
+  <text x="556" y="203" class="small" text-anchor="middle">hash</text><text x="791" y="203" class="small" text-anchor="middle">마지막 SEQ</text>
+  <rect x="420" y="214" width="470" height="40" fill="#fff" stroke="#cbd5e1"/><line x1="693" y1="214" x2="693" y2="254" stroke="#cbd5e1"/>
+  <text x="556" y="240" class="mono" text-anchor="middle">H_S1</text><text x="791" y="240" class="mono" text-anchor="middle">1</text>
+  <rect x="420" y="254" width="470" height="40" fill="#fff" stroke="#cbd5e1"/><line x1="693" y1="254" x2="693" y2="294" stroke="#cbd5e1"/>
+  <text x="556" y="280" class="mono" text-anchor="middle">H_S2</text><text x="791" y="280" class="mono" text-anchor="middle">2</text>
+  <text x="420" y="395" class="mono">H_S1 → 과거 SEQ 1</text><text x="420" y="426" class="mono">P = max(0, 1) = 1</text>
+  <rect x="945" y="90" width="620" height="250" rx="14" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
+  <text x="970" y="128" class="paneltitle">③ P와 최종 LC 확정</text><text x="970" y="178" class="mono">P = 1</text>
+  <text x="970" y="218" class="mono">LC = min(C=2, P=1) = 1</text><text x="970" y="262" class="mono">GTID: last_committed=1, sequence_number=3</text>
+  <rect x="945" y="370" width="620" height="310" rx="14" fill="#ecfdf5" stroke="#10b981" stroke-width="2"/>
+  <text x="970" y="408" class="paneltitle">④ COMMIT 뒤 history 처리</text><text x="970" y="447" class="mono">history_start = 0</text>
+  <rect x="970" y="465" width="540" height="34" fill="#e2e8f0" stroke="#94a3b8"/><line x1="1283" y1="465" x2="1283" y2="499" stroke="#94a3b8"/>
+  <text x="1127" y="488" class="small" text-anchor="middle">hash</text><text x="1397" y="488" class="small" text-anchor="middle">마지막 SEQ</text>
+  <rect x="970" y="499" width="540" height="40" fill="#d1fae5" stroke="#10b981"/><line x1="1283" y1="499" x2="1283" y2="539" stroke="#10b981"/>
+  <text x="1127" y="525" class="mono" text-anchor="middle">H_S1</text><text x="1359" y="525" class="oldval" text-anchor="middle">1</text><line x1="1332" y1="519" x2="1386" y2="519" stroke="#dc2626" stroke-width="1.5"/><text x="1434" y="525" class="newval" text-anchor="middle">3</text>
+  <rect x="970" y="539" width="540" height="40" fill="#fff" stroke="#cbd5e1"/><line x1="1283" y1="539" x2="1283" y2="579" stroke="#cbd5e1"/>
+  <text x="1127" y="565" class="mono" text-anchor="middle">H_S2</text><text x="1397" y="565" class="mono" text-anchor="middle">2</text>
+  <path d="M365 385H395" class="arrow"/><path d="M915 215H945" class="arrow"/><path d="M1255 340V370" class="arrow"/>
+  <rect x="35" y="715" width="1530" height="70" rx="12" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="60" y="758" class="small">이 장면의 결과</text><text x="200" y="758" class="body">정상 충돌 → LC=1, H_S1: 1→3, H_S2=2 유지</text>
+</svg>

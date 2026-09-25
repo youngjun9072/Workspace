@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="720" viewBox="0 0 1600 720">
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="590" viewBox="0 0 1600 590">
   <defs>
     <style>
       .title{font:700 30px sans-serif;fill:#0f172a}
@@ -14,87 +14,97 @@
       .hit{fill:#fff7ed;stroke:#ea580c}
       .free{fill:#f0fdf4;stroke:#16a34a}
       .note{fill:#fffbeb;stroke:#d97706}
+      .slot{fill:#fff;stroke:#94a3b8;stroke-width:1.5}
+      .shared{fill:#ffedd5;stroke:#ea580c;stroke-width:2}
       .arrow{fill:none;stroke:#475569;stroke-width:2.5;marker-end:url(#arrow)}
       .dash{fill:none;stroke:#94a3b8;stroke-width:2;stroke-dasharray:7 6}
     </style>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#475569"/></marker>
   </defs>
 
-  <rect width="1600" height="720" fill="#fff"/>
+  <rect width="1600" height="590" fill="#fff"/>
   <text x="50" y="52" class="title">트랜잭션의 행 연산에서 writeset 충돌 판정까지</text>
   <text x="50" y="84" class="sub">논리 키를 같은 규칙으로 해시하고, 두 집합에 같은 해시가 있는지만 비교한다</text>
 
-  <rect x="55" y="130" width="245" height="205" class="box tx1"/>
-  <text x="177" y="170" text-anchor="middle" class="head">트랜잭션 T1</text>
-  <text x="82" y="210" class="body">INSERT · UPDATE · DELETE</text>
-  <text x="82" y="246" class="body">PK · UNIQUE · FK 접근</text>
-  <text x="82" y="292" class="small">행 전체가 아니라</text>
-  <text x="82" y="316" class="small">충돌을 결정하는 키만 추출</text>
+  <rect x="55" y="120" width="245" height="150" class="box tx1"/>
+  <text x="177" y="158" text-anchor="middle" class="head">트랜잭션 T1</text>
+  <text x="82" y="200" class="body">INSERT · UPDATE · DELETE</text>
+  <text x="82" y="238" class="small">충돌을 결정하는 키 추출</text>
 
-  <rect x="55" y="390" width="245" height="205" class="box tx2"/>
-  <text x="177" y="430" text-anchor="middle" class="head">트랜잭션 T2</text>
-  <text x="82" y="470" class="body">INSERT · UPDATE · DELETE</text>
-  <text x="82" y="506" class="body">PK · UNIQUE · FK 접근</text>
-  <text x="82" y="552" class="small">T1과 같은 구성·정규화</text>
-  <text x="82" y="576" class="small">규칙을 사용</text>
+  <rect x="55" y="310" width="245" height="150" class="box tx2"/>
+  <text x="177" y="348" text-anchor="middle" class="head">트랜잭션 T2</text>
+  <text x="82" y="390" class="body">INSERT · UPDATE · DELETE</text>
+  <text x="82" y="428" class="small">같은 규칙으로 키 추출</text>
 
-  <path d="M300 232 H375" class="arrow"/>
-  <path d="M300 492 H375" class="arrow"/>
+  <path d="M300 195 H375" class="arrow"/>
+  <path d="M300 385 H375" class="arrow"/>
 
-  <rect x="375" y="130" width="330" height="205" class="box key"/>
-  <text x="540" y="170" text-anchor="middle" class="head">T1 충돌 식별자 구성</text>
-  <text x="540" y="216" text-anchor="middle" class="body">테이블 + 인덱스 + 키 값</text>
-  <text x="540" y="250" text-anchor="middle" class="body">↓ 동일한 형식으로 정규화</text>
-  <text x="540" y="294" text-anchor="middle" class="small">예: parent.PK(7), user.UQ(email)</text>
+  <rect x="375" y="120" width="330" height="150" class="box key"/>
+  <text x="540" y="158" text-anchor="middle" class="head">T1 충돌 식별자 구성</text>
+  <text x="540" y="202" text-anchor="middle" class="body">테이블 + 인덱스 + 키 값</text>
+  <text x="540" y="238" text-anchor="middle" class="small">같은 형식으로 정규화</text>
 
-  <rect x="375" y="390" width="330" height="205" class="box key"/>
-  <text x="540" y="430" text-anchor="middle" class="head">T2 충돌 식별자 구성</text>
-  <text x="540" y="476" text-anchor="middle" class="body">테이블 + 인덱스 + 키 값</text>
-  <text x="540" y="510" text-anchor="middle" class="body">↓ 동일한 형식으로 정규화</text>
-  <text x="540" y="554" text-anchor="middle" class="small">예: parent.PK(7), order.PK(20)</text>
+  <rect x="375" y="310" width="330" height="150" class="box key"/>
+  <text x="540" y="348" text-anchor="middle" class="head">T2 충돌 식별자 구성</text>
+  <text x="540" y="392" text-anchor="middle" class="body">테이블 + 인덱스 + 키 값</text>
+  <text x="540" y="428" text-anchor="middle" class="small">같은 형식으로 정규화</text>
 
-  <path d="M705 232 H780" class="arrow"/>
-  <path d="M705 492 H780" class="arrow"/>
+  <path d="M705 195 H780" class="arrow"/>
+  <path d="M705 385 H780" class="arrow"/>
 
-  <rect x="780" y="130" width="315" height="205" class="box hash"/>
-  <text x="937" y="170" text-anchor="middle" class="head">writeset(T1)</text>
-  <text x="820" y="218" class="body">{</text>
-  <text x="850" y="218" class="body">H(parent.PK, 7),</text>
-  <text x="850" y="254" class="body">H(user.UQ, email),</text>
-  <text x="850" y="290" class="body">H(...)</text>
-  <text x="1040" y="290" class="body">}</text>
+  <rect x="780" y="120" width="315" height="150" class="box hash"/>
+  <text x="937" y="158" text-anchor="middle" class="head">writeset(T1)</text>
+  <rect x="840" y="174" width="194" height="27" class="slot shared"/>
+  <rect x="840" y="201" width="194" height="27" class="slot"/>
+  <rect x="840" y="228" width="194" height="27" class="slot"/>
+  <text x="937" y="193" text-anchor="middle" class="small">h₁</text>
+  <text x="937" y="220" text-anchor="middle" class="small">h₂</text>
+  <text x="937" y="247" text-anchor="middle" class="small">…</text>
 
-  <rect x="780" y="390" width="315" height="205" class="box hash"/>
-  <text x="937" y="430" text-anchor="middle" class="head">writeset(T2)</text>
-  <text x="820" y="478" class="body">{</text>
-  <text x="850" y="478" class="body">H(parent.PK, 7),</text>
-  <text x="850" y="514" class="body">H(order.PK, 20),</text>
-  <text x="850" y="550" class="body">H(...)</text>
-  <text x="1040" y="550" class="body">}</text>
+  <rect x="780" y="310" width="315" height="150" class="box hash"/>
+  <text x="937" y="348" text-anchor="middle" class="head">writeset(T2)</text>
+  <rect x="840" y="364" width="194" height="27" class="slot shared"/>
+  <rect x="840" y="391" width="194" height="27" class="slot"/>
+  <rect x="840" y="418" width="194" height="27" class="slot"/>
+  <text x="937" y="383" text-anchor="middle" class="small">h₁</text>
+  <text x="937" y="410" text-anchor="middle" class="small">h₃</text>
+  <text x="937" y="437" text-anchor="middle" class="small">…</text>
 
-  <path d="M1095 232 H1125 Q1145 232 1145 252 V300" class="arrow"/>
-  <path d="M1095 492 H1125 Q1145 492 1145 472 V420" class="arrow"/>
+  <path d="M1095 195 H1125 Q1145 195 1145 215 V220" class="arrow"/>
+  <text x="1115" y="181" text-anchor="middle" class="small">T1 게시</text>
+  <path d="M1095 385 H1125 Q1145 385 1145 365 V370" class="arrow"/>
+  <text x="1115" y="411" text-anchor="middle" class="small">T2 조회</text>
 
-  <rect x="1145" y="300" width="220" height="120" class="box note"/>
-  <text x="1255" y="338" text-anchor="middle" class="head">두 writeset 비교</text>
-  <text x="1255" y="374" text-anchor="middle" class="body">T1 ∩ T2</text>
-  <text x="1255" y="404" text-anchor="middle" class="small">공통 해시가 있는가?</text>
+  <rect x="1145" y="220" width="220" height="150" class="box note"/>
+  <text x="1255" y="252" text-anchor="middle" class="head">전역 history map</text>
+  <rect x="1170" y="267" width="86" height="25" class="slot shared"/>
+  <rect x="1256" y="267" width="84" height="25" class="slot shared"/>
+  <rect x="1170" y="292" width="86" height="25" class="slot"/>
+  <rect x="1256" y="292" width="84" height="25" class="slot"/>
+  <rect x="1170" y="317" width="86" height="25" class="slot"/>
+  <rect x="1256" y="317" width="84" height="25" class="slot"/>
+  <text x="1213" y="285" text-anchor="middle" class="small">h₁</text>
+  <text x="1298" y="285" text-anchor="middle" class="small">T1</text>
+  <text x="1213" y="310" text-anchor="middle" class="small">h₂</text>
+  <text x="1298" y="310" text-anchor="middle" class="small">T1</text>
+  <text x="1213" y="335" text-anchor="middle" class="small">…</text>
+  <text x="1298" y="335" text-anchor="middle" class="small">…</text>
+  <text x="1255" y="361" text-anchor="middle" class="small">같은 해시가 있는가?</text>
 
-  <path d="M1365 340 H1385 V235 H1405" class="arrow"/>
-  <text x="1383" y="272" text-anchor="end" class="small">있음</text>
-  <path d="M1365 380 H1385 V485 H1405" class="arrow"/>
-  <text x="1383" y="462" text-anchor="end" class="small">없음</text>
+  <path d="M1365 260 H1385 V185 H1405" class="arrow"/>
+  <text x="1383" y="218" text-anchor="end" class="small">있음</text>
+  <path d="M1365 330 H1385 V405 H1405" class="arrow"/>
+  <text x="1383" y="390" text-anchor="end" class="small">없음</text>
 
-  <rect x="1405" y="155" width="170" height="160" class="box hit"/>
-  <text x="1490" y="192" text-anchor="middle" class="head">교집합 있음</text>
-  <text x="1490" y="226" text-anchor="middle" class="small">H(parent.PK, 7)</text>
-  <text x="1490" y="264" text-anchor="middle" class="body">선행 관계 생성</text>
-  <text x="1490" y="292" text-anchor="middle" class="small">보수적 충돌 판정</text>
+  <rect x="1405" y="125" width="170" height="120" class="box hit"/>
+  <text x="1490" y="163" text-anchor="middle" class="head">교집합 있음</text>
+  <text x="1490" y="201" text-anchor="middle" class="body">선행 관계 생성</text>
+  <text x="1490" y="227" text-anchor="middle" class="small">보수적 충돌 판정</text>
 
-  <rect x="1405" y="425" width="170" height="120" class="box free"/>
-  <text x="1490" y="465" text-anchor="middle" class="head">교집합 없음</text>
-  <text x="1490" y="505" text-anchor="middle" class="body">독립 실행 가능</text>
-  <text x="1490" y="530" text-anchor="middle" class="small">키 수집 완료 전제</text>
-  <rect x="375" y="635" width="1170" height="55" class="box note"/>
-  <text x="960" y="669" text-anchor="middle" class="body">판정 단계는 해시의 원래 제약 종류를 다시 해석하지 않고, 같은 충돌 식별자인지만 비교한다.</text>
+  <rect x="1405" y="345" width="170" height="120" class="box free"/>
+  <text x="1490" y="383" text-anchor="middle" class="head">교집합 없음</text>
+  <text x="1490" y="421" text-anchor="middle" class="body">독립 실행 가능</text>
+  <text x="1490" y="447" text-anchor="middle" class="small">키 수집 완료 전제</text>
+  <rect x="375" y="500" width="1170" height="55" class="box note"/>
+  <text x="960" y="534" text-anchor="middle" class="body">판정 단계는 해시의 원래 제약 종류를 다시 해석하지 않고, 같은 충돌 식별자인지만 비교한다.</text>
 </svg>

@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1540" height="720" viewBox="0 0 1540 720" role="img" aria-labelledby="title desc">
+  <title id="title">Gate Order FIFO와 completed set으로 안전한 LSA를 결정</title>
+  <desc id="desc">Gate Order FIFO의 head를 completed set과 순서대로 비교한다. C1은 완료되어 제거하고 frontier를 전진시키지만 C2가 없으면 중단한다. 이후 C2가 완료되면 C2와 이미 완료된 C3을 연속으로 제거하고 안전한 LSA 포인터를 C3까지 전진시킨다.</desc>
+  <defs>
+    <style>
+      text{font-family:"Pretendard","Noto Sans KR",sans-serif;fill:#172033}.title{font-size:28px;font-weight:700}.sub{font-size:15px;fill:#64748b}.head{font-size:17px;font-weight:700}.body{font-size:14px}.small{font-size:13px;fill:#64748b}.mono{font:14px ui-monospace,SFMono-Regular,Menlo,monospace}.panel{fill:#f8fafc;stroke:#cbd5e1;stroke-width:2}.fifo{fill:#fff7ed;stroke:#f97316;stroke-width:2}.done{fill:#dcfce7;stroke:#16a34a;stroke-width:2}.hole{fill:#fef2f2;stroke:#ef4444;stroke-width:2;stroke-dasharray:7 5}.set{fill:#f5f3ff;stroke:#8b5cf6;stroke-width:2}.safe{fill:#ecfdf5;stroke:#10b981;stroke-width:2}.axis{stroke:#475569;stroke-width:3;marker-end:url(#arrow)}.tick{stroke:#475569;stroke-width:2}.arrow{fill:none;stroke:#64748b;stroke-width:2.4;marker-end:url(#arrow)}.greenArrow{fill:none;stroke:#059669;stroke-width:2.7;marker-end:url(#greenArrow)}.orangeArrow{fill:none;stroke:#ea580c;stroke-width:2.5;marker-end:url(#orangeArrow)}.purpleArrow{fill:none;stroke:#7c3aed;stroke-width:2.5;marker-end:url(#purpleArrow)}.step{fill:#172033}.stepText{font-size:14px;font-weight:700;fill:#fff}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#64748b"/></marker><marker id="greenArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#059669"/></marker><marker id="orangeArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#ea580c"/></marker><marker id="purpleArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#7c3aed"/></marker>
+  </defs>
+  <rect width="1540" height="720" fill="#fff"/>
+  <text x="42" y="48" class="title">Gate Order의 head를 completed set과 순서대로 비교한다</text>
+  <text x="42" y="77" class="sub">개별 result의 위치가 아니라 FIFO head부터 연속으로 확인된 위치까지만 안전한 LSA로 저장한다.</text>
+
+  <!-- Before C2 completes -->
+  <circle cx="64" cy="121" r="17" class="step"/><text x="64" y="126" text-anchor="middle" class="stepText">1</text>
+  <rect x="42" y="148" width="710" height="330" rx="18" class="panel"/>
+  <text x="397" y="182" text-anchor="middle" class="head">C3 result가 먼저 도착한 상태</text>
+  <text x="76" y="225" class="body">Gate Order FIFO</text><text x="76" y="255" class="mono">head</text><path d="M116 250H145" class="arrow"/>
+  <rect x="150" y="216" width="120" height="64" rx="9" class="done"/><text x="210" y="244" text-anchor="middle" class="mono">C1</text><text x="210" y="265" text-anchor="middle" class="small">완료</text>
+  <rect x="292" y="216" width="120" height="64" rx="9" class="hole"/><text x="352" y="244" text-anchor="middle" class="mono">C2</text><text x="352" y="265" text-anchor="middle" class="small">미완료</text>
+  <rect x="434" y="216" width="120" height="64" rx="9" class="done"/><text x="494" y="244" text-anchor="middle" class="mono">C3</text><text x="494" y="265" text-anchor="middle" class="small">완료</text>
+  <rect x="575" y="216" width="138" height="64" rx="9" class="set"/><text x="644" y="242" text-anchor="middle" class="body">completed set</text><text x="644" y="265" text-anchor="middle" class="mono">{C1, C3}</text>
+
+  <rect x="76" y="318" width="286" height="112" rx="11" class="safe"/>
+  <text x="219" y="347" text-anchor="middle" class="head">① head C1 조회</text><text x="219" y="374" text-anchor="middle" class="mono">C1 ∈ completed set</text><text x="219" y="401" text-anchor="middle" class="body">C1 제거 · frontier=C1</text>
+  <path d="M367 374H397" class="greenArrow"/>
+  <rect x="406" y="318" width="307" height="112" rx="11" class="hole"/>
+  <text x="559" y="347" text-anchor="middle" class="head">② 새 head C2 조회</text><text x="559" y="374" text-anchor="middle" class="mono">C2 ∉ completed set</text><text x="559" y="401" text-anchor="middle" class="body">중단 · C3은 FIFO에 보존</text>
+
+  <!-- After C2 completes -->
+  <circle cx="814" cy="121" r="17" class="step"/><text x="814" y="126" text-anchor="middle" class="stepText">2</text>
+  <rect x="792" y="148" width="706" height="330" rx="18" class="panel"/>
+  <text x="1145" y="182" text-anchor="middle" class="head">C2 result가 도착해 hole이 닫힌 상태</text>
+  <text x="826" y="225" class="body">남은 Gate Order FIFO</text><text x="826" y="255" class="mono">head</text><path d="M866 250H895" class="arrow"/>
+  <rect x="900" y="216" width="120" height="64" rx="9" class="done"/><text x="960" y="244" text-anchor="middle" class="mono">C2</text><text x="960" y="265" text-anchor="middle" class="small">완료</text>
+  <rect x="1042" y="216" width="120" height="64" rx="9" class="done"/><text x="1102" y="244" text-anchor="middle" class="mono">C3</text><text x="1102" y="265" text-anchor="middle" class="small">완료</text>
+  <rect x="1200" y="216" width="250" height="64" rx="9" class="set"/><text x="1325" y="242" text-anchor="middle" class="body">completed set</text><text x="1325" y="265" text-anchor="middle" class="mono">{C2, C3}</text>
+
+  <rect x="826" y="318" width="286" height="112" rx="11" class="safe"/>
+  <text x="969" y="347" text-anchor="middle" class="head">① head C2 조회</text><text x="969" y="374" text-anchor="middle" class="mono">C2 ∈ completed set</text><text x="969" y="401" text-anchor="middle" class="body">C2 제거 · frontier=C2</text>
+  <path d="M1117 374H1147" class="greenArrow"/>
+  <rect x="1156" y="318" width="294" height="112" rx="11" class="safe"/>
+  <text x="1303" y="347" text-anchor="middle" class="head">② 새 head C3 조회</text><text x="1303" y="374" text-anchor="middle" class="mono">C3 ∈ completed set</text><text x="1303" y="401" text-anchor="middle" class="body">C3 제거 · frontier=C3</text>
+
+  <!-- LSA timeline -->
+  <text x="42" y="526" class="head">로그 선에서 본 포인터 이동</text>
+  <line x1="115" y1="606" x2="1430" y2="606" class="axis"/>
+  <g class="mono">
+    <line x1="230" y1="593" x2="230" y2="619" class="tick"/><text x="230" y="642" text-anchor="middle">R1</text>
+    <line x1="400" y1="593" x2="400" y2="619" class="tick"/><text x="400" y="642" text-anchor="middle">C1</text>
+    <line x1="650" y1="593" x2="650" y2="619" class="tick"/><text x="650" y="642" text-anchor="middle">C2</text>
+    <line x1="870" y1="593" x2="870" y2="619" class="tick"/><text x="870" y="642" text-anchor="middle">R3</text>
+    <line x1="1050" y1="593" x2="1050" y2="619" class="tick"/><text x="1050" y="642" text-anchor="middle">C3</text>
+  </g>
+  <path d="M230 583V548" class="greenArrow"/><text x="230" y="536" text-anchor="middle" class="small">C2 완료 전</text><text x="230" y="565" text-anchor="middle" class="mono">committed_rep=R1</text>
+  <path d="M400 583V526" class="greenArrow"/><text x="400" y="514" text-anchor="middle" class="mono">frontier=committed=C1</text>
+  <path d="M1050 583V526" class="orangeArrow"/><text x="1050" y="514" text-anchor="middle" class="mono">C3 result · max_completed=C3</text>
+  <path d="M870 658V670H720V684" class="purpleArrow"/><text x="720" y="706" text-anchor="middle" class="mono">C2 완료 후 committed_rep=R3</text>
+  <path d="M1050 658V670H1200V684" class="purpleArrow"/><text x="1200" y="706" text-anchor="middle" class="mono">frontier=committed=C3</text>
+</svg>

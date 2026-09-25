@@ -37,5 +37,6 @@
 <text x="1142" y="550" class="code" xml:space="preserve">│  └─ la_commit_transaction()        </text>
 <text x="1142" y="578" class="code" xml:space="preserve">│     └─ db_commit_transaction()</text>
 <text x="1142" y="606" class="code new" xml:space="preserve">└─ ⑤ la_enqueue_apply_result()      </text>
-<text x="1142" y="634" class="code" xml:space="preserve">   └─ error·commit_lsa·committed_rep_lsa·통계를 result queue에 저장</text>
+<text x="1142" y="634" class="code" xml:space="preserve">   ├─ error·commit_lsa·committed_rep_lsa·통계를 result queue에 저장</text>
+<text x="1142" y="662" class="code new" xml:space="preserve">   └─ 첫 미수거 result만 result_pending 설정·signal</text>
 </svg>

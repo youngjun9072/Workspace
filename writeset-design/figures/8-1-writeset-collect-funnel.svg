@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" font-family="-apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif">
+<defs><marker id="arrG" markerWidth="10" markerHeight="10" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#374151"/></marker><marker id="arrO" markerWidth="10" markerHeight="10" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#ea580c"/></marker></defs>
+<rect width="1200" height="560" fill="#fff"/>
+<text x="40" y="44" font-size="24" font-weight="700" fill="#111827">행 연산 3종의 writeset 수집은 하나의 종단으로 모인다</text>
+<text x="40" y="68" font-size="14" fill="#6b7280">붉은 박스가 PoC에서 추가된 호출. 기존 인덱스 처리·복제 정보 생성은 그대로 두고 그 사이에 끼어든다.</text>
+<rect x="40" y="120" width="120" height="46" rx="7" fill="#fff" stroke="#374151" stroke-width="2"/><text x="100.0" y="149.0" font-size="16" font-weight="700" text-anchor="middle" fill="#111827">INSERT</text>
+<rect x="40" y="200" width="120" height="46" rx="7" fill="#fff" stroke="#374151" stroke-width="2"/><text x="100.0" y="229.0" font-size="16" font-weight="700" text-anchor="middle" fill="#111827">DELETE</text>
+<rect x="40" y="300" width="120" height="46" rx="7" fill="#fff" stroke="#374151" stroke-width="2"/><text x="100.0" y="329.0" font-size="16" font-weight="700" text-anchor="middle" fill="#111827">UPDATE</text>
+<rect x="230" y="120" width="330" height="126" rx="7" fill="#fff" stroke="#374151" stroke-width="2"/><text x="395.0" y="181.0" font-size="16" font-weight="700" text-anchor="middle" fill="#111827">locator_add_or_remove_index_internal()</text><text x="395.0" y="201.0" font-size="12" text-anchor="middle" fill="#6b7280">INSERT·DELETE 인덱스 순회</text>
+<rect x="230" y="300" width="330" height="46" rx="7" fill="#fff" stroke="#374151" stroke-width="2"/><text x="395.0" y="321.0" font-size="16" font-weight="700" text-anchor="middle" fill="#111827">locator_update_index()</text><text x="395.0" y="341.0" font-size="12" text-anchor="middle" fill="#6b7280">UPDATE old/new 인덱스 순회</text>
+<line x1="160" y1="143" x2="230" y2="160" stroke="#374151" stroke-width="2" marker-end="url(#arrG)"/>
+<line x1="160" y1="223" x2="230" y2="206" stroke="#374151" stroke-width="2" marker-end="url(#arrG)"/>
+<line x1="160" y1="323" x2="230" y2="323" stroke="#374151" stroke-width="2" marker-end="url(#arrG)"/>
+<rect x="640" y="110" width="300" height="46" rx="7" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/><text x="790.0" y="131.0" font-size="16" font-weight="700" text-anchor="middle" fill="#9a3412">log_writeset_add_dbvalue()</text><text x="790.0" y="151.0" font-size="12" text-anchor="middle" fill="#c2410c">PK · UNIQUE · REVERSE UNIQUE → WRITE</text>
+<rect x="640" y="190" width="300" height="64" rx="7" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/><text x="790.0" y="220.0" font-size="16" font-weight="700" text-anchor="middle" fill="#9a3412">locator_writeset_collect_fk_ref()</text><text x="790.0" y="240.0" font-size="12" text-anchor="middle" fill="#c2410c">→ log_writeset_add_ref_dbvalue()   자식 FK → REF</text>
+<line x1="560" y1="150" x2="640" y2="133" stroke="#ea580c" stroke-width="2" marker-end="url(#arrO)"/>
+<line x1="560" y1="200" x2="640" y2="215" stroke="#ea580c" stroke-width="2" marker-end="url(#arrO)"/>
+<line x1="560" y1="312" x2="640" y2="140" stroke="#ea580c" stroke-width="2" marker-end="url(#arrO)"/>
+<line x1="560" y1="323" x2="640" y2="228" stroke="#ea580c" stroke-width="2" marker-end="url(#arrO)"/>
+<rect x="640" y="330" width="300" height="54" rx="7" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/><text x="790.0" y="355.0" font-size="16" font-weight="700" text-anchor="middle" fill="#9a3412">log_writeset_push_hash()</text><text x="790.0" y="375.0" font-size="12" text-anchor="middle" fill="#c2410c">WRITE·REF 공통 종단</text>
+
+<line x1="790" y1="254" x2="790" y2="330" stroke="#ea580c" stroke-width="2" marker-end="url(#arrO)"/>
+<path d="M940,133 L985,133 L985,357 L945,357" fill="none" stroke="#ea580c" stroke-width="2" marker-end="url(#arrO)"/>
+<text x="785" y="296" font-size="12" text-anchor="end" fill="#c2410c">_internal() → push() 를 거쳐</text>
+<rect x="430" y="440" width="300" height="64" rx="7" fill="#f8fafc" stroke="#64748b" stroke-width="2"/><text x="580.0" y="470.0" font-size="16" font-weight="700" text-anchor="middle" fill="#111827">size &lt; LOG_WRITESET_TX_LIMIT</text><text x="580.0" y="490.0" font-size="12" text-anchor="middle" fill="#6b7280">LOG_TDES.ws_hashes 에 {hash, kind} 추가</text>
+<rect x="850" y="440" width="300" height="64" rx="7" fill="#fef2f2" stroke="#dc2626" stroke-width="2"/><text x="1000.0" y="470.0" font-size="16" font-weight="700" text-anchor="middle" fill="#991b1b">한도 도달 → commit-order 폴백</text><text x="1000.0" y="490.0" font-size="12" text-anchor="middle" fill="#b91c1c">ws_hashes 전체 제거 · ws_overflow = true</text>
+<line x1="760" y1="384" x2="600" y2="440" stroke="#ea580c" stroke-width="2" marker-end="url(#arrO)"/>
+<line x1="820" y1="384" x2="980" y2="440" stroke="#ea580c" stroke-width="2" marker-end="url(#arrO)"/>
+<text x="40" y="535" font-size="14" fill="#374151">한도 검사가 종단 한 곳에만 있으므로 WRITE와 REF는 같은 per-tx 한도를 공유한다. 수집은 이 행 변경이 복제 로그를 생성하는 경우에만 일어난다.</text>
+</svg>

@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="680" viewBox="0 0 1500 680">
+  <defs>
+    <style>
+      text{font-family:Arial,'Noto Sans KR',sans-serif;fill:#172033}
+      .title{font-size:29px;font-weight:700}.head{font-size:20px;font-weight:700}.body{font-size:16px}.small{font-size:14px;fill:#64748b}
+      .panel{rx:15;stroke-width:2}.copyPanel{fill:#fff7ed;stroke:#f97316}.pointerPanel{fill:#f0fdf4;stroke:#16a34a}
+      .apply{fill:#ecfeff;stroke:#0891b2;stroke-width:2;rx:12}.item{fill:#fff;stroke:#64748b;stroke-width:1.8;rx:10}
+      .taskCopy{fill:#fff1f2;stroke:#e11d48;stroke-width:2;rx:12}.taskPtr{fill:#f5f3ff;stroke:#8b5cf6;stroke-width:2;rx:12}.worker{fill:#f8fafc;stroke:#475569;stroke-width:2;rx:12}
+      .arrow{fill:none;stroke:#475569;stroke-width:2.4;marker-end:url(#arrow)}.copyArrow{fill:none;stroke:#e11d48;stroke-width:2.5;stroke-dasharray:7 5;marker-end:url(#red)}
+      .pointer{fill:none;stroke:#2563eb;stroke-width:3;marker-end:url(#blue)}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#475569"/></marker>
+    <marker id="red" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#e11d48"/></marker>
+    <marker id="blue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#2563eb"/></marker>
+  </defs>
+
+  <rect width="1500" height="680" fill="#fff"/>
+  <text x="48" y="52" class="title">LA_ITEM 복사와 task.apply 포인터 연결 비교</text>
+  <text x="48" y="82" class="small">transaction task는 기존 LA_APPLY의 item 목록을 다시 만들지 않고 포인터로 연결한다.</text>
+
+  <rect x="48" y="120" width="660" height="500" class="panel copyPanel"/>
+  <text x="378" y="160" text-anchor="middle" class="head">item 전체를 task에 다시 복사하는 경우</text>
+
+  <rect x="85" y="205" width="245" height="175" class="apply"/>
+  <text x="207" y="240" text-anchor="middle" class="head">기존 LA_APPLY(T1)</text>
+  <rect x="110" y="270" width="80" height="62" class="item"/><text x="150" y="307" text-anchor="middle" class="body">item 1</text>
+  <rect x="205" y="270" width="80" height="62" class="item"/><text x="245" y="307" text-anchor="middle" class="body">item 2</text>
+  <text x="302" y="308" class="head">…</text>
+
+  <rect x="430" y="205" width="240" height="220" class="taskCopy"/>
+  <text x="550" y="240" text-anchor="middle" class="head">task 내부 복사본</text>
+  <rect x="455" y="270" width="80" height="62" class="item"/><text x="495" y="307" text-anchor="middle" class="body">item 1</text>
+  <rect x="550" y="270" width="80" height="62" class="item"/><text x="590" y="307" text-anchor="middle" class="body">item 2</text>
+  <text x="647" y="308" class="head">…</text>
+  <text x="550" y="380" text-anchor="middle" class="small">item 수만큼 새 할당·복사·해제</text>
+  <path d="M330 290H430" class="copyArrow"/>
+  <text x="380" y="274" text-anchor="middle" class="small">N개 복사</text>
+
+  <rect x="430" y="480" width="240" height="85" class="worker"/>
+  <text x="550" y="515" text-anchor="middle" class="head">worker</text>
+  <text x="550" y="543" text-anchor="middle" class="small">task의 복사본을 적용</text>
+  <path d="M550 425V480" class="arrow"/>
+
+  <rect x="792" y="120" width="660" height="500" class="panel pointerPanel"/>
+  <text x="1122" y="160" text-anchor="middle" class="head">설계안: 기존 목록을 포인터로 연결</text>
+
+  <rect x="830" y="205" width="275" height="175" class="apply"/>
+  <text x="967" y="240" text-anchor="middle" class="head">LA_APPLY(T1)</text>
+  <rect x="860" y="270" width="80" height="62" class="item"/><text x="900" y="307" text-anchor="middle" class="body">item 1</text>
+  <rect x="955" y="270" width="80" height="62" class="item"/><text x="995" y="307" text-anchor="middle" class="body">item 2</text>
+  <text x="1052" y="308" class="head">…</text>
+
+  <rect x="1200" y="220" width="205" height="120" class="taskPtr"/>
+  <text x="1302" y="255" text-anchor="middle" class="head">LA_APPLY_TASK</text>
+  <text x="1302" y="289" text-anchor="middle" class="body">task.apply</text>
+  <text x="1302" y="317" text-anchor="middle" class="small">포인터 하나만 보관</text>
+  <path d="M1200 280H1105" class="pointer"/>
+
+  <rect x="1200" y="480" width="205" height="85" class="worker"/>
+  <text x="1302" y="515" text-anchor="middle" class="head">worker</text>
+  <text x="1302" y="543" text-anchor="middle" class="small">같은 LA_ITEM 목록 적용</text>
+  <path d="M1302 340V480" class="arrow"/>
+
+  <text x="967" y="435" text-anchor="middle" class="body">추가 item 할당·복사 없음</text>
+  <text x="967" y="463" text-anchor="middle" class="small">대신 worker 결과가 확정될 때까지 원본 목록을 유지한다.</text>
+
+  <text x="48" y="654" class="small">왼쪽은 비교를 위한 대안이며 실제 설계는 오른쪽의 task.apply 포인터 연결을 사용한다.</text>
+</svg>

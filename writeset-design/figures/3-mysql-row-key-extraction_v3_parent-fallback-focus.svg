@@ -31,6 +31,7 @@
       .state{stroke:#cb7625;stroke-width:1.9;stroke-dasharray:6 4;fill:none;marker-end:url(#o)}
       .fallback{stroke:#c94b4b;stroke-width:2.5;fill:none;marker-end:url(#r)}
       .fallback-state{stroke:#c94b4b;stroke-width:2;stroke-dasharray:6 4;fill:none;marker-end:url(#r)}
+      .handoff{stroke:#294965;stroke-width:3;fill:none;marker-end:url(#a)}
     </style>
     <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#526174"/></marker>
     <marker id="c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#74869a"/></marker>
@@ -173,8 +174,8 @@
   <text x="1615" y="690" text-anchor="middle" class="sm">키 해시와 상태 플래그를 전달</text>
   <text x="1615" y="715" text-anchor="middle" class="bh">→ Algorithm 2</text>
   <text x="1615" y="737" text-anchor="middle" class="tx">커밋 시 의존성 판정</text>
-  <path d="M1615 315V665" class="call"/>
-  <path d="M1615 575V665" class="call"/>
+  <path d="M1575 315V635H1588V665" class="handoff"/>
+  <path d="M1655 575V635H1642V665" class="handoff"/>
 
   <rect x="1182" y="132" width="221" height="406" rx="16" fill="none" stroke="#d83b3b" stroke-width="4" pointer-events="none"/>
   <text x="900" y="866" text-anchor="middle" class="sm">이 단계에서는 commit-order 유지, history_start 갱신, history clear를 수행하지 않는다.</text>

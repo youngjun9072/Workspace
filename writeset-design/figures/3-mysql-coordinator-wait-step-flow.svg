@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1370" viewBox="0 0 1600 1370" role="img" aria-labelledby="title desc">
+  <title id="title">MySQL coordinator의 LC·LWM 대기와 relay log head blocking 단계</title>
+  <desc id="desc">T_PARENT 배정부터 T_CHILD_1 대기와 장기 실행, T_CHILD_2에서 발생한 coordinator 대기 때문에 실행 가능한 T_INDEPENDENT도 읽지 못하는 상태, T_CHILD_1 완료 뒤 LWM이 2로 전진하여 두 트랜잭션이 서로 다른 worker에 배정되는 과정을 네 단계로 보여 준다.</desc>
+  <defs>
+    <style>
+      .title{font:700 27px 'Noto Sans KR','Malgun Gothic','Noto Sans CJK KR','Droid Sans Fallback',sans-serif;fill:#26303d}
+      .sub{font:400 15px 'Noto Sans KR','Malgun Gothic','Noto Sans CJK KR','Droid Sans Fallback',sans-serif;fill:#596678}
+      .h{font:700 16px 'Noto Sans KR','Malgun Gothic','Noto Sans CJK KR','Droid Sans Fallback',sans-serif;fill:#26303d}
+      .t{font:400 14px 'Noto Sans KR','Malgun Gothic','Noto Sans CJK KR','Droid Sans Fallback',sans-serif;fill:#445062}
+      .small{font:400 12px 'Noto Sans KR','Malgun Gothic','Noto Sans CJK KR','Droid Sans Fallback',sans-serif;fill:#596678}
+      .mono{font:600 13px ui-monospace,SFMono-Regular,Consolas,'Droid Sans Mono',monospace;fill:#26303d}
+      .panel{fill:#fafbfd;stroke:#c7d0da;stroke-width:1.4}
+      .rail{stroke:#8a99ab;stroke-width:2.2;marker-end:url(#arrow)}
+      .node{fill:#eef5fb;stroke:#5681ad;stroke-width:1.6}
+      .future{fill:#f5f6f8;stroke:#aab4c2;stroke-width:1.4;stroke-dasharray:6 4}
+      .ready{fill:#e8f5ec;stroke:#3fa35b;stroke-width:1.7}
+      .wait{fill:#fff0f0;stroke:#c94b4b;stroke-width:1.9}
+      .long{fill:#fff3e7;stroke:#d9822b;stroke-width:2.2}
+      .gate{fill:#fff7e8;stroke:#d99a2b;stroke-width:1.7}
+      .lwm{fill:#efe6f7;stroke:#9b6fc4;stroke-width:1.6}
+      .worker{fill:#fff;stroke:#b5bfcc;stroke-width:1.3}
+      .run{fill:#2c7be5}
+      .runlong{fill:#d9822b}
+      .runready{fill:#3fa35b}
+      .cursor{fill:#2c7be5}
+      .stop{stroke:#c94b4b;stroke-width:5}
+      .signal{fill:none;stroke:#9b6fc4;stroke-width:2.2;marker-end:url(#purple)}
+      .flow{fill:none;stroke:#526174;stroke-width:2;marker-end:url(#arrow)}
+      .redflow{fill:none;stroke:#c94b4b;stroke-width:2;stroke-dasharray:6 4;marker-end:url(#red)}
+      .orangeflow{fill:none;stroke:#d9822b;stroke-width:2;marker-end:url(#orange)}
+      .step{fill:#26303d}
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#526174"/></marker>
+    <marker id="red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#c94b4b"/></marker>
+    <marker id="orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#d9822b"/></marker>
+    <marker id="purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#9b6fc4"/></marker>
+  </defs>
+
+  <rect width="1600" height="1370" fill="#fff"/>
+  <text x="50" y="48" class="title">coordinator가 현재 GTID에서 멈추면, 실행 가능한 뒤 트랜잭션도 읽히지 않는다</text>
+  <text x="50" y="76" class="sub">relay log 읽기 포인터 · LC/LWM gate · worker 실행 · 완료 signal을 같은 흐름에 놓은 단계별 예제</text>
+  <path d="M88 135V1305" stroke="#c7d0da" stroke-width="3" marker-end="url(#arrow)"/>
+  <text x="54" y="720" class="small" transform="rotate(-90 54 720)">시간 진행</text>
+
+  <!-- STEP 1 -->
+  <rect x="120" y="104" width="1430" height="270" rx="15" class="panel"/>
+  <circle cx="88" cy="143" r="25" class="step"/><text x="88" y="149" text-anchor="middle" class="h" style="fill:#fff">1</text>
+  <text x="150" y="139" class="h">T_PARENT · 즉시 통과</text>
+  <rect x="1280" y="119" width="225" height="38" rx="19" class="lwm"/><text x="1392" y="144" text-anchor="middle" class="mono">LWM = 0</text>
+  <text x="153" y="177" class="small">relay log · 읽기 방향</text><line x1="320" y1="172" x2="1492" y2="172" class="rail"/>
+  <g>
+    <rect x="190" y="190" width="250" height="65" rx="9" class="ready"/><text x="315" y="216" text-anchor="middle" class="h">T_PARENT</text><text x="315" y="240" text-anchor="middle" class="mono">LC=0 · SEQ=1</text>
+    <rect x="470" y="190" width="250" height="65" rx="9" class="future"/><text x="595" y="216" text-anchor="middle" class="h">T_CHILD_1</text><text x="595" y="240" text-anchor="middle" class="mono">LC=1 · SEQ=2</text>
+    <rect x="750" y="190" width="250" height="65" rx="9" class="future"/><text x="875" y="216" text-anchor="middle" class="h">T_CHILD_2</text><text x="875" y="240" text-anchor="middle" class="mono">LC=2 · SEQ=3</text>
+    <rect x="1030" y="190" width="250" height="65" rx="9" class="future"/><text x="1155" y="216" text-anchor="middle" class="h">T_INDEPENDENT</text><text x="1155" y="240" text-anchor="middle" class="mono">LC=1 · SEQ=4</text>
+  </g>
+  <path d="M315 182l-10-15h20z" class="cursor"/><text x="315" y="278" text-anchor="middle" class="small">coordinator read cursor</text>
+  <path d="M315 282V318H505" class="flow"/><rect x="510" y="292" width="235" height="50" rx="8" class="gate"/><text x="628" y="314" text-anchor="middle" class="mono">LC 0 ≤ LWM 0</text><text x="628" y="333" text-anchor="middle" class="small">gate 통과</text>
+  <path d="M745 317H810" class="flow"/><rect x="815" y="292" width="400" height="50" rx="8" class="worker"/><text x="835" y="323" class="h">worker 1</text><rect x="935" y="303" width="245" height="28" rx="5" class="run"/><text x="1058" y="322" text-anchor="middle" class="small" style="fill:#fff">T_PARENT 실행</text>
+
+  <!-- STEP 2 -->
+  <rect x="120" y="392" width="1430" height="290" rx="15" class="panel"/>
+  <circle cx="88" cy="431" r="25" class="step"/><text x="88" y="437" text-anchor="middle" class="h" style="fill:#fff">2</text>
+  <text x="150" y="427" class="h">T_CHILD_1 · 부모 완료를 기다린 뒤 배정</text>
+  <rect x="1280" y="407" width="225" height="38" rx="19" class="lwm"/><text x="1392" y="432" text-anchor="middle" class="mono">LWM 0 → 1</text>
+  <text x="153" y="465" class="small">relay log</text><line x1="245" y1="460" x2="1492" y2="460" class="rail"/>
+  <rect x="190" y="478" width="250" height="65" rx="9" class="node"/><text x="315" y="504" text-anchor="middle" class="h">T_PARENT</text><text x="315" y="528" text-anchor="middle" class="small">worker 1 실행 중</text>
+  <rect x="470" y="478" width="250" height="65" rx="9" class="wait"/><text x="595" y="504" text-anchor="middle" class="h">T_CHILD_1 · LONG</text><text x="595" y="528" text-anchor="middle" class="mono">LC=1 · SEQ=2</text>
+  <rect x="750" y="478" width="250" height="65" rx="9" class="future"/><text x="875" y="504" text-anchor="middle" class="h">T_CHILD_2</text><text x="875" y="528" text-anchor="middle" class="mono">LC=2</text>
+  <rect x="1030" y="478" width="250" height="65" rx="9" class="future"/><text x="1155" y="504" text-anchor="middle" class="h">T_INDEPENDENT</text><text x="1155" y="528" text-anchor="middle" class="mono">LC=1</text>
+  <path d="M595 470l-10-15h20z" class="cursor"/>
+  <rect x="190" y="582" width="310" height="62" rx="9" class="worker"/><text x="210" y="608" class="h">worker 1</text><rect x="300" y="593" width="170" height="28" rx="5" class="run"/><text x="385" y="612" text-anchor="middle" class="small" style="fill:#fff">T_PARENT 완료</text>
+  <path d="M470 621C520 660 550 660 595 642" class="signal"/><text x="520" y="672" class="small" style="fill:#76529d">완료 표시 · LWM=1 · condition signal</text>
+  <rect x="630" y="574" width="260" height="70" rx="9" class="gate"/><text x="760" y="598" text-anchor="middle" class="mono">1 &gt; 0 · wait</text><text x="760" y="622" text-anchor="middle" class="mono">wake-up → 1 ≤ 1</text><text x="760" y="639" text-anchor="middle" class="small">재판정 후 통과</text>
+  <path d="M595 548V568H630" class="redflow"/><path d="M890 609H935" class="flow"/>
+  <rect x="940" y="574" width="420" height="70" rx="9" class="worker"/><text x="960" y="600" class="h">worker 2</text><rect x="1050" y="587" width="280" height="38" rx="6" class="runlong"/><text x="1190" y="612" text-anchor="middle" class="t" style="fill:#fff">T_CHILD_1 장기 실행 시작 ━━━</text>
+
+  <!-- STEP 3 -->
+  <rect x="120" y="700" width="1430" height="288" rx="15" class="panel"/>
+  <circle cx="88" cy="739" r="25" class="step"/><text x="88" y="745" text-anchor="middle" class="h" style="fill:#fff">3</text>
+  <text x="150" y="735" class="h">T_CHILD_2 · coordinator wait가 뒤의 독립 트랜잭션까지 막음</text>
+  <rect x="1280" y="715" width="225" height="38" rx="19" class="lwm"/><text x="1392" y="740" text-anchor="middle" class="mono">LWM = 1</text>
+  <text x="153" y="773" class="small">relay log</text><line x1="245" y1="768" x2="1492" y2="768" class="rail"/>
+  <rect x="190" y="786" width="250" height="65" rx="9" class="node"/><text x="315" y="812" text-anchor="middle" class="h">T_PARENT</text><text x="315" y="836" text-anchor="middle" class="small">완료 · LWM에 포함</text>
+  <rect x="470" y="786" width="250" height="65" rx="9" class="long"/><text x="595" y="812" text-anchor="middle" class="h">T_CHILD_1 · LONG</text><text x="595" y="836" text-anchor="middle" class="small">worker 2 실행 중</text>
+  <rect x="750" y="786" width="250" height="65" rx="9" class="wait"/><text x="875" y="812" text-anchor="middle" class="h">T_CHILD_2</text><text x="875" y="836" text-anchor="middle" class="mono">LC=2 &gt; LWM=1</text>
+  <line x1="1015" y1="777" x2="1015" y2="863" class="stop"/>
+  <rect x="1030" y="786" width="330" height="65" rx="9" class="future"/><text x="1195" y="812" text-anchor="middle" class="h">T_INDEPENDENT</text><text x="1195" y="836" text-anchor="middle" class="mono">LC=1 ≤ LWM=1 · 실행 가능</text>
+  <path d="M875 778l-10-15h20z" class="cursor"/><text x="875" y="876" text-anchor="middle" class="small" style="fill:#b23d3d">read cursor 정지</text><text x="1195" y="876" text-anchor="middle" class="small" style="fill:#b23d3d">하지만 아직 GTID를 읽지 못함</text>
+  <rect x="300" y="910" width="470" height="55" rx="9" class="worker"/><text x="320" y="943" class="h">worker 2</text><rect x="430" y="921" width="310" height="30" rx="5" class="runlong"/><text x="585" y="941" text-anchor="middle" class="small" style="fill:#fff">T_CHILD_1 계속 실행 ━━━━━━━━━</text>
+  <path d="M875 881V937H800" class="redflow"/><rect x="795" y="910" width="445" height="55" rx="9" class="wait"/><text x="1017" y="934" text-anchor="middle" class="mono">wait_for_last_committed_trx(2)</text><text x="1017" y="954" text-anchor="middle" class="small">앞에 별도 pending queue가 없어 뒤 이벤트로 이동 불가</text>
+
+  <!-- STEP 4 -->
+  <rect x="120" y="1006" width="1430" height="310" rx="15" class="panel"/>
+  <circle cx="88" cy="1045" r="25" class="step"/><text x="88" y="1051" text-anchor="middle" class="h" style="fill:#fff">4</text>
+  <text x="150" y="1041" class="h">T_CHILD_1 완료 · wake-up 뒤 T_CHILD_2와 T_INDEPENDENT를 차례로 읽어 서로 다른 worker에 배정</text>
+  <rect x="1280" y="1021" width="225" height="38" rx="19" class="lwm"/><text x="1392" y="1046" text-anchor="middle" class="mono">LWM 1 → 2</text>
+  <text x="153" y="1079" class="small">relay log</text><line x1="245" y1="1074" x2="1492" y2="1074" class="rail"/>
+  <rect x="190" y="1092" width="250" height="65" rx="9" class="node"/><text x="315" y="1118" text-anchor="middle" class="h">T_PARENT</text><text x="315" y="1142" text-anchor="middle" class="small">완료</text>
+  <rect x="470" y="1092" width="250" height="65" rx="9" class="node"/><text x="595" y="1118" text-anchor="middle" class="h">T_CHILD_1</text><text x="595" y="1142" text-anchor="middle" class="small">완료 · signal</text>
+  <rect x="750" y="1092" width="250" height="65" rx="9" class="ready"/><text x="875" y="1118" text-anchor="middle" class="h">T_CHILD_2</text><text x="875" y="1142" text-anchor="middle" class="mono">LC=2 ≤ LWM=2</text>
+  <rect x="1030" y="1092" width="330" height="65" rx="9" class="ready"/><text x="1195" y="1118" text-anchor="middle" class="h">T_INDEPENDENT</text><text x="1195" y="1142" text-anchor="middle" class="mono">LC=1 ≤ LWM=2</text>
+  <path d="M595 1084l-10-15h20z" fill="#9b6fc4"/><path d="M595 1160C650 1192 710 1192 790 1160" class="signal"/><text x="665" y="1205" class="small" style="fill:#76529d">완료 표시 → LWM=2 → condition signal</text>
+  <path d="M875 1164V1213" class="flow"/><path d="M1195 1164V1267" class="flow"/>
+  <rect x="785" y="1215" width="590" height="78" rx="9" class="worker"/>
+  <text x="805" y="1241" class="h">worker 1</text><rect x="910" y="1225" width="200" height="27" rx="5" class="run"/><text x="1010" y="1244" text-anchor="middle" class="small" style="fill:#fff">T_CHILD_2</text>
+  <text x="805" y="1276" class="h">worker 3</text><rect x="1115" y="1260" width="225" height="27" rx="5" class="runready"/><text x="1228" y="1279" text-anchor="middle" class="small" style="fill:#fff">T_INDEPENDENT</text>
+  <text x="1390" y="1243" class="small">① 재판정·배정</text><text x="1390" y="1278" class="small">② 다음 GTID 읽고 배정</text>
+
+  <rect x="250" y="1331" width="1200" height="28" rx="7" fill="#fff0f0" stroke="#c94b4b"/>
+  <text x="850" y="1351" text-anchor="middle" class="t">지연의 핵심: T_INDEPENDENT 자신의 LC는 이미 충족했지만, coordinator가 앞 GTID에서 멈춰 읽기와 배정이 늦어진다.</text>
+</svg>

@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="900" viewBox="0 0 1500 900">
+  <defs>
+    <marker id="s4-arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L10 3L0 6Z" fill="#475569"/></marker>
+    <style>
+      text{font-family:'Droid Sans','Noto Sans KR','Malgun Gothic',sans-serif;fill:#172033}.title{font-size:28px;font-weight:700}.sub{font-size:16px;fill:#64748b}.head{font-size:18px;font-weight:700}.body{font-size:15px}.small{font-size:13px;fill:#64748b}.panel{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.6}.barrier{fill:#f5f3ff;stroke:#7c3aed;stroke-width:2.4}.parent{fill:#fff1f2;stroke:#e11d48;stroke-width:2.2}.independent{fill:#eff6ff;stroke:#3b82f6;stroke-width:2.2}.publish{fill:#f0fdf4;stroke:#22c55e;stroke-width:2.2}.arrow{fill:none;stroke:#475569;stroke-width:2.3;marker-end:url(#s4-arrow)}.lane{stroke:#94a3b8;stroke-width:2;stroke-dasharray:7 6}
+    </style>
+  </defs>
+  <rect width="1500" height="900" fill="#fff"/>
+  <text x="750" y="48" text-anchor="middle" class="title">4. T9 부모 WRITE와 T10 독립 WRITE는 C8 뒤에서 병렬 가능하다</text>
+  <text x="750" y="78" text-anchor="middle" class="sub">서로 다른 해시를 probe하므로 둘 다 공통 세대 장벽 history_start=C8만 선택한다</text>
+
+  <rect x="470" y="108" width="560" height="86" rx="14" class="barrier"/>
+  <text x="750" y="142" text-anchor="middle" class="head">공통 시작 장벽 · history_start = C8</text>
+  <text x="750" y="172" text-anchor="middle" class="body">T8까지의 연속 완료만 기다림 · dependency_is_ref = true</text>
+  <path d="M680 194V224H365V252" class="arrow"/><path d="M820 194V224H1135V252" class="arrow"/>
+
+  <rect x="55" y="252" width="650" height="532" rx="18" class="panel"/>
+  <text x="85" y="290" class="head">T9 · parent(id=1) INSERT</text>
+  <rect x="85" y="318" width="590" height="76" rx="12" class="parent"/>
+  <text x="380" y="349" text-anchor="middle" class="head">transaction writeset = {H_P(1):WRITE}</text><text x="380" y="376" text-anchor="middle" class="small">행 연산: 부모 1 생성</text>
+  <rect x="85" y="424" width="590" height="112" rx="12" class="barrier"/>
+  <text x="380" y="456" text-anchor="middle" class="head">probe 후보 P = C8</text><text x="380" y="486" text-anchor="middle" class="body">H_P(1) 슬롯 없음 → history_start C8</text><text x="380" y="516" text-anchor="middle" class="body">dependency_seq=C8 · commit_lsa=C9</text>
+  <rect x="85" y="568" width="590" height="92" rx="12" class="publish"/>
+  <text x="380" y="603" text-anchor="middle" class="head">publish</text><text x="380" y="634" text-anchor="middle" class="body">H_P(1).write_seq = C9</text>
+  <line x1="380" y1="680" x2="380" y2="746" class="lane"/><text x="380" y="770" text-anchor="middle" class="head">C8 통과 뒤 실행</text>
+
+  <rect x="795" y="252" width="650" height="532" rx="18" class="panel"/>
+  <text x="825" y="290" class="head">T10 · independent(id=1) INSERT</text>
+  <rect x="825" y="318" width="590" height="76" rx="12" class="independent"/>
+  <text x="1120" y="349" text-anchor="middle" class="head">transaction writeset = {H_Q(1):WRITE}</text><text x="1120" y="376" text-anchor="middle" class="small">행 연산: 부모와 무관한 독립 행 생성</text>
+  <rect x="825" y="424" width="590" height="112" rx="12" class="barrier"/>
+  <text x="1120" y="456" text-anchor="middle" class="head">probe 후보 P = C8</text><text x="1120" y="486" text-anchor="middle" class="body">H_Q(1) 슬롯 없음 → history_start C8</text><text x="1120" y="516" text-anchor="middle" class="body">dependency_seq=C8 · commit_lsa=C10</text>
+  <rect x="825" y="568" width="590" height="92" rx="12" class="publish"/>
+  <text x="1120" y="603" text-anchor="middle" class="head">publish</text><text x="1120" y="634" text-anchor="middle" class="body">H_Q(1).write_seq = C10</text>
+  <line x1="1120" y1="680" x2="1120" y2="746" class="lane"/><text x="1120" y="770" text-anchor="middle" class="head">C8 통과 뒤 실행</text>
+
+  <rect x="310" y="818" width="880" height="54" rx="13" class="publish"/>
+  <text x="750" y="852" text-anchor="middle" class="head">T10은 T9의 C9을 기다리지 않는다 · dependency_seq가 둘 다 C8이므로 병렬 실행 가능</text>
+</svg>

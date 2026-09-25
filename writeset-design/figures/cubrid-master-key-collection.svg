@@ -53,21 +53,21 @@
   <rect x="75" y="480" width="560" height="118" class="write"/>
   <text x="355" y="514" text-anchor="middle" class="head">PK · UNIQUE · REVERSE UNIQUE → WRITE</text>
   <text x="355" y="546" text-anchor="middle" class="body">현재 클래스·인덱스 공간의 키를 해시</text>
-  <text x="355" y="576" text-anchor="middle" class="mono">log_writeset_add_dbvalue()</text>
+  <text x="355" y="576" text-anchor="middle" class="mono">현재 테이블의 키를 WRITE로 수집</text>
 
   <rect x="765" y="480" width="560" height="118" class="ref"/>
   <text x="1045" y="514" text-anchor="middle" class="head">자식 FOREIGN KEY → REF</text>
   <text x="1045" y="546" text-anchor="middle" class="body">참조 대상 부모 PK 공간의 키를 해시</text>
-  <text x="1045" y="576" text-anchor="middle" class="mono">locator_writeset_collect_fk_ref() → log_writeset_add_ref_dbvalue()</text>
+  <text x="1045" y="576" text-anchor="middle" class="mono">참조 대상 부모 키를 REF로 수집</text>
 
   <path d="M355 598 L355 624 L540 646" class="line"/>
   <path d="M1045 598 L1045 624 L860 646" class="line"/>
   <rect x="350" y="638" width="700" height="100" class="entry"/>
-  <text x="700" y="670" text-anchor="middle" class="head">LOG_WRITESET_ENTRY { hash, kind } 여러 개</text>
+  <text x="700" y="670" text-anchor="middle" class="head">writeset entry { 키 해시, WRITE 또는 REF } 여러 개</text>
   <text x="700" y="701" text-anchor="middle" class="body">예: child(id=10, parent_id=7)</text>
   <text x="700" y="725" text-anchor="middle" class="small">{ H(child PK,10), WRITE }  +  { H(parent PK,7), REF }</text>
 
   <path d="M700 738 L700 766" class="line"/>
   <rect x="430" y="766" width="540" height="58" class="store"/>
-  <text x="700" y="802" text-anchor="middle" class="head">현재 트랜잭션의 LOG_TDES.ws_hashes에 추가</text>
+  <text x="700" y="802" text-anchor="middle" class="head">현재 트랜잭션의 writeset에 추가</text>
 </svg>

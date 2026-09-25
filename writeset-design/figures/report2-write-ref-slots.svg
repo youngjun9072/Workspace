@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620">
+  <defs>
+    <marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0L9 3L0 6Z" fill="#475569"/></marker>
+    <style>text{font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR",sans-serif;fill:#172033}.t{font-size:24px;font-weight:700}.h{font-size:18px;font-weight:700}.b{font-size:14px}.s{font-size:12px;fill:#475569}.box{stroke-width:2}.ln{stroke:#475569;stroke-width:2;fill:none;marker-end:url(#a)}</style>
+  </defs>
+  <rect width="1200" height="620" fill="#fbfdff"/>
+  <text x="35" y="42" class="t">기존 코드에 추가한 WRITE·REF writeset 상태</text>
+
+  <rect x="35" y="78" width="425" height="485" rx="14" class="box" fill="#f5f7fa" stroke="#8a98aa"/>
+  <text x="60" y="112" class="h">AS-IS · 기존 직렬 적용 코드</text>
+  <rect x="70" y="142" width="355" height="82" rx="10" fill="#fff" stroke="#9aa7b8"/>
+  <text x="92" y="170" class="b">LOG_TDES</text>
+  <text x="92" y="195" class="s">replication item과 기존 트랜잭션 상태</text>
+  <rect x="70" y="262" width="355" height="82" rx="10" fill="#fff" stroke="#9aa7b8"/>
+  <text x="92" y="290" class="b">writeset history 없음</text>
+  <text x="92" y="315" class="s">키별 선행 COMMIT 위치를 보관하지 않음</text>
+  <rect x="70" y="382" width="355" height="130" rx="10" fill="#fff5f5" stroke="#cf6969"/>
+  <text x="92" y="412" class="b">복제 적용 방식</text>
+  <text x="92" y="439" class="s">· dependency label 없음</text>
+  <text x="92" y="464" class="s">· worker task/result queue 없음</text>
+  <text x="92" y="489" class="s">· applylogdb가 replication item을 직렬 적용</text>
+  <path d="M470 320H525" class="ln"/><text x="477" y="300" class="h">변경</text>
+
+  <rect x="535" y="78" width="630" height="485" rx="14" class="box" fill="#eef8f2" stroke="#4a9b67"/>
+  <text x="560" y="112" class="h">TO-BE · writeset v2 PoC</text>
+  <rect x="570" y="136" width="560" height="108" rx="10" fill="#fff" stroke="#62aa7b"/>
+  <text x="592" y="164" class="b">LOG_TDES · 기존 상태 유지</text>
+  <text x="592" y="188" class="s">replication item과 기존 트랜잭션 필드</text>
+  <text x="592" y="218" class="b">＋ ws_hashes · overflow · dependency 필드 추가</text>
+  <rect x="570" y="262" width="260" height="100" rx="10" fill="#fff" stroke="#62aa7b"/>
+  <text x="592" y="292" class="b">history[hash].write_seq</text>
+  <text x="592" y="318" class="s">마지막 PK·UNIQUE WRITE</text>
+  <text x="592" y="341" class="s">REF가 기다릴 부모 위치</text>
+  <rect x="870" y="262" width="260" height="100" rx="10" fill="#fff" stroke="#62aa7b"/>
+  <text x="892" y="292" class="b">history[hash].read_seq</text>
+  <text x="892" y="318" class="s">가장 늦게 게시된 FK REF</text>
+  <text x="892" y="341" class="s">뒤의 WRITE가 기다릴 상한</text>
+  <rect x="570" y="405" width="560" height="107" rx="10" fill="#fff" stroke="#62aa7b"/>
+  <text x="592" y="435" class="b">COMMIT 경로에 probe와 publish 추가</text>
+  <text x="592" y="462" class="s">REF: write_seq만 조회 → 형제끼리 연결하지 않고 read_seq에 게시</text>
+  <text x="592" y="487" class="s">WRITE: write_seq·read_seq 조회 → 뒤의 부모 변경이 자식 참조를 추월하지 않음</text>
+  <path d="M850 244V250M700 362V397M1000 362V397" class="ln"/>
+  <text x="570" y="545" class="s">※ 보고서의 ref_seq는 현재 PoC 코드 필드 read_seq를 역할 중심으로 부른 이름이다.</text>
+</svg>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="590" viewBox="0 0 1200 590">
+ <defs><marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0L9 3L0 6Z" fill="#475569"/></marker><style>text{font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR",sans-serif;fill:#172033}.t{font-size:24px;font-weight:700}.h{font-size:17px;font-weight:700}.b{font-size:14px}.s{font-size:13px;fill:#475569}.ln{stroke:#475569;stroke-width:2;fill:none;marker-end:url(#a)}</style></defs>
+ <rect width="1200" height="590" fill="#fbfdff"/><text x="35" y="42" class="t">슬레이브 queue와 frontier: 완료 순서가 뒤집혀도 안전 경계는 건너뛰지 않는다</text>
+ <rect x="45" y="85" width="250" height="100" rx="12" fill="#eef6ff" stroke="#4f86c6" stroke-width="2"/><text x="68" y="116" class="h">Gate Order</text><text x="68" y="143" class="b">C1 → C2 → C3 → C4</text><text x="68" y="166" class="s">reader가 읽은 COMMIT 순서</text>
+ <rect x="360" y="85" width="220" height="100" rx="12" fill="#fff4f4" stroke="#d46b6b" stroke-width="2"/><text x="383" y="116" class="h">pending</text><text x="383" y="143" class="b">T2(dep=C1)</text><text x="383" y="166" class="s">선행 완료 전 worker 미점유</text>
+ <rect x="645" y="85" width="220" height="100" rx="12" fill="#effaf3" stroke="#4a9b67" stroke-width="2"/><text x="668" y="116" class="h">worker task queues</text><text x="668" y="143" class="b">T1 / T3 / T4</text><text x="668" y="166" class="s">통과한 task를 분산 배정</text>
+ <rect x="930" y="85" width="220" height="100" rx="12" fill="#fff8e8" stroke="#d39b2d" stroke-width="2"/><text x="953" y="116" class="h">result queues</text><text x="953" y="143" class="b">C3, C4, C1 순 도착</text><text x="953" y="166" class="s">worker 완료 순서는 자유</text>
+ <path d="M295 135H352M580 135H637M865 135H922" class="ln"/>
+ <rect x="80" y="255" width="315" height="110" rx="12" fill="#fff" stroke="#73839b" stroke-width="2"/><text x="105" y="286" class="h">completed set</text><text x="105" y="315" class="b">{ C3, C4 }</text><text x="105" y="341" class="s">frontier 뒤에서 먼저 끝난 COMMIT 보관</text>
+ <rect x="455" y="255" width="315" height="110" rx="12" fill="#fff" stroke="#73839b" stroke-width="2"/><text x="480" y="286" class="h">frontier</text><text x="480" y="315" class="b">C0 유지: C1이 아직 미완료</text><text x="480" y="341" class="s">Gate Order head부터 연속 완료만 소비</text>
+ <rect x="830" y="255" width="290" height="110" rx="12" fill="#fff" stroke="#73839b" stroke-width="2"/><text x="855" y="286" class="h">Dispatch Order</text><text x="855" y="315" class="b">배정 순번과 LA_APPLY 보존</text><text x="855" y="341" class="s">결과 연결·slot 정리 순서</text>
+ <path d="M1040 185V225H238V247M1040 225H612V247M1040 225H975V247" class="ln"/>
+ <rect x="155" y="430" width="890" height="105" rx="14" fill="#eef9f0" stroke="#4a9b67" stroke-width="2"/><text x="185" y="462" class="h">C1 result 도착 후</text><text x="185" y="491" class="b">completed set에 C1 등록 → Gate Order에서 C1·C3·C4가 아니라 C1까지만 먼저 소비</text><text x="185" y="518" class="b">C2가 완료된 뒤 C2·C3·C4를 한 번에 소비하며 frontier가 C4까지 전진 → pending 재판정</text>
+ <path d="M612 365V422" class="ln"/>
+</svg>

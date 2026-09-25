@@ -1,76 +1,70 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="820" viewBox="0 0 1600 820" role="img" aria-labelledby="title desc">
-  <title id="title">역할 전환 drain에서 남은 작업을 모두 소진하는 순환</title>
-  <desc id="desc">새 task 유입을 차단한 뒤 남은 task를 기존 dependency gate로 판정한다. dependency가 없거나 충족된 task는 worker가 실행하고, 미충족 task는 pending에 둔다. 완료 결과를 수거해 완료 상태와 연속 완료 경계를 갱신한 뒤 pending task를 같은 gate에서 다시 판정한다. 이 순환으로 이미 받아들인 작업을 모두 소진하면 승격 가능 여부를 판정한다.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="800" viewBox="0 0 1600 800" role="img" aria-labelledby="title desc">
+  <title id="title">reader가 기존 병렬 적용 경로를 반복해 남은 작업을 drain하는 과정</title>
+  <desc id="desc">copy log 처리가 끝나면 신규 task 생성을 멈춘다. reader는 worker의 병합된 result signal을 기다렸다가 여러 queue를 batch 수거하고 pending 재판정, worker 실행과 완료 상태 갱신 경로를 반복한다. 남은 작업이 없으면 안전 LSA를 영속하고 DONE을 통보한다.</desc>
   <defs>
     <style>
-      text{font-family:"Pretendard","Noto Sans KR",sans-serif;fill:#17212b}
-      .title{font-size:30px;font-weight:700}.sub{font-size:18px;fill:#526170}
-      .h{font-size:21px;font-weight:700}.t{font-size:17px}.small{font-size:15px;fill:#526170}
-      .blocked{fill:#fff0f0;stroke:#c53030;stroke-width:2}
-      .gate{fill:#f5f0fa;stroke:#8d67a0;stroke-width:2}
-      .ready{fill:#e9f7ef;stroke:#2f855a;stroke-width:2}
-      .pending{fill:#fff4e5;stroke:#cc7a00;stroke-width:2}
-      .state{fill:#eaf2ff;stroke:#3569b7;stroke-width:2}
-      .finish{fill:#eef7ff;stroke:#4a7ca8;stroke-width:2}
-      .arrow{stroke:#526170;stroke-width:3;fill:none}
-      .loop{stroke:#cc7a00;stroke-width:3;fill:none;stroke-dasharray:8 6}
+      text{font-family:"Pretendard","Noto Sans KR",sans-serif;fill:#17212b}.title{font-size:29px;font-weight:700}.sub{font-size:16px;fill:#526170}.h{font-size:19px;font-weight:700}.t{font-size:15px}.small{font-size:13px;fill:#526170}.start{fill:#fff7ed;stroke:#f97316;stroke-width:2}.existing{fill:#ef4444;fill-opacity:.06;stroke:#dc2626;stroke-width:2.5}.work{fill:#fff;stroke:#ef4444;stroke-width:1.8}.decision{fill:#f8fafc;stroke:#64748b;stroke-width:2}.finish{fill:#ecfdf5;stroke:#10b981;stroke-width:2}.promote{fill:#eff6ff;stroke:#3b82f6;stroke-width:2}.arrow{stroke:#526170;stroke-width:2.7;fill:none;marker-end:url(#arrow)}.loop{stroke:#dc2626;stroke-width:2.7;fill:none;stroke-dasharray:8 6;marker-end:url(#redArrow)}
     </style>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-      <path d="M0 0L10 5L0 10Z" fill="#526170"/>
-    </marker>
-    <marker id="loopArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-      <path d="M0 0L10 5L0 10Z" fill="#cc7a00"/>
-    </marker>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#526170"/></marker>
+    <marker id="redArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#dc2626"/></marker>
   </defs>
 
-  <rect width="1600" height="820" fill="#fff"/>
-  <text x="55" y="54" class="title">failover drain · 신규 유입을 막고 남은 작업을 같은 gate로 소진한다</text>
-  <text x="55" y="88" class="sub">dependency의 존재 자체가 아니라 현재 충족 여부가 worker 배정과 pending 보류를 가른다.</text>
+  <rect width="1600" height="800" fill="#fff"/>
+  <text x="52" y="50" class="title">신규 입력을 멈추고 기존 병렬 적용 경로를 반복해 남은 작업을 소진한다</text>
+  <text x="52" y="80" class="sub">붉은 영역은 drain 전용 알고리즘이 아니라 정상 처리 중에도 사용하는 기존 함수 호출 경로다.</text>
 
-  <rect x="55" y="134" width="310" height="92" rx="13" class="blocked"/>
-  <text x="210" y="170" text-anchor="middle" class="h">신규 task 유입 차단</text>
-  <text x="210" y="201" text-anchor="middle" class="t">이미 받아들인 작업만 처리</text>
+  <rect x="55" y="132" width="300" height="96" rx="13" class="start"/>
+  <text x="205" y="169" text-anchor="middle" class="h">copy log 처리 종료 조건</text>
+  <text x="205" y="199" text-anchor="middle" class="t">신규 task 생성·배정 중단</text>
+  <path d="M355 180H410" class="arrow"/>
 
-  <path d="M365 180H465" class="arrow" marker-end="url(#arrow)"/>
-  <rect x="465" y="134" width="330" height="92" rx="13" class="state"/>
-  <text x="630" y="170" text-anchor="middle" class="h">남은 task 가져오기</text>
-  <text x="630" y="201" text-anchor="middle" class="t">대기 · 실행 · 결과 처리 대상</text>
+  <rect x="410" y="108" width="720" height="520" rx="18" class="existing"/>
+  <text x="440" y="143" class="h" fill="#b91c1c">기존 병렬 적용 경로 반복</text>
+  <text x="440" y="167" class="small">reader loop에서 기존 함수들을 그대로 호출</text>
 
-  <path d="M795 180H895" class="arrow" marker-end="url(#arrow)"/>
-  <polygon points="1070,116 1245,180 1070,244 895,180" class="gate"/>
-  <text x="1070" y="166" text-anchor="middle" class="h">dependency gate</text>
-  <text x="1070" y="198" text-anchor="middle" class="t">없음 또는 충족?</text>
+  <rect x="455" y="200" width="285" height="100" rx="12" class="work"/>
+  <text x="598" y="237" text-anchor="middle" class="h">pending 재판정</text>
+  <text x="598" y="268" text-anchor="middle" class="t">풀린 task를 worker에 배정</text>
 
-  <path d="M1070 244V321" class="arrow" marker-end="url(#arrow)"/>
-  <text x="1092" y="285" class="t">예</text>
-  <rect x="900" y="321" width="340" height="94" rx="13" class="ready"/>
-  <text x="1070" y="358" text-anchor="middle" class="h">worker에 배정 · 실행</text>
-  <text x="1070" y="389" text-anchor="middle" class="t">DB COMMIT 결과 반환</text>
+  <path d="M740 250H800" class="arrow"/>
+  <rect x="810" y="200" width="275" height="100" rx="12" class="work"/>
+  <text x="948" y="237" text-anchor="middle" class="h">worker 실행</text>
+  <text x="948" y="268" text-anchor="middle" class="t">적용·DB COMMIT·result 반환</text>
 
-  <path d="M895 180H830V275H670V321" class="arrow" marker-end="url(#arrow)"/>
-  <text x="820" y="203" class="t">아니요</text>
-  <rect x="500" y="321" width="340" height="94" rx="13" class="pending"/>
-  <text x="670" y="358" text-anchor="middle" class="h">pending에 보류</text>
-  <text x="670" y="389" text-anchor="middle" class="t">dependency 상태가 바뀔 때까지 대기</text>
+  <path d="M948 300V318" class="arrow"/>
+  <rect x="810" y="322" width="275" height="42" rx="10" class="decision"/>
+  <text x="948" y="348" text-anchor="middle" class="t">result_pending · condition signal</text>
+  <path d="M948 364V370" class="arrow"/>
+  <rect x="810" y="375" width="275" height="112" rx="12" class="work"/>
+  <text x="948" y="411" text-anchor="middle" class="h">result 수거</text>
+  <text x="948" y="442" text-anchor="middle" class="t">worker result queue 수거</text>
+  <text x="948" y="467" text-anchor="middle" class="t">Dispatch Order에 연결</text>
 
-  <path d="M1070 415V500" class="arrow" marker-end="url(#arrow)"/>
-  <rect x="855" y="500" width="430" height="112" rx="13" class="state"/>
-  <text x="1070" y="539" text-anchor="middle" class="h">coordinator가 완료 결과 수거</text>
-  <text x="1070" y="572" text-anchor="middle" class="t">개별 완료 상태 등록</text>
-  <text x="1070" y="599" text-anchor="middle" class="t">연속 완료 경계 전진</text>
+  <path d="M810 431H750" class="arrow"/>
+  <rect x="455" y="375" width="285" height="112" rx="12" class="work"/>
+  <text x="598" y="411" text-anchor="middle" class="h">완료 상태 갱신</text>
+  <text x="598" y="442" text-anchor="middle" class="t">completed set·frontier 갱신</text>
+  <text x="598" y="467" text-anchor="middle" class="t">준비된 결과 retire</text>
 
-  <path d="M855 556H670V415" class="loop" marker-end="url(#loopArrow)"/>
-  <text x="590" y="536" class="t">완료 상태 변경</text>
-  <path d="M500 368H425V108H1070V116" class="loop" marker-end="url(#loopArrow)"/>
-  <text x="445" y="129" class="t">pending task를 꺼내 같은 gate로 재판정</text>
+  <path d="M598 375V310" class="loop"/>
+  <text x="620" y="344" class="small">같은 gate로 재판정</text>
 
-  <path d="M1285 556H1370V675" class="arrow" marker-end="url(#arrow)"/>
-  <text x="1300" y="535" class="small">남은 작업이 있으면 순환 반복</text>
-  <rect x="1160" y="675" width="420" height="92" rx="13" class="finish"/>
-  <text x="1370" y="711" text-anchor="middle" class="h">받아들인 작업 모두 소진</text>
-  <text x="1370" y="742" text-anchor="middle" class="t">승격 가능 여부 판정으로 이동</text>
+  <path d="M740 475V555H1135V475H1165" class="arrow"/>
+  <text x="825" y="546" class="small">한 번의 처리 결과로 drain 상태 확인</text>
+  <polygon points="1300,385 1435,475 1300,565 1165,475" class="decision"/>
+  <text x="1300" y="462" text-anchor="middle" class="h">남은 작업 없음?</text>
+  <text x="1300" y="490" text-anchor="middle" class="small">상세 조건은 그림 14-3</text>
 
-  <rect x="55" y="675" width="920" height="92" rx="13" fill="#f7f8fa" stroke="#aeb8c2" stroke-width="2"/>
-  <text x="515" y="711" text-anchor="middle" class="h">drain에서도 dependency 조건은 그대로 유지한다</text>
-  <text x="515" y="742" text-anchor="middle" class="t">완료 결과가 상태를 바꾸고, 그때 풀린 pending task만 worker로 이동한다.</text>
+  <path d="M1300 385V335H1090" class="loop"/>
+  <text x="1180" y="320" text-anchor="middle" class="t">아니요 · 다음 result signal 대기</text>
+
+  <path d="M1300 565V640" class="arrow"/>
+  <text x="1320" y="607" class="t">예</text>
+  <rect x="1110" y="650" width="380" height="96" rx="13" class="finish"/>
+  <text x="1300" y="686" text-anchor="middle" class="h">안전 LSA 영속 · DONE 통보</text>
+  <text x="1300" y="716" text-anchor="middle" class="t">상위 HA 절차에서 승격 가능</text>
+
+  <rect x="55" y="650" width="950" height="96" rx="13" class="promote"/>
+  <text x="530" y="686" text-anchor="middle" class="h">drain에서도 dependency gate 규칙을 바꾸지 않는다</text>
+  <text x="530" y="716" text-anchor="middle" class="t">완료 결과가 상태를 바꾸고, 그 결과로 실행 가능해진 pending task만 worker로 보낸다.</text>
 </svg>

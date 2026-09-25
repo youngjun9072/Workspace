@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="670" viewBox="0 0 1300 670" role="img" aria-labelledby="t d">
+  <title id="t">WRITE와 REF — 같은 키에 대한 두 종류의 접근</title>
+  <desc id="d">WRITE는 부모 행의 키 상태를 바꾸는 접근(INSERT, 키 UPDATE, DELETE)이고 history에 마지막 한 건만 write_seq로 남긴다. REF는 자식 FK가 부모 키의 존재를 전제하는 접근이며 여럿이 동시에 성립하므로 가장 늦은 위치만 ref_seq로 남긴다.</desc>
+  <style>
+    .title{font:700 26px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#0f172a}
+    .sub{font:500 14px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#475569}
+    .head{font:700 18px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#0f172a}
+    .headW{font:700 18px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#1d4ed8}
+    .headR{font:700 18px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#047857}
+    .body{font:500 14px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#334155}
+    .small{font:500 13px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#64748b}
+    .mono{font:600 14px 'Noto Sans Mono CJK KR',monospace;fill:#334155}
+    .monoB{font:700 14px 'Noto Sans Mono CJK KR',monospace;fill:#7c3aed}
+    .monoW{font:700 14px 'Noto Sans Mono CJK KR',monospace;fill:#1d4ed8}
+    .monoR{font:700 14px 'Noto Sans Mono CJK KR',monospace;fill:#047857}
+    .slotW{fill:#eff6ff;stroke:#1d4ed8;stroke-width:1.8}
+    .slotR{fill:#ecfdf5;stroke:#059669;stroke-width:1.8}
+    .lane{font:700 15px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#334155}
+    .parent{fill:#fef3c7;stroke:#d97706;stroke-width:2.4}
+    .child{fill:#ecfdf5;stroke:#059669;stroke-width:1.8}
+    .slot{fill:#ede9fe;stroke:#7c3aed;stroke-width:1.8}
+    .box{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.5}
+    .wr{stroke:#1d4ed8;stroke-width:4;fill:none;marker-end:url(#wr)}
+    .rd{stroke:#059669;stroke-width:2;fill:none;marker-end:url(#rd)}
+    .link{stroke:#7c3aed;stroke-width:1.6;fill:none;stroke-dasharray:5 4;marker-end:url(#pu)}
+  </style>
+  <defs>
+    <marker id="wr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1d4ed8"/></marker>
+    <marker id="rd" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#059669"/></marker>
+    <marker id="pu" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#7c3aed"/></marker>
+  </defs>
+  <rect width="1300" height="640" fill="#fff"/>
+  <text x="650.0" y="40" text-anchor="middle" class="title">WRITE와 REF — 같은 키에 대한 두 종류의 접근</text>
+  <text x="650.0" y="64" text-anchor="middle" class="sub">WRITE는 키의 상태를 바꾸고, REF는 키가 존재하기만 하면 된다. history는 키마다 두 접근의 위치를 따로 남긴다.</text>
+
+  <!-- WRITE block -->
+  <text x="650" y="110" text-anchor="middle" class="headW">WRITE — 키의 상태를 바꾸는 접근</text>
+  <text x="650" y="132" text-anchor="middle" class="body">부모 행의 INSERT · 키 UPDATE · DELETE</text>
+  <path d="M650,142 V208" class="wr"/>
+
+  <!-- parent row -->
+  <rect x="470" y="216" width="360" height="64" rx="12" class="parent"/>
+  <text x="650" y="243" text-anchor="middle" class="head">부모 행  P=1</text>
+  <text x="650" y="266" text-anchor="middle" class="mono">키 해시 H(P=1)</text>
+
+  <!-- children -->
+  <text x="650" y="458" text-anchor="middle" class="headR">REF — 키가 존재하기만 하면 되는 접근</text>
+  <text x="650" y="480" text-anchor="middle" class="body">자식 행의 INSERT · FK UPDATE · DELETE — 부모 키는 바꾸지 않는다</text>
+  <rect x="400" y="364" width="140" height="56" rx="10" class="child"/>
+  <text x="470" y="388" text-anchor="middle" class="head">자식 a</text>
+  <text x="470" y="410" text-anchor="middle" class="mono">FK = 1</text>
+  <path d="M470,364 V288" class="rd"/>
+  <rect x="580" y="364" width="140" height="56" rx="10" class="child"/>
+  <text x="650" y="388" text-anchor="middle" class="head">자식 b</text>
+  <text x="650" y="410" text-anchor="middle" class="mono">FK = 1</text>
+  <path d="M650,364 V288" class="rd"/>
+  <rect x="760" y="364" width="140" height="56" rx="10" class="child"/>
+  <text x="830" y="388" text-anchor="middle" class="head">자식 c</text>
+  <text x="830" y="410" text-anchor="middle" class="mono">FK = 1</text>
+  <path d="M830,364 V288" class="rd"/>
+  <text x="920" y="330" text-anchor="start" class="small">REF는 여럿이 동시에 성립한다</text>
+  <text x="920" y="348" text-anchor="start" class="small">서로 순서를 만들지 않는다</text>
+  <text x="890" y="176" text-anchor="start" class="small">WRITE는 한 건이 키의 상태를 결정한다</text>
+  <text x="890" y="194" text-anchor="start" class="small">뒤의 WRITE가 앞의 것을 대체한다</text>
+
+  <!-- history slots -->
+  <rect x="330" y="510" width="640" height="130" rx="12" class="box"/>
+  <text x="350" y="538" text-anchor="start" class="lane">history[H(P=1)]</text>
+  <rect x="350" y="554" width="600" height="34" rx="8" class="slotW"/>
+  <text x="365" y="577" text-anchor="start" class="monoW">write_seq</text>
+  <text x="470" y="577" text-anchor="start" class="body">마지막 WRITE 한 건의 위치 — 상태를 정하므로 하나만 남기고 덮어쓴다</text>
+  <rect x="350" y="596" width="600" height="34" rx="8" class="slotR"/>
+  <text x="365" y="619" text-anchor="start" class="monoR">ref_seq</text>
+  <text x="470" y="619" text-anchor="start" class="body">REF 중 가장 늦은 위치 — 여럿이 동시에 있어도 되므로 최댓값만 남긴다</text>
+</svg>

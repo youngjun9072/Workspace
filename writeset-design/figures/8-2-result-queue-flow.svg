@@ -8,8 +8,8 @@
   <path d="M340 160H490" class="line"/><text x="415" y="145" text-anchor="middle" class="small">enqueue</text>
   <rect x="490" y="105" width="330" height="110" rx="14" fill="#ecfdf5" stroke="#10b981" stroke-width="2"/>
   <text x="655" y="142" text-anchor="middle" class="head">LA_APPLY_RESULT_QUEUE[i]</text><text x="655" y="174" text-anchor="middle" class="body">worker별 완료 결과 보관</text><text x="655" y="200" text-anchor="middle" class="small">도착 순서는 COMMIT 순서와 다를 수 있음</text>
-  <path d="M820 160H970" class="line"/><text x="895" y="145" text-anchor="middle" class="small">dequeue</text>
+  <path d="M820 160H970" class="line"/><text x="895" y="133" text-anchor="middle" class="small">첫 미수거 result만 signal</text><text x="895" y="153" text-anchor="middle" class="small">여러 queue batch 수거</text>
   <rect x="970" y="90" width="375" height="140" rx="14" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
-  <text x="1158" y="126" text-anchor="middle" class="head">reader/coordinator</text><text x="1158" y="158" text-anchor="middle" class="body">la_collect_worker_results()</text><text x="1158" y="187" text-anchor="middle" class="body">완료 상태·frontier 갱신</text><text x="1158" y="214" text-anchor="middle" class="small">이후 la_retire_ready_results()로 순서 확정</text>
+  <text x="1158" y="126" text-anchor="middle" class="head">reader/coordinator</text><text x="1158" y="158" text-anchor="middle" class="body">result_pending 확인·batch 수거</text><text x="1158" y="187" text-anchor="middle" class="body">완료 상태·frontier 갱신</text><text x="1158" y="214" text-anchor="middle" class="small">이후 pending 재판정·순서 확정</text>
   <text x="55" y="285" class="small">결과 수거와 dispatch 순서 확정을 분리하여 순서 밖 완료를 먼저 보관할 수 있어야 한다.</text>
 </svg>

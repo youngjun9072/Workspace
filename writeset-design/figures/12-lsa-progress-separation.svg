@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="920" viewBox="0 0 1440 920" role="img" aria-labelledby="title desc">
+  <title id="title">병렬 적용에서 서로 다른 조건으로 전진하는 LSA</title>
+  <desc id="desc">reader는 F까지 읽었고 T3은 C3에서 먼저 DB COMMIT을 마쳐 max completed LSA가 C3을 가리킨다. 그러나 C2가 완료되지 않아 frontier와 committed LSA는 C1, committed replication LSA는 T1의 마지막 item R1에 머문다.</desc>
+  <defs>
+    <style>
+      text{font-family:"Pretendard","Noto Sans KR",sans-serif;fill:#172033}
+      .title{font-size:28px;font-weight:700}.sub{font-size:16px;fill:#64748b}
+      .head{font-size:18px;font-weight:700}.body{font-size:14px}.small{font-size:13px;fill:#64748b}.mono{font:14px ui-monospace,SFMono-Regular,Menlo,monospace}
+      .axis{stroke:#94a3b8;stroke-width:3}.tick{stroke:#94a3b8;stroke-width:2}
+      .row{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.5}.read{fill:#eff6ff;stroke:#3b82f6;stroke-width:2}
+      .max{fill:#f5f3ff;stroke:#8b5cf6;stroke-width:2}.frontier{fill:#ecfdf5;stroke:#10b981;stroke-width:2}
+      .commit{fill:#f0fdf4;stroke:#22c55e;stroke-width:2}.rep{fill:#ecfeff;stroke:#0891b2;stroke-width:2}
+      .required{fill:#fff7ed;stroke:#f59e0b;stroke-width:2}.hole{fill:#fff1f2;stroke:#f43f5e;stroke-width:2}
+      .done{fill:#dcfce7;stroke:#22c55e;stroke-width:1.5}
+      .pointerBlue{stroke:#2563eb;fill:#2563eb}.pointerPurple{stroke:#7c3aed;fill:#7c3aed}
+      .pointerGreen{stroke:#059669;fill:#059669}.pointerCyan{stroke:#0e7490;fill:#0e7490}
+      .pointerOrange{stroke:#d97706;fill:#d97706}.guide{stroke:#cbd5e1;stroke-width:1.5;stroke-dasharray:5 5}
+    </style>
+  </defs>
+
+  <rect width="1440" height="920" fill="#ffffff"/>
+  <text x="42" y="48" class="title">reader 위치, 개별 완료 상한과 연속 완료 경계를 분리한다</text>
+  <text x="42" y="78" class="sub">예시: T2는 아직 실행 중이고, 뒤의 T3은 먼저 DB COMMIT을 끝냈으며, reader는 그보다 뒤의 F까지 읽었다.</text>
+
+  <rect x="42" y="110" width="1356" height="150" rx="18" class="row"/>
+  <text x="72" y="145" class="head">로그 위치</text>
+  <line x1="210" y1="195" x2="1320" y2="195" class="axis"/>
+  <line x1="260" y1="181" x2="260" y2="209" class="tick"/>
+  <text x="260" y="170" text-anchor="middle" class="mono">C0</text><text x="260" y="232" text-anchor="middle" class="small">이전 영속 경계</text>
+  <line x1="355" y1="181" x2="355" y2="209" class="tick"/>
+  <text x="355" y="170" text-anchor="middle" class="mono">R1</text><text x="355" y="232" text-anchor="middle" class="small">T1 마지막 item</text>
+  <line x1="445" y1="181" x2="445" y2="209" class="tick"/>
+  <text x="445" y="170" text-anchor="middle" class="mono">C1</text><rect x="405" y="213" width="80" height="30" rx="7" class="done"/><text x="445" y="233" text-anchor="middle" class="small">완료</text>
+  <line x1="600" y1="181" x2="600" y2="209" class="tick"/>
+  <text x="600" y="170" text-anchor="middle" class="mono">T2.start_lsa</text><text x="600" y="232" text-anchor="middle" class="small">T2 slot 시작</text>
+  <line x1="760" y1="181" x2="760" y2="209" class="tick"/>
+  <text x="760" y="170" text-anchor="middle" class="mono">C2</text><rect x="705" y="213" width="110" height="30" rx="7" class="hole"/><text x="760" y="233" text-anchor="middle" class="small">미완료 hole</text>
+  <line x1="935" y1="181" x2="935" y2="209" class="tick"/>
+  <text x="935" y="170" text-anchor="middle" class="mono">R3</text><text x="935" y="232" text-anchor="middle" class="small">T3 마지막 item</text>
+  <line x1="1095" y1="181" x2="1095" y2="209" class="tick"/>
+  <text x="1095" y="170" text-anchor="middle" class="mono">C3</text><rect x="1040" y="213" width="110" height="30" rx="7" class="done"/><text x="1095" y="233" text-anchor="middle" class="small">순서 밖 완료</text>
+  <line x1="1280" y1="181" x2="1280" y2="209" class="tick"/>
+  <text x="1280" y="170" text-anchor="middle" class="mono">F</text><text x="1280" y="232" text-anchor="middle" class="small">reader 위치</text>
+
+  <line x1="355" y1="260" x2="355" y2="872" class="guide"/><line x1="445" y1="260" x2="445" y2="872" class="guide"/>
+  <line x1="600" y1="260" x2="600" y2="872" class="guide"/><line x1="760" y1="260" x2="760" y2="872" class="guide"/>
+  <line x1="1095" y1="260" x2="1095" y2="872" class="guide"/><line x1="1280" y1="260" x2="1280" y2="872" class="guide"/>
+
+  <rect x="42" y="290" width="1356" height="82" rx="14" class="read"/>
+  <text x="72" y="323" class="head">final_lsa</text><text x="72" y="349" class="body">로그를 읽으면 DB 적용 완료와 관계없이 전진</text>
+  <line x1="245" y1="333" x2="1280" y2="333" class="pointerBlue" stroke-width="4"/><polygon points="1280,323 1300,333 1280,343" class="pointerBlue"/><text x="1268" y="316" text-anchor="end" class="mono">F</text>
+
+  <rect x="42" y="390" width="1356" height="82" rx="14" class="max"/>
+  <text x="72" y="423" class="head">max_completed_lsa</text><text x="72" y="449" class="body">hole과 관계없이 성공한 DB COMMIT 중 가장 뒤의 위치</text>
+  <line x1="245" y1="433" x2="1095" y2="433" class="pointerPurple" stroke-width="4"/><polygon points="1095,423 1115,433 1095,443" class="pointerPurple"/>
+  <text x="1127" y="438" class="mono">C3</text><text x="1180" y="438" class="small">완료 상한 · validation용</text>
+
+  <rect x="42" y="490" width="1356" height="82" rx="14" class="frontier"/>
+  <text x="72" y="523" class="head">frontier</text><text x="72" y="549" class="body">앞의 COMMIT이 모두 끝난 위치까지만 전진</text>
+  <line x1="245" y1="533" x2="445" y2="533" class="pointerGreen" stroke-width="4"/><polygon points="445,523 465,533 445,543" class="pointerGreen"/><text x="477" y="538" class="mono">C1</text>
+  <rect x="670" y="507" width="250" height="48" rx="10" class="hole"/><text x="795" y="527" text-anchor="middle" class="body">C2 미완료로 정지</text><text x="795" y="547" text-anchor="middle" class="small">C3 완료만으로는 건너뛸 수 없음</text>
+
+  <rect x="42" y="590" width="1356" height="82" rx="14" class="commit"/>
+  <text x="72" y="623" class="head">committed_lsa</text><text x="72" y="649" class="body">재시작에 사용할 안전 경계 · frontier까지만 반영</text>
+  <line x1="245" y1="633" x2="445" y2="633" class="pointerGreen" stroke-width="4"/><polygon points="445,623 465,633 445,643" class="pointerGreen"/><text x="477" y="638" class="mono">C1</text>
+
+  <rect x="42" y="690" width="1356" height="82" rx="14" class="rep"/>
+  <text x="72" y="723" class="head">committed_rep_lsa</text><text x="72" y="749" class="body">frontier에 포함된 트랜잭션의 마지막 replication item 위치</text>
+  <line x1="245" y1="733" x2="355" y2="733" class="pointerCyan" stroke-width="4"/><polygon points="355,723 375,733 355,743" class="pointerCyan"/>
+  <text x="387" y="738" class="mono">R1</text><text x="440" y="738" class="small">C2 hole이 닫힐 때까지 R3으로 앞서가지 않음</text>
+
+  <rect x="42" y="790" width="1356" height="82" rx="14" class="required"/>
+  <text x="72" y="823" class="head">required_lsa</text><text x="72" y="849" class="body">아직 retire하지 않은 slot의 가장 오래된 start_lsa</text>
+  <line x1="245" y1="833" x2="600" y2="833" class="pointerOrange" stroke-width="4"/><polygon points="600,823 620,833 600,843" class="pointerOrange"/>
+  <text x="632" y="838" class="mono">T2.start_lsa</text><text x="770" y="838" class="small">T2를 재구성할 로그는 계속 보존</text>
+
+  <text x="720" y="907" text-anchor="middle" class="sub">개별 완료의 최댓값과 hole 없는 안전 경계를 분리해 기록한다.</text>
+</svg>

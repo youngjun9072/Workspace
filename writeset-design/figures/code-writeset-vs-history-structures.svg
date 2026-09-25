@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="660" viewBox="0 0 1500 660" role="img" aria-labelledby="t d">
+  <title id="t">트랜잭션별 writeset과 전역 history — 두 자료구조의 대비</title>
+  <desc id="d">LOG_TDES.ws_hashes는 트랜잭션이 접근한 키 해시와 종류를 쌓는 vector이고, log_Writeset_history는 키 해시마다 write_seq·ref_seq 두 슬롯을 두는 map이다. 소유·추가·사용·정리·상한을 나란히 놓고, probe와 publish 화살표로 관계를 보인다.</desc>
+  <style>
+    .title{font:700 26px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#0f172a}
+    .sub{font:500 14px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#475569}
+    .ph{font:700 18px 'Noto Sans Mono CJK KR',monospace;fill:#0f172a}
+    .type{font:600 13.5px 'Noto Sans Mono CJK KR',monospace;fill:#475569}
+    .fld{font:700 14px 'Noto Sans Mono CJK KR',monospace;fill:#334155}
+    .fldT{font:500 13px 'Noto Sans Mono CJK KR',monospace;fill:#64748b}
+    .lab{font:700 14px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#334155}
+    .body{font:500 14px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#334155}
+    .small{font:500 12.5px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#64748b}
+    .arrT{font:600 13px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#1d4ed8}
+    .arrTp{font:600 13px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#7c3aed}
+    .panel{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.5}
+    .hdrL{fill:#eff6ff;stroke:#3b82f6;stroke-width:1.5}
+    .hdrR{fill:#f5f3ff;stroke:#7c3aed;stroke-width:1.5}
+    .cell{fill:#ffffff;stroke:#94a3b8;stroke-width:1.2}
+    .cellW{fill:#eff6ff;stroke:#1d4ed8;stroke-width:1.2}
+    .cellR{fill:#ecfdf5;stroke:#059669;stroke-width:1.2}
+    .sep{stroke:#e2e8f0;stroke-width:1.5}
+    .aP{stroke:#1d4ed8;stroke-width:2.2;fill:none;marker-end:url(#ab)}
+    .aB{stroke:#7c3aed;stroke-width:2.2;fill:none;marker-end:url(#ap)}
+  </style>
+  <defs>
+    <marker id="ab" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#1d4ed8"/></marker>
+    <marker id="ap" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#7c3aed"/></marker>
+  </defs>
+  <rect width="1500" height="660" fill="#fff"/>
+  <text x="750.0" y="38" text-anchor="middle" class="title">트랜잭션별 writeset과 전역 history — 두 자료구조의 대비</text>
+  <text x="750.0" y="62" text-anchor="middle" class="sub">왼쪽은 질의 목록, 오른쪽은 답을 주는 이력. 필드는 PoC 코드(log_writeset.h, log_impl.h) 기준</text>
+  <rect x="50" y="90" width="640" height="520" rx="14" class="panel"/>
+  <rect x="50" y="90" width="640" height="44" rx="14" class="hdrL"/>
+  <text x="68" y="119" text-anchor="start" class="ph">LOG_TDES.ws_hashes</text>
+  <text x="672" y="119" text-anchor="end" class="type">std::vector&lt;LOG_WRITESET_ENTRY&gt;</text>
+  <text x="68" y="160" text-anchor="start" class="lab">LOG_WRITESET_ENTRY  ×N  (엔트리 16 B)</text>
+  <rect x="68" y="174" width="300" height="34" rx="8" class="cell"/>
+  <text x="80" y="197" text-anchor="start" class="fld">hash</text>
+  <text x="148" y="197" text-anchor="start" class="fldT">UINT64  — FNV-1a 64비트 키 해시</text>
+  <rect x="376" y="174" width="290" height="34" rx="8" class="cell"/>
+  <text x="388" y="197" text-anchor="start" class="fld">kind</text>
+  <text x="456" y="197" text-anchor="start" class="fldT">KIND  WRITE|REF</text>
+  <rect x="68" y="216" width="598" height="34" rx="8" class="cell"/>
+  <text x="80" y="239" text-anchor="start" class="fld">…</text>
+  <text x="148" y="239" text-anchor="start" class="fldT">행 연산 순서대로 뒤에 붙는다. 중복 허용</text>
+  <rect x="68" y="270" width="598" height="34" rx="8" class="cell"/>
+  <text x="80" y="293" text-anchor="start" class="fld">ws_overflow</text>
+  <text x="198" y="293" text-anchor="start" class="fldT">bool  — 한도 초과로 writeset을 버리고 commit-order 폴백 표시</text>
+  <line x1="68" y1="324" x2="672" y2="324" class="sep"/>
+  <text x="68" y="352" text-anchor="start" class="lab">소유</text>
+  <text x="128" y="352" text-anchor="start" class="body">트랜잭션 하나. transaction descriptor(tdes)의 멤버</text>
+  <text x="68" y="386" text-anchor="start" class="lab">추가</text>
+  <text x="128" y="386" text-anchor="start" class="body">행 연산마다 push_back. INSERT·DELETE·UPDATE의 PK·UNIQUE는 WRITE, 자식 FK가 가리키는 부모 키는 REF</text>
+  <text x="68" y="420" text-anchor="start" class="lab">사용</text>
+  <text x="128" y="420" text-anchor="start" class="body">COMMIT probe에서 엔트리마다 history를 조회하는 질의 목록. 값은 없다</text>
+  <text x="68" y="454" text-anchor="start" class="lab">정리</text>
+  <text x="128" y="454" text-anchor="start" class="body">COMMIT·ABORT 뒤 clear(). 용량은 유지되어 같은 슬롯의 다음 트랜잭션이 재사용</text>
+  <text x="68" y="488" text-anchor="start" class="lab">상한</text>
+  <text x="128" y="488" text-anchor="start" class="body">LOG_WRITESET_TX_LIMIT 1,000만 엔트리(160 MB). 넘으면 비우고 ws_overflow</text>
+  <rect x="810" y="90" width="640" height="520" rx="14" class="panel"/>
+  <rect x="810" y="90" width="640" height="44" rx="14" class="hdrR"/>
+  <text x="828" y="119" text-anchor="start" class="ph">log_Writeset_history</text>
+  <text x="1432" y="119" text-anchor="end" class="type">std::unordered_map&lt;UINT64, LOG_WRITESET_SLOTS&gt;</text>
+  <text x="828" y="160" text-anchor="start" class="lab">map 엔트리  hash → LOG_WRITESET_SLOTS  (키 8 B + 슬롯 16 B, 노드·버킷 포함 약 70 B)</text>
+  <rect x="828" y="174" width="150" height="76" rx="8" class="cell"/>
+  <text x="840" y="204" text-anchor="start" class="fld">hash</text>
+  <text x="840" y="226" text-anchor="start" class="fldT">UINT64</text>
+  <path d="M978,212 L1004,212" class="aB"/>
+  <rect x="1012" y="174" width="414" height="34" rx="8" class="cellW"/>
+  <text x="1024" y="197" text-anchor="start" class="fld">write_seq</text>
+  <text x="1128" y="197" text-anchor="start" class="fldT">LOG_LSA — 마지막 WRITE의 COMMIT LSA</text>
+  <rect x="1012" y="216" width="414" height="34" rx="8" class="cellR"/>
+  <text x="1024" y="239" text-anchor="start" class="fld">ref_seq</text>
+  <text x="1128" y="239" text-anchor="start" class="fldT">LOG_LSA — REF들의 COMMIT LSA 최댓값</text>
+  <rect x="828" y="270" width="290" height="34" rx="8" class="cell"/>
+  <text x="840" y="293" text-anchor="start" class="fld">history_start</text>
+  <text x="970" y="293" text-anchor="start" class="fldT">LOG_LSA — 비운 뒤 하한</text>
+  <rect x="1126" y="270" width="300" height="34" rx="8" class="cell"/>
+  <text x="1138" y="293" text-anchor="start" class="fld">latch</text>
+  <text x="1200" y="293" text-anchor="start" class="fldT">pthread_mutex_t  — 전체 보호</text>
+  <line x1="828" y1="324" x2="1432" y2="324" class="sep"/>
+  <text x="828" y="352" text-anchor="start" class="lab">소유</text>
+  <text x="888" y="352" text-anchor="start" class="body">마스터 프로세스에 하나. 모든 트랜잭션이 공유</text>
+  <text x="828" y="386" text-anchor="start" class="lab">조회</text>
+  <text x="888" y="386" text-anchor="start" class="body">COMMIT probe: 엔트리마다 find(hash). REF는 write_seq만, WRITE는 두 슬롯 중 늦은 것</text>
+  <text x="828" y="420" text-anchor="start" class="lab">갱신</text>
+  <text x="888" y="420" text-anchor="start" class="body">COMMIT publish: WRITE는 write_seq 덮어쓰기, REF는 ref_seq를 더 크면 갱신</text>
+  <text x="828" y="454" text-anchor="start" class="lab">정리</text>
+  <text x="888" y="454" text-anchor="start" class="body">CAP 도달·폴백 시 clear() + history_start = 현재 COMMIT LSA. 개별 엔트리는 지우지 않는다</text>
+  <text x="828" y="488" text-anchor="start" class="lab">상한</text>
+  <text x="888" y="488" text-anchor="start" class="body">LOG_WRITESET_HISTORY_CAP 1,000만 엔트리(약 0.65 GB)</text>
+  <path d="M700,340 L800,340" class="aP"/>
+  <text x="750.0" y="332" text-anchor="middle" class="arrT">probe</text>
+  <text x="750.0" y="362" text-anchor="middle" class="small">hash로 조회</text>
+  <path d="M800,410 L700,410" class="aB"/>
+  <text x="750.0" y="402" text-anchor="middle" class="arrTp">슬롯 값</text>
+  <text x="750.0" y="432" text-anchor="middle" class="small">→ dependency</text>
+  <path d="M700,480 L800,480" class="aP"/>
+  <text x="750.0" y="472" text-anchor="middle" class="arrT">publish</text>
+  <text x="750.0" y="502" text-anchor="middle" class="small">내 COMMIT LSA</text>
+  <text x="750.0" y="642" text-anchor="middle" class="small">트랜잭션은 vector로 질의하고, map은 키별 마지막 위치만 답한다. 어느 트랜잭션이 접근했는지, 키 원문이 무엇인지는 어느 쪽에도 남지 않는다</text>
+</svg>

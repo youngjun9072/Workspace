@@ -20,23 +20,24 @@
   <text x="85" y="160" class="head">하나의 append 경계 · 동일한 transaction ID</text>
 
   <rect x="105" y="215" width="355" height="145" rx="14" class="data"/>
-  <text x="282" y="255" text-anchor="middle" class="head">변경 복제 레코드</text>
-  <text x="282" y="291" text-anchor="middle" class="body">INSERT · UPDATE · DELETE</text>
-  <text x="282" y="326" text-anchor="middle" class="mono">trid = T1</text>
+  <text x="282" y="255" text-anchor="middle" class="head">LOG_REPLICATION_*</text>
+  <text x="282" y="291" text-anchor="middle" class="body">T2의 INSERT · UPDATE · DELETE</text>
+  <text x="282" y="326" text-anchor="middle" class="mono">trid = T2</text>
 
   <rect x="570" y="215" width="355" height="145" rx="14" class="label"/>
-  <text x="747" y="255" text-anchor="middle" class="head">WS_LABEL</text>
-  <text x="747" y="289" text-anchor="middle" class="body">dependency LSA · 대기 방식</text>
-  <text x="747" y="326" text-anchor="middle" class="mono">trid = T1</text>
+  <text x="747" y="255" text-anchor="middle" class="head">LOG_DUMMY_WS_LABEL</text>
+  <text x="747" y="283" text-anchor="middle" class="body">dependency_seq = C1</text>
+  <text x="747" y="310" text-anchor="middle" class="body">dependency_is_ref = true 또는 false</text>
+  <text x="747" y="337" text-anchor="middle" class="mono">바로 뒤 LOG_COMMIT에 연결</text>
 
   <rect x="1035" y="215" width="355" height="145" rx="14" class="commit"/>
-  <text x="1212" y="255" text-anchor="middle" class="head">COMMIT</text>
-  <text x="1212" y="289" text-anchor="middle" class="body">transaction task 완성 기준</text>
-  <text x="1212" y="326" text-anchor="middle" class="mono">trid = T1</text>
+  <text x="1212" y="255" text-anchor="middle" class="head">LOG_COMMIT</text>
+  <text x="1212" y="289" text-anchor="middle" class="body">레코드 위치 = C2 · T2의 COMMIT LSA</text>
+  <text x="1212" y="326" text-anchor="middle" class="mono">trid = T2</text>
 
   <path d="M460 287H570" class="line"/>
   <path d="M925 287H1035" class="line"/>
 
   <rect x="210" y="470" width="1080" height="58" rx="12" fill="#172033"/>
-  <text x="750" y="506" text-anchor="middle" style="font:700 16px 'Pretendard','Noto Sans KR',sans-serif;fill:#fff">WS_LABEL은 앞의 history를 설명하는 레코드가 아니라, 뒤의 COMMIT task가 사용할 dependency 결과다.</text>
+  <text x="750" y="506" text-anchor="middle" style="font:700 16px 'Pretendard','Noto Sans KR',sans-serif;fill:#fff">WS_LABEL에는 선행 위치 C1을 기록하고, 바로 뒤 LOG_COMMIT의 레코드 위치 C2를 T2의 본인 위치로 사용한다.</text>
 </svg>

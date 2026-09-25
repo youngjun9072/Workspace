@@ -10,17 +10,17 @@
   </defs>
   <rect x="0" y="0" width="1600" height="640" fill="#ffffff"/>
   <text x="60" y="55" class="title">마스터 writeset 전체 흐름</text>
-  <text x="60" y="88" class="sub">트랜잭션 로컬 상태로 dependency를 만들고, 정상 COMMIT 뒤 전역 이력을 갱신한다</text>
+  <text x="60" y="88" class="sub">트랜잭션 로컬 writeset으로 dependency를 만들고, COMMIT LSA 확정 뒤 전역 이력에 게시한다</text>
 
   <rect x="55" y="150" width="205" height="115" class="box"/><text x="157" y="190" text-anchor="middle" class="h">행 연산</text><text x="157" y="225" text-anchor="middle" class="t">제약 키 수집</text>
-  <rect x="315" y="130" width="250" height="155" class="box local"/><text x="440" y="170" text-anchor="middle" class="h">트랜잭션 로컬</text><text x="440" y="207" text-anchor="middle" class="t">LOG_TDES.ws_hashes</text><text x="440" y="238" text-anchor="middle" class="small">{ hash, WRITE | REF }</text>
+  <rect x="315" y="130" width="250" height="155" class="box local"/><text x="440" y="170" text-anchor="middle" class="h">트랜잭션 로컬</text><text x="440" y="204" text-anchor="middle" class="t">현재 트랜잭션 writeset</text><text x="440" y="236" text-anchor="middle" class="small">{ 키 해시, WRITE 또는 REF }</text><text x="440" y="260" text-anchor="middle" class="small">COMMIT까지 유지</text>
   <rect x="645" y="125" width="250" height="165" class="box global"/><text x="770" y="165" text-anchor="middle" class="h">전역 history</text><text x="770" y="203" text-anchor="middle" class="t">hash별 WRITE·REF 슬롯</text><text x="770" y="238" text-anchor="middle" class="small">probe: 조회만 수행</text>
   <rect x="975" y="145" width="220" height="125" class="box"/><text x="1085" y="187" text-anchor="middle" class="h">dependency 확정</text><text x="1085" y="224" text-anchor="middle" class="t">선행 COMMIT LSA</text>
   <rect x="1260" y="120" width="280" height="175" class="box log"/><text x="1400" y="160" text-anchor="middle" class="h">복제 로그</text><text x="1400" y="200" text-anchor="middle" class="t">REPL → WS_LABEL</text><text x="1400" y="234" text-anchor="middle" class="t">→ COMMIT</text><text x="1400" y="267" text-anchor="middle" class="small">현재 COMMIT LSA 확정</text>
 
   <path d="M260 207 H315" class="arrow"/><path d="M565 207 H645" class="read"/><path d="M895 207 H975" class="arrow"/><path d="M1195 207 H1260" class="arrow"/>
 
-  <rect x="645" y="405" width="250" height="130" class="box global"/><text x="770" y="445" text-anchor="middle" class="h">history publish</text><text x="770" y="480" text-anchor="middle" class="t">COMMIT LSA로 슬롯 갱신</text><text x="770" y="510" text-anchor="middle" class="small">정상 COMMIT 뒤에만 수행</text>
+  <rect x="645" y="405" width="250" height="130" class="box global"/><text x="770" y="445" text-anchor="middle" class="h">history publish</text><text x="770" y="480" text-anchor="middle" class="t">COMMIT LSA로 슬롯 갱신</text><text x="770" y="510" text-anchor="middle" class="small">COMMIT LSA 확정 뒤 · 잠금 해제 전 수행</text>
   <path d="M1320 295 V355 H770 V405" class="write"/>
   <rect x="1110" y="410" width="330" height="120" class="box slave"/><text x="1275" y="450" text-anchor="middle" class="h">슬레이브로 전달</text><text x="1275" y="486" text-anchor="middle" class="t">해시가 아니라 WS_LABEL만 전달</text>
   <path d="M1400 295 V410" class="arrow"/>

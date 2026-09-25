@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="930" viewBox="0 0 1500 930">
+  <defs>
+    <marker id="s5-arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L10 3L0 6Z" fill="#475569"/></marker>
+    <style>
+      text{font-family:'Droid Sans','Noto Sans KR','Malgun Gothic',sans-serif;fill:#172033}.title{font-size:28px;font-weight:700}.sub{font-size:16px;fill:#64748b}.head{font-size:18px;font-weight:700}.body{font-size:15px}.small{font-size:13px;fill:#64748b}.panel{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.6}.parent{fill:#fff1f2;stroke:#e11d48;stroke-width:2.3}.ref{fill:#eff6ff;stroke:#2563eb;stroke-width:2.3}.result{fill:#f5f3ff;stroke:#7c3aed;stroke-width:2.3}.publish{fill:#f0fdf4;stroke:#22c55e;stroke-width:2.3}.arrow{fill:none;stroke:#475569;stroke-width:2.3;marker-end:url(#s5-arrow)}.noedge{stroke:#94a3b8;stroke-width:2;stroke-dasharray:7 7}
+    </style>
+  </defs>
+  <rect width="1500" height="930" fill="#fff"/>
+  <text x="750" y="48" text-anchor="middle" class="title">5. T11·T12 자식 REF는 부모 write_seq=C9만 읽는다</text>
+  <text x="750" y="78" text-anchor="middle" class="sub">같은 부모를 참조해도 REF probe는 ref_seq를 읽지 않으므로 형제 트랜잭션 사이에 dependency가 생기지 않는다</text>
+
+  <rect x="470" y="108" width="560" height="98" rx="14" class="parent"/>
+  <text x="750" y="143" text-anchor="middle" class="head">공통 부모 history · H_P(1)</text>
+  <text x="750" y="175" text-anchor="middle" class="body">write_seq=C9 · REF probe가 선택하는 유일한 부모 후보</text>
+  <path d="M660 206V238H365V266" class="arrow"/><path d="M840 206V238H1135V266" class="arrow"/>
+
+  <rect x="55" y="266" width="650" height="536" rx="18" class="panel"/>
+  <text x="85" y="304" class="head">T11 · child(10 → parent 1) INSERT</text>
+  <rect x="85" y="332" width="590" height="92" rx="12" class="ref"/>
+  <text x="380" y="364" text-anchor="middle" class="head">writeset</text><text x="380" y="395" text-anchor="middle" class="body">{H_C(10):WRITE, H_P(1):REF}</text>
+  <rect x="85" y="452" width="590" height="114" rx="12" class="result"/>
+  <text x="380" y="484" text-anchor="middle" class="head">probe 후보 P = C9</text><text x="380" y="514" text-anchor="middle" class="body">H_C(10):WRITE → C8 · H_P(1):REF → write_seq C9</text><text x="380" y="544" text-anchor="middle" class="body">dependency_seq=C9 · commit_lsa=C11</text>
+  <rect x="85" y="596" width="590" height="112" rx="12" class="publish"/>
+  <text x="380" y="630" text-anchor="middle" class="head">publish</text><text x="380" y="661" text-anchor="middle" class="body">H_C(10).write_seq=C11</text><text x="380" y="687" text-anchor="middle" class="body">H_P(1).ref_seq=C11</text>
+  <text x="380" y="760" text-anchor="middle" class="head">C9 완료 뒤 실행 가능</text>
+
+  <rect x="795" y="266" width="650" height="536" rx="18" class="panel"/>
+  <text x="825" y="304" class="head">T12 · child(11 → parent 1) INSERT</text>
+  <rect x="825" y="332" width="590" height="92" rx="12" class="ref"/>
+  <text x="1120" y="364" text-anchor="middle" class="head">writeset</text><text x="1120" y="395" text-anchor="middle" class="body">{H_C(11):WRITE, H_P(1):REF}</text>
+  <rect x="825" y="452" width="590" height="114" rx="12" class="result"/>
+  <text x="1120" y="484" text-anchor="middle" class="head">probe 후보 P = C9</text><text x="1120" y="514" text-anchor="middle" class="body">H_C(11):WRITE → C8 · H_P(1):REF → write_seq C9</text><text x="1120" y="544" text-anchor="middle" class="body">dependency_seq=C9 · commit_lsa=C12</text>
+  <rect x="825" y="596" width="590" height="112" rx="12" class="publish"/>
+  <text x="1120" y="630" text-anchor="middle" class="head">publish</text><text x="1120" y="661" text-anchor="middle" class="body">H_C(11).write_seq=C12</text><text x="1120" y="687" text-anchor="middle" class="body">H_P(1).ref_seq=max(C11,C12)=C12</text>
+  <text x="1120" y="760" text-anchor="middle" class="head">C9 완료 뒤 실행 가능</text>
+
+  <line x1="525" y1="742" x2="975" y2="742" class="noedge"/>
+  <rect x="285" y="838" width="930" height="62" rx="13" class="publish"/>
+  <text x="750" y="864" text-anchor="middle" class="head">T12 probe는 ref_seq=C11을 무시한다</text><text x="750" y="888" text-anchor="middle" class="body">T11 ↔ T12 dependency 없음 · 두 자식은 부모 C9 이후 서로 기다리지 않고 실행</text>
+</svg>

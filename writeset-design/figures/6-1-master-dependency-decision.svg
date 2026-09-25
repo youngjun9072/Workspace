@@ -44,7 +44,7 @@
   <rect x="340" y="225" width="300" height="200" class="box history"/>
   <text x="490" y="267" text-anchor="middle" class="head">history[entry.hash]</text>
   <text x="385" y="315" class="body">write_seq</text>
-  <text x="385" y="352" class="body">read_seq</text>
+  <text x="385" y="352" class="body">ref_seq</text>
   <text x="490" y="394" text-anchor="middle" class="small">같은 충돌 키의 두 이력 슬롯</text>
 
   <path d="M640 325 H700" class="arrow"/>
@@ -59,14 +59,14 @@
   <rect x="940" y="120" width="350" height="180" class="box ref"/>
   <text x="1115" y="160" text-anchor="middle" class="head">현재 REF</text>
   <text x="1115" y="198" text-anchor="middle" class="body">후보 = write_seq</text>
-  <text x="1115" y="232" text-anchor="middle" class="body">from_read_seq = false</text>
+  <text x="1115" y="232" text-anchor="middle" class="body">dependency_is_ref = false</text>
   <text x="1115" y="270" text-anchor="middle" class="small">슬레이브: 해당 트랜잭션의 개별 완료 확인</text>
 
   <path d="M790 405 V458 H900" class="writeArrow"/>
   <text x="842" y="443" text-anchor="middle" class="small">WRITE</text>
 
   <polygon points="1010,378 1120,458 1010,538 900,458" class="decision"/>
-  <text x="1010" y="449" text-anchor="middle" class="head">read_seq가</text>
+  <text x="1010" y="449" text-anchor="middle" class="head">ref_seq가</text>
   <text x="1010" y="478" text-anchor="middle" class="body">write_seq보다 큰가?</text>
 
   <path d="M1120 430 H1240" class="writeArrow"/>
@@ -75,16 +75,16 @@
   <rect x="1240" y="330" width="390" height="180" class="box write"/>
   <text x="1435" y="370" text-anchor="middle" class="head">write_seq에서 선택</text>
   <text x="1435" y="408" text-anchor="middle" class="body">후보 = write_seq</text>
-  <text x="1435" y="442" text-anchor="middle" class="body">from_read_seq = false</text>
+  <text x="1435" y="442" text-anchor="middle" class="body">dependency_is_ref = false</text>
   <text x="1435" y="480" text-anchor="middle" class="small">슬레이브: 해당 트랜잭션의 개별 완료 확인</text>
 
   <path d="M1010 538 V610 H1240" class="writeArrow"/>
   <text x="1060" y="594" text-anchor="middle" class="small">예</text>
 
   <rect x="1240" y="550" width="390" height="180" class="box write"/>
-  <text x="1435" y="590" text-anchor="middle" class="head">read_seq에서 선택</text>
-  <text x="1435" y="628" text-anchor="middle" class="body">후보 = read_seq</text>
-  <text x="1435" y="662" text-anchor="middle" class="body">from_read_seq = true</text>
+  <text x="1435" y="590" text-anchor="middle" class="head">ref_seq에서 선택</text>
+  <text x="1435" y="628" text-anchor="middle" class="body">후보 = ref_seq</text>
+  <text x="1435" y="662" text-anchor="middle" class="body">dependency_is_ref = true</text>
   <text x="1435" y="700" text-anchor="middle" class="small">슬레이브: 해당 위치까지 연속 완료 확인</text>
 
   <path d="M1290 210 H1660" class="join"/>
@@ -94,8 +94,8 @@
 
   <rect x="430" y="765" width="730" height="125" class="box output"/>
   <text x="795" y="805" text-anchor="middle" class="head">트랜잭션 전체 dependency 구성</text>
-  <text x="795" y="840" text-anchor="middle" class="body">entry별 후보 LSA와 슬롯 출처를 함께 누적하여 WS_LABEL에 전달</text>
-  <text x="795" y="870" text-anchor="middle" class="small">다중 entry의 최종 축약 규칙과 폴백은 9.2.4절에서 다룬다</text>
+  <text x="795" y="840" text-anchor="middle" class="body">entry별 후보의 최댓값을 구하고, REF 이력 포함 여부는 OR로 누적한다</text>
+  <text x="795" y="870" text-anchor="middle" class="small">최종 dependency_seq와 dependency_is_ref를 WS_LABEL에 기록한다</text>
 
-  <text x="50" y="925" class="small">probe 단계에서는 history를 조회만 하며, 현재 트랜잭션의 본인 시퀀스 게시는 COMMIT 이후에 수행한다</text>
+  <text x="50" y="925" class="small">probe 단계에서는 history를 조회만 하며, 현재 트랜잭션의 COMMIT LSA 게시는 본인 LSA 확정 뒤 잠금 해제 전에 수행한다</text>
 </svg>

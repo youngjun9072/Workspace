@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="930" viewBox="0 0 1500 930" role="img" aria-labelledby="title desc">
+  <title id="title">서로 다른 두 자식 테이블의 FK 사슬이 뒤의 독립 트랜잭션을 가리는 MySQL head-blocking</title>
+  <desc id="desc">child_a와 child_b가 같은 부모 키를 참조해 T2에서 T3로 의존성이 이어지고, coordinator가 T3의 last_committed 조건을 기다리는 동안 뒤의 independent 테이블 T4를 읽거나 worker에 배정하지 못한다.</desc>
+  <defs>
+    <style>
+      .title{font:700 27px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#26303d}
+      .h{font:700 17px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#26303d}
+      .t{font:15px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#445062}
+      .m{font:600 14px ui-monospace,SFMono-Regular,Consolas,monospace;fill:#26303d}
+      .parent{fill:#eef5fb;stroke:#5681ad;stroke-width:1.8}
+      .child{fill:#fff3e7;stroke:#d9822b;stroke-width:1.8}
+      .blocked{fill:#fff0f0;stroke:#c94b4b;stroke-width:2.2}
+      .independent{fill:#eaf6ee;stroke:#4c9b62;stroke-width:1.8}
+      .unread{fill:#f5f6f8;stroke:#9eabb9;stroke-width:1.8;stroke-dasharray:7 5}
+      .panel{fill:#fafbfd;stroke:#c4ccd6;stroke-width:1.5}
+      .arrow{fill:none;stroke:#526174;stroke-width:2.2;marker-end:url(#arrow)}
+      .orange{fill:none;stroke:#d9822b;stroke-width:2.4;marker-end:url(#orange)}
+      .red{fill:none;stroke:#c94b4b;stroke-width:2.4;marker-end:url(#red)}
+      .dash{fill:none;stroke:#9eabb9;stroke-width:2;stroke-dasharray:7 5;marker-end:url(#gray)}
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#526174"/></marker>
+    <marker id="orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#d9822b"/></marker>
+    <marker id="red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#c94b4b"/></marker>
+    <marker id="gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#9eabb9"/></marker>
+  </defs>
+
+  <rect width="1500" height="930" fill="#fff"/>
+  <text x="45" y="48" class="title">두 자식 테이블의 FK 사슬 → coordinator 정지 → 독립 T4 미판정</text>
+  <text x="45" y="78" class="t">T2와 T3는 서로 다른 자식 테이블을 쓰지만 같은 parent.id=7을 참조해 동일 FK 해시 슬롯을 공유한다.</text>
+
+  <rect x="45" y="115" width="1410" height="170" rx="13" class="panel"/>
+  <text x="70" y="148" class="h">마스터가 기록한 관계</text>
+  <rect x="100" y="175" width="250" height="78" rx="10" class="parent"/>
+  <text x="225" y="204" text-anchor="middle" class="h">T1 · parent</text>
+  <text x="225" y="231" text-anchor="middle" class="m">seq=1 · LC=0</text>
+  <rect x="440" y="175" width="270" height="78" rx="10" class="child"/>
+  <text x="575" y="204" text-anchor="middle" class="h">T2 · child_a</text>
+  <text x="575" y="231" text-anchor="middle" class="m">seq=2 · LC=1</text>
+  <rect x="800" y="175" width="270" height="78" rx="10" class="blocked"/>
+  <text x="935" y="204" text-anchor="middle" class="h">T3 · child_b</text>
+  <text x="935" y="231" text-anchor="middle" class="m">seq=3 · LC=2</text>
+  <rect x="1160" y="175" width="250" height="78" rx="10" class="independent"/>
+  <text x="1285" y="204" text-anchor="middle" class="h">T4 · independent</text>
+  <text x="1285" y="231" text-anchor="middle" class="m">seq=4 · LC=1</text>
+  <path d="M350 214H440" class="arrow"/>
+  <path d="M710 214H800" class="orange"/>
+  <text x="755" y="198" text-anchor="middle" class="t">동일 H(parent,7)</text>
+  <path d="M1070 214H1160" class="dash"/>
+  <text x="1115" y="270" text-anchor="middle" class="t">키 충돌 없음</text>
+
+  <text x="45" y="330" class="h">슬레이브 · T2가 worker에서 실행 중인 순간</text>
+  <text x="45" y="357" class="t">T1만 완료됐으므로 LWM=1이다. coordinator는 relay log의 T3에서 실행 조건을 검사한다.</text>
+
+  <text x="55" y="410" class="h">relay log</text>
+  <path d="M165 405H1420" class="arrow"/>
+  <rect x="65" y="435" width="265" height="95" rx="10" class="child"/>
+  <text x="197" y="469" text-anchor="middle" class="h">T2 · child_a</text>
+  <text x="197" y="498" text-anchor="middle" class="t">worker W1 실행 중</text>
+  <rect x="370" y="435" width="310" height="95" rx="10" class="blocked"/>
+  <text x="525" y="469" text-anchor="middle" class="h">T3 · child_b</text>
+  <text x="525" y="498" text-anchor="middle" class="m">LC=2 &gt; LWM=1</text>
+  <rect x="720" y="435" width="335" height="95" rx="10" class="unread"/>
+  <text x="887" y="469" text-anchor="middle" class="h">T4 · independent</text>
+  <text x="887" y="498" text-anchor="middle" class="m">LC=1 ≤ LWM=1</text>
+  <text x="887" y="519" text-anchor="middle" class="t">아직 읽기·worker 배정 전</text>
+  <line x1="700" y1="420" x2="700" y2="548" stroke="#c94b4b" stroke-width="5"/>
+  <text x="712" y="563" class="t" style="fill:#b23d3d">coordinator가 T3를 넘지 못함</text>
+
+  <rect x="90" y="620" width="330" height="145" rx="12" class="panel"/>
+  <text x="255" y="656" text-anchor="middle" class="h">coordinator</text>
+  <text x="255" y="688" text-anchor="middle" class="m">schedule_next_event(T3)</text>
+  <text x="255" y="718" text-anchor="middle" class="m">wait_for_last_committed_trx(2)</text>
+  <text x="255" y="747" text-anchor="middle" class="t">현재 relay-log 진행점에서 대기</text>
+  <path d="M525 530V585H255V620" class="red"/>
+
+  <rect x="500" y="620" width="860" height="145" rx="12" class="panel"/>
+  <text x="530" y="656" class="h">worker pool</text>
+  <rect x="535" y="680" width="225" height="58" rx="9" class="child"/>
+  <text x="647" y="706" text-anchor="middle" class="h">W1 · T2 실행 중</text>
+  <text x="647" y="729" text-anchor="middle" class="t">child_a 적용</text>
+  <rect x="805" y="680" width="200" height="58" rx="9" class="independent"/>
+  <text x="905" y="716" text-anchor="middle" class="h">W2 · idle</text>
+  <rect x="1050" y="680" width="200" height="58" rx="9" class="independent"/>
+  <text x="1150" y="716" text-anchor="middle" class="h">W3 · idle</text>
+  <path d="M420 692H500" class="dash"/>
+  <text x="460" y="676" text-anchor="middle" class="t">T3 미배정</text>
+
+  <rect x="45" y="810" width="1410" height="85" rx="12" fill="#fff7e8" stroke="#d99a2b" stroke-width="1.8"/>
+  <text x="70" y="843" class="h">T2 완료 전</text>
+  <text x="220" y="843" class="m">LWM=1 → T3 대기 → T4는 미판정</text>
+  <text x="70" y="875" class="h">T2 완료 후</text>
+  <text x="220" y="875" class="m">LWM=2 → T3 통과 → 그 뒤에야 coordinator가 T4를 읽고 배정</text>
+</svg>

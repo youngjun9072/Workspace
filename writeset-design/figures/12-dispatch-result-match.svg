@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="650" viewBox="0 0 1480 650" role="img" aria-labelledby="title desc">
+  <title id="title">배정 순번으로 worker result를 Dispatch Order entry에 연결</title>
+  <desc id="desc">reader가 task를 보낼 때 Dispatch Order entry와 task에 같은 배정 순번을 기록한다. T2 결과가 먼저 돌아오면 result seq 2로 seq 2 entry를 찾아 저장하고, 성공한 commit C2를 completed set과 max completed LSA에 반영한다. T1이 아직 실행 중이므로 frontier는 전진하지 않는다.</desc>
+  <defs>
+    <style>
+      text{font-family:"Pretendard","Noto Sans KR",sans-serif;fill:#172033}
+      .title{font-size:28px;font-weight:700}.sub{font-size:16px;fill:#64748b}
+      .head{font-size:18px;font-weight:700}.body{font-size:14px}.small{font-size:13px;fill:#64748b}.mono{font:14px ui-monospace,SFMono-Regular,Menlo,monospace}
+      .dispatch{fill:#fff7ed;stroke:#f97316;stroke-width:2}.entry{fill:#fff;stroke:#fb923c;stroke-width:1.8}
+      .worker{fill:#eff6ff;stroke:#3b82f6;stroke-width:2}.result{fill:#f5f3ff;stroke:#8b5cf6;stroke-width:2}
+      .reader{fill:#f8fafc;stroke:#64748b;stroke-width:2}.success{fill:#ecfdf5;stroke:#10b981;stroke-width:2}
+      .waiting{fill:#f1f5f9;stroke:#94a3b8;stroke-width:1.5}.ready{fill:#dcfce7;stroke:#22c55e;stroke-width:1.5}
+      .line{fill:none;stroke:#64748b;stroke-width:2.5;marker-end:url(#arrow)}
+      .purple{fill:none;stroke:#7c3aed;stroke-width:2.8;marker-end:url(#purpleArrow)}
+      .green{fill:none;stroke:#059669;stroke-width:2.8;marker-end:url(#greenArrow)}
+      .step{fill:#172033}.stepText{font-size:14px;font-weight:700;fill:#fff}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#64748b"/></marker>
+    <marker id="purpleArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#7c3aed"/></marker>
+    <marker id="greenArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#059669"/></marker>
+  </defs>
+
+  <rect width="1480" height="650" fill="#fff"/>
+  <text x="42" y="48" class="title">슬레이브 배정 순번으로 돌아온 result의 자리를 찾는다</text>
+  <text x="42" y="78" class="sub">result.seq는 LSA가 아니다. T2가 먼저 끝나도 배정 순번 2로 T2의 기록을 찾는다.</text>
+
+  <circle cx="66" cy="126" r="17" class="step"/><text x="66" y="131" text-anchor="middle" class="stepText">1</text>
+  <rect x="42" y="150" width="390" height="310" rx="18" class="dispatch"/>
+  <text x="237" y="184" text-anchor="middle" class="head">task 배정 전 · Dispatch Order 기록</text>
+  <rect x="72" y="210" width="330" height="95" rx="12" class="entry"/>
+  <text x="92" y="239" class="mono">entry seq=1(배정) · T1 · commit_lsa=C1</text>
+  <text x="92" y="265" class="body">task.apply → T1 transaction slot</text>
+  <rect x="300" y="272" width="82" height="24" rx="6" class="waiting"/><text x="341" y="289" text-anchor="middle" class="small">result 없음</text>
+  <rect x="72" y="325" width="330" height="105" rx="12" class="entry"/>
+  <text x="92" y="354" class="mono">entry seq=2(배정) · T2 · commit_lsa=C2</text>
+  <text x="92" y="380" class="body">task.apply → T2 transaction slot</text>
+  <rect x="300" y="391" width="82" height="26" rx="6" class="waiting"/><text x="341" y="409" text-anchor="middle" class="small">result 없음</text>
+  <text x="72" y="488" class="small">task에도 같은 배정 seq를 넣어 worker queue로 전달</text>
+
+  <circle cx="496" cy="126" r="17" class="step"/><text x="496" y="131" text-anchor="middle" class="stepText">2</text>
+  <rect x="472" y="150" width="285" height="310" rx="18" class="worker"/>
+  <text x="614" y="184" text-anchor="middle" class="head">worker 실행</text>
+  <rect x="502" y="220" width="225" height="70" rx="11" class="waiting"/>
+  <text x="614" y="248" text-anchor="middle" class="mono">worker 1 · T1</text>
+  <text x="614" y="273" text-anchor="middle" class="small">아직 DB COMMIT 실행 중</text>
+  <rect x="502" y="326" width="225" height="90" rx="11" class="ready"/>
+  <text x="614" y="354" text-anchor="middle" class="mono">worker 2 · T2</text>
+  <text x="614" y="379" text-anchor="middle" class="body">DB COMMIT 성공</text>
+  <text x="614" y="402" text-anchor="middle" class="mono">result {seq=2(배정), commit_lsa=C2}</text>
+  <path d="M432 257H467" class="line"/><path d="M432 377H467" class="line"/>
+
+  <circle cx="821" cy="126" r="17" class="step"/><text x="821" y="131" text-anchor="middle" class="stepText">3</text>
+  <rect x="797" y="150" width="300" height="310" rx="18" class="reader"/>
+  <text x="947" y="184" text-anchor="middle" class="head">reader/coordinator 수거</text>
+  <rect x="827" y="225" width="240" height="62" rx="10" class="result"/>
+  <text x="947" y="251" text-anchor="middle" class="mono">result.seq = 2 (배정 순번)</text>
+  <text x="947" y="274" text-anchor="middle" class="small">먼저 도착한 T2 결과</text>
+  <text x="837" y="331" class="body">① Dispatch Order에서 배정 seq=2 검색</text>
+  <text x="837" y="365" class="body">② 해당 entry에 result 저장</text>
+  <text x="837" y="399" class="body">③ result_ready=true 표시</text>
+  <path d="M757 370H792" class="purple"/>
+  <path d="M797 425C690 520 380 535 250 435" class="purple"/>
+  <text x="555" y="548" text-anchor="middle" class="small">배정 seq=2 entry로 연결</text>
+
+  <circle cx="1161" cy="126" r="17" class="step"/><text x="1161" y="131" text-anchor="middle" class="stepText">4</text>
+  <rect x="1137" y="150" width="301" height="310" rx="18" class="success"/>
+  <text x="1287" y="184" text-anchor="middle" class="head">성공 COMMIT 완료 상태 반영</text>
+  <text x="1172" y="231" class="body">completed set</text>
+  <rect x="1295" y="208" width="110" height="38" rx="8" fill="#fff" stroke="#10b981"/><text x="1350" y="233" text-anchor="middle" class="mono">{ C2 }</text>
+  <text x="1172" y="291" class="body">max_completed_lsa</text>
+  <rect x="1330" y="268" width="75" height="38" rx="8" fill="#fff" stroke="#10b981"/><text x="1367" y="293" text-anchor="middle" class="mono">C2</text>
+  <text x="1172" y="351" class="body">frontier</text>
+  <rect x="1295" y="328" width="110" height="38" rx="8" class="waiting"/><text x="1350" y="353" text-anchor="middle" class="mono">C0 유지</text>
+  <text x="1287" y="402" text-anchor="middle" class="small">C1이 아직 끝나지 않아 hole 존재</text>
+  <path d="M1097 305H1132" class="green"/>
+
+  <rect x="42" y="582" width="1396" height="42" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="740" y="608" text-anchor="middle" class="body">배정 seq는 result의 자리를 찾고, LSA인 commit_lsa는 완료 상태를 갱신한다.</text>
+</svg>

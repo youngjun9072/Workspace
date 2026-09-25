@@ -5,14 +5,14 @@
   </style><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#43516b"/></marker></defs>
   <rect x="0" y="0" width="1500" height="850" fill="#ffffff"/>
   <text x="55" y="55" class="title">history의 안전한 생명주기</text>
-  <text x="55" y="88" class="sub">정상 COMMIT만 키별 이력에 게시하고, 불완전한 정보는 보수 경계로 전환한다</text>
+  <text x="55" y="88" class="sub">COMMIT LSA가 확정된 완전한 키만 게시하고, 불완전한 정보는 보수 경계로 전환한다</text>
   <text x="170" y="135" text-anchor="middle" class="small">발생 조건</text><text x="710" y="135" text-anchor="middle" class="small">처리</text><text x="1290" y="135" text-anchor="middle" class="small">후속 상태</text>
 
-  <rect x="45" y="155" width="250" height="95" rx="12" class="cause"/><text x="170" y="212" text-anchor="middle" class="h">완전한 키 · 정상 COMMIT</text>
+  <rect x="45" y="155" width="250" height="95" rx="12" class="cause"/><text x="170" y="195" text-anchor="middle" class="h">완전한 키</text><text x="170" y="221" text-anchor="middle" class="t">COMMIT LSA 확정</text>
   <rect x="430" y="155" width="555" height="95" rx="12" class="ok"/><text x="707" y="190" text-anchor="middle" class="h">키별 dependency 계산</text><text x="707" y="221" text-anchor="middle" class="t">WRITE·REF 슬롯에 현재 COMMIT LSA 게시</text>
   <rect x="1120" y="155" width="335" height="95" rx="12" class="result"/><text x="1287" y="212" text-anchor="middle" class="h">유효한 키별 history</text>
 
-  <rect x="45" y="285" width="250" height="95" rx="12" class="cause"/><text x="170" y="327" text-anchor="middle" class="h">불완전한 키 · overflow</text><text x="170" y="354" text-anchor="middle" class="small">정상 빈 writeset과 구분</text>
+  <rect x="45" y="285" width="250" height="95" rx="12" class="cause"/><text x="170" y="315" text-anchor="middle" class="h">불완전한 키</text><text x="170" y="340" text-anchor="middle" class="t">overflow · statement</text><text x="170" y="363" text-anchor="middle" class="small">정상 빈 writeset과 구분</text>
   <rect x="430" y="285" width="555" height="95" rx="12" class="safe"/><text x="707" y="320" text-anchor="middle" class="h">키별 계산 포기</text><text x="707" y="351" text-anchor="middle" class="t">보수 dependency 선택 · 이력 하한 유지</text>
   <rect x="1120" y="285" width="335" height="95" rx="12" class="result"/><text x="1287" y="342" text-anchor="middle" class="h">안전한 보수 경계</text>
 

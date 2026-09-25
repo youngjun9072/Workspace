@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="700" viewBox="0 0 1500 700" role="img" aria-labelledby="t d">
+  <title id="t">네 규칙을 어기면 무엇이 깨지는가</title>
+  <desc id="d">같은 부모 키 P=1에 대해, 네 규칙마다 순서를 지킨 경우와 어긴 경우의 슬레이브 행 상태를 보인다.</desc>
+  <style>
+    .title{font:700 26px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#0f172a}
+    .sub{font:500 14px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#475569}
+    .rule{font:700 19px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#0f172a}
+    .ruleSub{font:500 13px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#64748b}
+    .tagOk{font:700 13px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#047857}
+    .tagBad{font:700 13px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#b91c1c}
+    .tagAny{font:700 13px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#1d4ed8}
+    .pillT{font:700 13px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#ffffff}
+    .rowT{font:600 12.5px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#334155}
+    .rowTx{font:600 12.5px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#94a3b8}
+    .why{font:500 13px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#475569}
+    .whyBad{font:600 13px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#b91c1c}
+    .badge{font:700 16px 'Noto Sans KR','Malgun Gothic',sans-serif;fill:#ffffff}
+    .sep{stroke:#e2e8f0;stroke-width:1.5}
+    .pW{fill:#2563eb} .pR{fill:#10b981}
+    .parent{fill:#fef3c7;stroke:#d97706;stroke-width:1.6}
+    .parentX{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.4;stroke-dasharray:4 3}
+    .child{fill:#ecfdf5;stroke:#059669;stroke-width:1.4}
+    .childX{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.4;stroke-dasharray:4 3}
+    .childBad{fill:#fef2f2;stroke:#e11d48;stroke-width:1.6}
+    .arr{stroke:#475569;stroke-width:2;fill:none;marker-end:url(#a)}
+    .arrBig{stroke:#94a3b8;stroke-width:2;fill:none;marker-end:url(#ag)}
+    .bOk{fill:#059669} .bBad{fill:#e11d48} .bAny{fill:#3b82f6}
+  </style>
+  <defs>
+    <marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#475569"/></marker>
+    <marker id="ag" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#94a3b8"/></marker>
+  </defs>
+  <rect width="1500" height="700" fill="#fff"/>
+  <text x="750.0" y="38" text-anchor="middle" class="title">네 규칙을 어기면 무엇이 깨지는가</text>
+  <text x="750.0" y="62" text-anchor="middle" class="sub">같은 부모 키 P=1. 왼쪽은 슬레이브가 적용한 순서, 오른쪽은 그 뒤 슬레이브의 행 상태</text>
+  <text x="60" y="116" text-anchor="start" class="rule">① WRITE → WRITE</text>
+  <text x="300" y="116" text-anchor="start" class="ruleSub">W₁: 부모 P=1 name='a'   W₂: 부모 P=1 name='b'</text>
+  <text x="150" y="154" text-anchor="end" class="tagOk">지키면</text>
+  <rect x="170" y="137" width="36" height="24" rx="12" class="pW"/>
+  <text x="188.0" y="154" text-anchor="middle" class="pillT">W₁</text>
+  <path d="M210,150 L232,150" class="arr"/>
+  <rect x="238" y="137" width="36" height="24" rx="12" class="pW"/>
+  <text x="256.0" y="154" text-anchor="middle" class="pillT">W₂</text>
+  <path d="M560,150 L600,150" class="arrBig"/>
+  <rect x="612" y="138" width="150" height="22" rx="4" class="parent"/>
+  <text x="687.0" y="154" text-anchor="middle" class="rowT">부모 P=1  name='b'</text>
+  <circle cx="780" cy="150" r="12" class="bOk"/>
+  <text x="780" y="156" text-anchor="middle" class="badge">✓</text>
+  <text x="804" y="154" text-anchor="start" class="why">마스터와 같다</text>
+  <text x="150" y="190" text-anchor="end" class="tagBad">어기면</text>
+  <rect x="170" y="173" width="36" height="24" rx="12" class="pW"/>
+  <text x="188.0" y="190" text-anchor="middle" class="pillT">W₂</text>
+  <path d="M210,186 L232,186" class="arr"/>
+  <rect x="238" y="173" width="36" height="24" rx="12" class="pW"/>
+  <text x="256.0" y="190" text-anchor="middle" class="pillT">W₁</text>
+  <path d="M560,186 L600,186" class="arrBig"/>
+  <rect x="612" y="174" width="150" height="22" rx="4" class="parent"/>
+  <text x="687.0" y="190" text-anchor="middle" class="rowT">부모 P=1  name='a'</text>
+  <circle cx="780" cy="186" r="12" class="bBad"/>
+  <text x="780" y="192" text-anchor="middle" class="badge">✗</text>
+  <text x="804" y="190" text-anchor="start" class="whyBad">최종 값이 마스터('b')와 다르다</text>
+  <line x1="50" y1="230" x2="1450" y2="230" class="sep"/>
+  <text x="60" y="258" text-anchor="start" class="rule">② WRITE → REF</text>
+  <text x="300" y="258" text-anchor="start" class="ruleSub">W: 부모 P=1 INSERT(또는 키 UPDATE)   R: 자식 a INSERT (FK=1)</text>
+  <text x="150" y="296" text-anchor="end" class="tagOk">지키면</text>
+  <rect x="170" y="279" width="27" height="24" rx="12" class="pW"/>
+  <text x="183.5" y="296" text-anchor="middle" class="pillT">W</text>
+  <path d="M201,292 L223,292" class="arr"/>
+  <rect x="229" y="279" width="27" height="24" rx="12" class="pR"/>
+  <text x="242.5" y="296" text-anchor="middle" class="pillT">R</text>
+  <path d="M560,292 L600,292" class="arrBig"/>
+  <rect x="612" y="280" width="90" height="22" rx="4" class="parent"/>
+  <text x="657.0" y="296" text-anchor="middle" class="rowT">부모 P=1</text>
+  <rect x="710" y="280" width="110" height="22" rx="4" class="child"/>
+  <text x="765.0" y="296" text-anchor="middle" class="rowT">자식 a → P=1</text>
+  <circle cx="838" cy="292" r="12" class="bOk"/>
+  <text x="838" y="298" text-anchor="middle" class="badge">✓</text>
+  <text x="862" y="296" text-anchor="start" class="why">참조가 유효하다</text>
+  <text x="150" y="332" text-anchor="end" class="tagBad">어기면</text>
+  <rect x="170" y="315" width="27" height="24" rx="12" class="pR"/>
+  <text x="183.5" y="332" text-anchor="middle" class="pillT">R</text>
+  <path d="M201,328 L223,328" class="arr"/>
+  <rect x="229" y="315" width="27" height="24" rx="12" class="pW"/>
+  <text x="242.5" y="332" text-anchor="middle" class="pillT">W</text>
+  <path d="M560,328 L600,328" class="arrBig"/>
+  <rect x="612" y="316" width="90" height="22" rx="4" class="parentX"/>
+  <text x="657.0" y="332" text-anchor="middle" class="rowTx">부모 없음</text>
+  <rect x="710" y="316" width="120" height="22" rx="4" class="childBad"/>
+  <text x="770.0" y="332" text-anchor="middle" class="rowT">자식 a → P=1 ?</text>
+  <circle cx="848" cy="328" r="12" class="bBad"/>
+  <text x="848" y="334" text-anchor="middle" class="badge">✗</text>
+  <text x="872" y="332" text-anchor="start" class="whyBad">부모 없는 자식이 먼저 생긴다. applier는 FK 검사를 건너뛴다</text>
+  <line x1="50" y1="372" x2="1450" y2="372" class="sep"/>
+  <text x="60" y="400" text-anchor="start" class="rule">③ REF → WRITE</text>
+  <text x="300" y="400" text-anchor="start" class="ruleSub">R₁·R₂: 자식 a·b DELETE (FK=1 참조)   W: 부모 P=1 DELETE</text>
+  <text x="150" y="438" text-anchor="end" class="tagOk">지키면</text>
+  <rect x="170" y="421" width="36" height="24" rx="12" class="pR"/>
+  <text x="188.0" y="438" text-anchor="middle" class="pillT">R₁</text>
+  <path d="M210,434 L232,434" class="arr"/>
+  <rect x="238" y="421" width="36" height="24" rx="12" class="pR"/>
+  <text x="256.0" y="438" text-anchor="middle" class="pillT">R₂</text>
+  <path d="M278,434 L300,434" class="arr"/>
+  <rect x="306" y="421" width="27" height="24" rx="12" class="pW"/>
+  <text x="319.5" y="438" text-anchor="middle" class="pillT">W</text>
+  <path d="M560,434 L600,434" class="arrBig"/>
+  <rect x="612" y="422" width="90" height="22" rx="4" class="parentX"/>
+  <text x="657.0" y="438" text-anchor="middle" class="rowTx">부모 없음</text>
+  <rect x="710" y="422" width="90" height="22" rx="4" class="childX"/>
+  <text x="755.0" y="438" text-anchor="middle" class="rowTx">자식 없음</text>
+  <circle cx="818" cy="434" r="12" class="bOk"/>
+  <text x="818" y="440" text-anchor="middle" class="badge">✓</text>
+  <text x="842" y="438" text-anchor="start" class="why">마스터와 같다</text>
+  <text x="150" y="474" text-anchor="end" class="tagBad">어기면</text>
+  <rect x="170" y="457" width="36" height="24" rx="12" class="pR"/>
+  <text x="188.0" y="474" text-anchor="middle" class="pillT">R₂</text>
+  <path d="M210,470 L232,470" class="arr"/>
+  <rect x="238" y="457" width="27" height="24" rx="12" class="pW"/>
+  <text x="251.5" y="474" text-anchor="middle" class="pillT">W</text>
+  <path d="M269,470 L291,470" class="arr"/>
+  <rect x="297" y="457" width="36" height="24" rx="12" class="pR"/>
+  <text x="315.0" y="474" text-anchor="middle" class="pillT">R₁</text>
+  <path d="M560,470 L600,470" class="arrBig"/>
+  <rect x="612" y="458" width="90" height="22" rx="4" class="parentX"/>
+  <text x="657.0" y="474" text-anchor="middle" class="rowTx">부모 없음</text>
+  <rect x="710" y="458" width="120" height="22" rx="4" class="childBad"/>
+  <text x="770.0" y="474" text-anchor="middle" class="rowT">자식 a → P=1 ?</text>
+  <circle cx="848" cy="470" r="12" class="bBad"/>
+  <text x="848" y="476" text-anchor="middle" class="badge">✗</text>
+  <text x="872" y="474" text-anchor="start" class="whyBad">W가 R₁보다 먼저 끝나 부모 없는 자식이 노출된다 (3장 역전). R₂가 끝났어도 R₁이 남으면 같다</text>
+  <line x1="50" y1="514" x2="1450" y2="514" class="sep"/>
+  <text x="60" y="542" text-anchor="start" class="rule">④ REF → REF</text>
+  <text x="300" y="542" text-anchor="start" class="ruleSub">R₁: 자식 a INSERT (FK=1)   R₂: 자식 b INSERT (FK=1)</text>
+  <text x="150" y="580" text-anchor="end" class="tagAny">어느 순서든</text>
+  <rect x="170" y="563" width="36" height="24" rx="12" class="pR"/>
+  <text x="188.0" y="580" text-anchor="middle" class="pillT">R₁</text>
+  <text x="216" y="581" text-anchor="start" class="rule">∥</text>
+  <rect x="240" y="563" width="36" height="24" rx="12" class="pR"/>
+  <text x="258.0" y="580" text-anchor="middle" class="pillT">R₂</text>
+  <path d="M560,576 L600,576" class="arrBig"/>
+  <rect x="612" y="564" width="90" height="22" rx="4" class="parent"/>
+  <text x="657.0" y="580" text-anchor="middle" class="rowT">부모 P=1</text>
+  <rect x="710" y="564" width="70" height="22" rx="4" class="child"/>
+  <text x="745.0" y="580" text-anchor="middle" class="rowT">자식 a</text>
+  <rect x="788" y="564" width="70" height="22" rx="4" class="child"/>
+  <text x="823.0" y="580" text-anchor="middle" class="rowT">자식 b</text>
+  <circle cx="876" cy="576" r="12" class="bAny"/>
+  <text x="876" y="582" text-anchor="middle" class="badge">=</text>
+  <text x="900" y="580" text-anchor="start" class="why">부모는 그대로, 결과가 같다 → 기다릴 이유가 없다</text>
+</svg>

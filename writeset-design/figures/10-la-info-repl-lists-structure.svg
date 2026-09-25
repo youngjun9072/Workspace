@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="650" viewBox="0 0 1500 650">
+  <defs>
+    <style>
+      text{font-family:Arial,'Noto Sans KR',sans-serif;fill:#172033}
+      .title{font-size:29px;font-weight:700}.head{font-size:20px;font-weight:700}.body{font-size:16px}.small{font-size:14px;fill:#64748b}
+      .box{rx:13;stroke-width:2}.info{fill:#f8fafc;stroke:#64748b}.array{fill:#eff6ff;stroke:#3b82f6}
+      .apply{fill:#ecfeff;stroke:#0891b2}.item{fill:#f0fdf4;stroke:#16a34a}.task{fill:#f5f3ff;stroke:#8b5cf6}.free{fill:#f1f5f9;stroke:#94a3b8}
+      .arrow{fill:none;stroke:#475569;stroke-width:2.4;marker-end:url(#arrow)}.pointer{fill:none;stroke:#2563eb;stroke-width:2.5;marker-end:url(#blue)}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#475569"/></marker>
+    <marker id="blue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#2563eb"/></marker>
+  </defs>
+
+  <rect width="1500" height="650" fill="#fff"/>
+  <text x="48" y="52" class="title">la_Info.repl_lists와 트랜잭션별 LA_APPLY</text>
+  <text x="48" y="82" class="small">repl_lists는 LA_APPLY 포인터 배열이며, 각 LA_APPLY가 한 트랜잭션의 LA_ITEM 연결 목록을 소유한다.</text>
+
+  <rect x="50" y="125" width="295" height="430" class="box info"/>
+  <text x="197" y="164" text-anchor="middle" class="head">la_Info</text>
+  <text x="197" y="194" text-anchor="middle" class="body">LA_APPLY **repl_lists</text>
+
+  <rect x="85" y="225" width="225" height="70" class="box array"/>
+  <text x="112" y="267" class="head">[0]</text><text x="210" y="267" class="body">LA_APPLY *</text>
+  <rect x="85" y="315" width="225" height="70" class="box array"/>
+  <text x="112" y="357" class="head">[1]</text><text x="210" y="357" class="body">LA_APPLY *</text>
+  <rect x="85" y="405" width="225" height="70" class="box array"/>
+  <text x="112" y="447" class="head">[2]</text><text x="210" y="447" class="body">LA_APPLY *</text>
+  <text x="197" y="515" text-anchor="middle" class="small">필요하면 포인터 배열 확장</text>
+
+  <rect x="440" y="180" width="260" height="150" class="box apply"/>
+  <text x="570" y="218" text-anchor="middle" class="head">LA_APPLY(T1)</text>
+  <text x="570" y="250" text-anchor="middle" class="body">tranid = T1</text>
+  <text x="570" y="278" text-anchor="middle" class="small">start_lsa · last_lsa</text>
+  <text x="570" y="302" text-anchor="middle" class="small">head · tail · num_items</text>
+
+  <rect x="440" y="370" width="260" height="125" class="box apply"/>
+  <text x="570" y="408" text-anchor="middle" class="head">LA_APPLY(T2)</text>
+  <text x="570" y="440" text-anchor="middle" class="body">tranid = T2</text>
+  <text x="570" y="468" text-anchor="middle" class="small">head · tail → LA_ITEM 목록</text>
+
+  <rect x="440" y="525" width="260" height="70" class="box free"/>
+  <text x="570" y="556" text-anchor="middle" class="head">빈 LA_APPLY slot</text>
+  <text x="570" y="580" text-anchor="middle" class="small">tranid = 0 · 다음 트랜잭션이 재사용</text>
+
+  <path d="M310 260H440" class="pointer"/>
+  <path d="M310 350H390V432H440" class="pointer"/>
+  <path d="M310 440H370V560H440" class="pointer"/>
+
+  <rect x="805" y="180" width="205" height="88" class="box item"/>
+  <text x="907" y="215" text-anchor="middle" class="head">LA_ITEM #1</text>
+  <text x="907" y="243" text-anchor="middle" class="small">DATA 또는 STATEMENT</text>
+  <rect x="1065" y="180" width="205" height="88" class="box item"/>
+  <text x="1167" y="215" text-anchor="middle" class="head">LA_ITEM #2</text>
+  <text x="1167" y="243" text-anchor="middle" class="small">DATA 또는 STATEMENT</text>
+  <text x="1315" y="232" class="head">…</text>
+  <path d="M700 255H805" class="arrow"/>
+  <path d="M1010 224H1065" class="arrow"/>
+  <path d="M1270 224H1300" class="arrow"/>
+
+  <rect x="805" y="365" width="205" height="88" class="box item"/>
+  <text x="907" y="400" text-anchor="middle" class="head">LA_ITEM #1</text>
+  <text x="907" y="428" text-anchor="middle" class="small">T2 replication item</text>
+  <text x="1050" y="417" class="head">…</text>
+  <path d="M700 432H805" class="arrow"/>
+  <path d="M1010 409H1035" class="arrow"/>
+
+  <rect x="1120" y="360" width="310" height="125" class="box task"/>
+  <text x="1275" y="399" text-anchor="middle" class="head">COMMIT에서 완성한 T1 task</text>
+  <text x="1275" y="433" text-anchor="middle" class="body">task.apply</text>
+  <text x="1275" y="460" text-anchor="middle" class="small">item을 복사하지 않고 LA_APPLY(T1)를 가리킴</text>
+  <path d="M1120 422H760V285H700" class="pointer"/>
+
+  <text x="805" y="565" class="small">worker 결과가 확정될 때까지 task.apply가 가리키는 LA_APPLY와 LA_ITEM 목록을 유지한다.</text>
+</svg>

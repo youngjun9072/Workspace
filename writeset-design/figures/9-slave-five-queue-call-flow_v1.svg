@@ -64,7 +64,7 @@
   <text x="90" y="1158" class="head">worker result queue</text><text x="90" y="1185" class="small">stores: result</text>
   <circle cx="1120" cy="1225" r="12" class="event"/><text x="1120" y="1205" text-anchor="middle" class="small">enqueue · worker 완료</text>
   <rect x="1145" y="1205" width="330" height="40" class="store"/><text x="1310" y="1231" text-anchor="middle" class="body">완료 result</text>
-  <path d="M1475 1225H1488" class="queueflow"/><circle cx="1500" cy="1225" r="12" class="event"/><text x="1500" y="1205" text-anchor="middle" class="small">dequeue · reader 결과 수거</text>
+  <path d="M1475 1225H1488" class="queueflow"/><circle cx="1500" cy="1225" r="12" class="event"/><text x="1500" y="1205" text-anchor="middle" class="small">알림 확인 · batch 수거</text>
 
   <!-- Conceptual reader processing after result dequeue: target success boundary. -->
   <text x="65" y="1320" class="head">result 수거 뒤 reader의 목표 처리 순서</text>

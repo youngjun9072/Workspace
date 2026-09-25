@@ -35,7 +35,7 @@
   <rect x="80" y="250" width="175" height="125" class="box"/>
   <text x="167" y="282" text-anchor="middle" class="head">history 이전 상태</text>
   <text x="167" y="315" text-anchor="middle" class="body">write_seq</text>
-  <text x="167" y="345" text-anchor="middle" class="body">read_seq</text>
+  <text x="167" y="345" text-anchor="middle" class="body">ref_seq</text>
   <path d="M255 312 H300" class="arrow"/>
   <rect x="300" y="245" width="140" height="135" class="box"/>
   <text x="370" y="278" text-anchor="middle" class="head">entry별 판정</text>
@@ -72,7 +72,7 @@
   <text x="1170" y="339" text-anchor="middle" class="body">write_seq = 본인 LSA</text>
   <rect x="1310" y="270" width="210" height="105" class="box"/>
   <text x="1415" y="303" text-anchor="middle" class="head">현재 entry = REF</text>
-  <text x="1415" y="334" text-anchor="middle" class="body">read_seq = max(기존,</text>
+  <text x="1415" y="334" text-anchor="middle" class="body">ref_seq = max(기존,</text>
   <text x="1415" y="358" text-anchor="middle" class="body">본인 LSA)</text>
   <rect x="1090" y="405" width="400" height="60" class="box success"/>
   <text x="1290" y="432" text-anchor="middle" class="head">history 이후 상태</text>

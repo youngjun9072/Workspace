@@ -25,31 +25,33 @@
 
   <rect width="1600" height="780" fill="#fff"/>
   <text x="50" y="52" class="title">복제 로그에서 transaction task 만들기</text>
-  <text x="50" y="84" class="sub">reader가 같은 trid의 변경·dependency·COMMIT을 모으고, COMMIT에서 하나의 실행 단위로 닫는다</text>
+  <text x="50" y="84" class="sub">reader가 T1의 REPL item과 COMMIT 바로 앞 WS_LABEL을 결합해 하나의 실행 단위로 완성한다</text>
 
   <text x="55" y="132" class="head">복제 로그의 물리적 순서</text>
   <path d="M280 126 H1530" class="arrow"/>
 
   <rect x="65" y="165" width="235" height="115" class="box repl"/>
-  <text x="182" y="202" text-anchor="middle" class="head">REPLICATION_DATA</text>
-  <text x="182" y="233" text-anchor="middle" class="body">trid = T1</text>
-  <text x="182" y="260" text-anchor="middle" class="small">행 변경 항목</text>
+  <text x="182" y="202" text-anchor="middle" class="head">REPL item #1</text>
+  <text x="182" y="233" text-anchor="middle" class="body">LOG_REPLICATION_DATA</text>
+  <text x="182" y="260" text-anchor="middle" class="small">trid = T1</text>
 
   <rect x="350" y="165" width="235" height="115" class="box repl"/>
-  <text x="467" y="202" text-anchor="middle" class="head">REPLICATION_…</text>
-  <text x="467" y="233" text-anchor="middle" class="body">trid = T1</text>
-  <text x="467" y="260" text-anchor="middle" class="small">추가 변경 항목</text>
+  <text x="467" y="202" text-anchor="middle" class="head">REPL item #2</text>
+  <text x="467" y="233" text-anchor="middle" class="body">LOG_REPLICATION_DATA</text>
+  <text x="467" y="260" text-anchor="middle" class="small">trid = T1</text>
+
+  <text x="610" y="228" text-anchor="middle" class="head">…</text>
 
   <rect x="635" y="150" width="315" height="145" class="box label"/>
   <text x="792" y="188" text-anchor="middle" class="head">LOG_DUMMY_WS_LABEL</text>
-  <text x="792" y="219" text-anchor="middle" class="body">공통 로그 헤더: trid = T1</text>
-  <text x="792" y="249" text-anchor="middle" class="body">dependency LSA · 대기 방식</text>
-  <text x="792" y="277" text-anchor="middle" class="small">writeset 해시가 아니라 계산 결과만 전달</text>
+  <text x="792" y="219" text-anchor="middle" class="body">dependency_seq = C0 · 선행 위치</text>
+  <text x="792" y="249" text-anchor="middle" class="body">dependency_is_ref = true 또는 false</text>
+  <text x="792" y="277" text-anchor="middle" class="small">바로 뒤 LOG_COMMIT에 연결</text>
 
   <rect x="1000" y="165" width="235" height="115" class="box commit"/>
   <text x="1117" y="202" text-anchor="middle" class="head">LOG_COMMIT</text>
   <text x="1117" y="233" text-anchor="middle" class="body">trid = T1</text>
-  <text x="1117" y="260" text-anchor="middle" class="small">본인 COMMIT LSA</text>
+  <text x="1117" y="260" text-anchor="middle" class="small">본인 commit_lsa = C1</text>
 
   <path d="M182 280 V355" class="flow"/>
   <path d="M467 280 V355" class="flow"/>
@@ -61,35 +63,35 @@
   <line x1="370" y1="415" x2="370" y2="500" stroke="#cbd5e1" stroke-width="2"/>
   <line x1="730" y1="415" x2="730" y2="500" stroke="#cbd5e1" stroke-width="2"/>
   <line x1="990" y1="415" x2="990" y2="500" stroke="#cbd5e1" stroke-width="2"/>
-  <text x="215" y="446" text-anchor="middle" class="head">변경 목록 누적</text>
-  <text x="215" y="478" text-anchor="middle" class="small">COMMIT 전까지 보관</text>
-  <text x="550" y="446" text-anchor="middle" class="head">dependency 임시 보관</text>
-  <text x="550" y="478" text-anchor="middle" class="small">같은 trid와 함께 유지</text>
-  <text x="860" y="446" text-anchor="middle" class="head">COMMIT에서 닫기</text>
-  <text x="860" y="478" text-anchor="middle" class="small">본인 LSA 확정</text>
-  <text x="1110" y="446" text-anchor="middle" class="head">결합 조건 확인</text>
-  <text x="1110" y="478" text-anchor="middle" class="small">trid · 필수 레코드</text>
+  <text x="215" y="446" text-anchor="middle" class="head">LA_APPLY(T1)</text>
+  <text x="215" y="478" text-anchor="middle" class="small">LA_ITEM 목록 누적</text>
+  <text x="550" y="446" text-anchor="middle" class="head">T1 dependency 보관</text>
+  <text x="550" y="478" text-anchor="middle" class="small">선행 위치 C0와 dependency_is_ref 유지</text>
+  <text x="860" y="446" text-anchor="middle" class="head">LOG_COMMIT 위치</text>
+  <text x="860" y="478" text-anchor="middle" class="small">commit_lsa = C1</text>
+  <text x="1110" y="446" text-anchor="middle" class="head">인접 관계 확인</text>
+  <text x="1110" y="478" text-anchor="middle" class="small">WS_LABEL → 바로 뒤 LOG_COMMIT</text>
 
   <path d="M1235 440 H1300" class="arrow"/>
 
   <rect x="1300" y="345" width="250" height="190" class="box task"/>
   <text x="1425" y="385" text-anchor="middle" class="head">완성된 T1 task</text>
-  <text x="1425" y="422" text-anchor="middle" class="body">변경 목록</text>
-  <text x="1425" y="454" text-anchor="middle" class="body">dependency + 대기 방식</text>
-  <text x="1425" y="486" text-anchor="middle" class="body">COMMIT LSA</text>
+  <text x="1425" y="422" text-anchor="middle" class="body">apply → LA_APPLY(T1)</text>
+  <text x="1425" y="454" text-anchor="middle" class="small">dependency_seq=C0 · dependency_is_ref</text>
+  <text x="1425" y="486" text-anchor="middle" class="body">commit_lsa = C1</text>
   <text x="1425" y="516" text-anchor="middle" class="small">완성 후 dependency gate로 전달</text>
 
   <path d="M1110 525 V600 H1285" class="bad"/>
-  <text x="1172" y="583" class="small">누락 · trid 불일치</text>
+  <text x="1172" y="583" class="small">라벨 누락 · 인접 관계 오류</text>
 
   <rect x="1285" y="575" width="265" height="105" class="box error"/>
   <text x="1417" y="613" text-anchor="middle" class="head">안전 경로로 전환</text>
   <text x="1417" y="645" text-anchor="middle" class="body">오류 또는 commit-order 폴백</text>
   <text x="1417" y="670" text-anchor="middle" class="small">빈 COMMIT은 별도로 구분</text>
 
-  <rect x="65" y="585" width="1080" height="105" class="box note"/>
+  <rect x="65" y="585" width="990" height="105" class="box note"/>
   <text x="95" y="622" class="head">task 완성과 적용 완료는 다른 상태</text>
-  <text x="95" y="654" class="body">task를 만들거나 로그 읽기 위치가 전진해도 완료 LSA는 움직이지 않는다.</text>
+  <text x="95" y="654" class="body">task 생성과 로그 읽기 전진은 적용 완료를 뜻하지 않는다.</text>
   <text x="95" y="680" class="small">dependency가 막히면 task만 pending에 두고 reader는 다음 로그를 계속 읽는다.</text>
 
   <text x="65" y="744" class="small">아직 COMMIT을 만나지 않은 장기 트랜잭션은 변경 목록을 계속 보관해야 하므로, 그 수집 비용까지 제거하는 구조는 아니다.</text>

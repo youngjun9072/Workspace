@@ -11,7 +11,7 @@
   <rect x="995" y="105" width="350" height="105" rx="14" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
   <text x="1170" y="143" text-anchor="middle" class="head">worker 완료 상태 변경</text><text x="1170" y="176" text-anchor="middle" class="body">frontier·completed set 갱신</text>
   <path d="M1170 210V290H665V210" class="retry"/>
-  <text x="918" y="278" text-anchor="middle" class="small">la_gate_drain_ready()가 pending을 다시 판정</text>
+  <text x="918" y="278" text-anchor="middle" class="small">la_gate_dispatch_ready_pending()이 pending을 다시 판정</text>
   <path d="M500 158H455V320H995V210" class="retry"/>
   <text x="725" y="344" text-anchor="middle" class="small">재판정에서 충족된 task만 worker queue로 전달</text>
 </svg>

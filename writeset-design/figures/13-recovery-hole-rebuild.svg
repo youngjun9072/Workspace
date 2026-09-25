@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1540" height="690" viewBox="0 0 1540 690" role="img" aria-labelledby="title desc">
+  <title id="title">재시작 후 transaction 재적용과 hole 복구</title>
+  <desc id="desc">장애로 메모리 완료 상태가 사라지면 required LSA부터 다시 읽는다. last committed LSA 이하는 transaction 전체를 건너뛰고 recovery boundary까지는 item 전체를 재적용한다. 허용한 재적용 오류만 별도로 분류하고, 모든 task 확정과 frontier 전진 및 apply-info 영속이 끝나면 정상 처리로 전환한다.</desc>
+  <defs>
+    <style>
+      text{font-family:"Pretendard","Noto Sans KR",sans-serif;fill:#172033}.title{font-size:28px;font-weight:700}.sub{font-size:15px;fill:#64748b}.head{font-size:17px;font-weight:700}.body{font-size:14px}.small{font-size:13px;fill:#64748b}.mono{font:13px ui-monospace,SFMono-Regular,Menlo,monospace}.panel{fill:#f8fafc;stroke:#cbd5e1;stroke-width:2}.safe{fill:#ecfdf5;stroke:#10b981;stroke-width:2}.hole{fill:#fef2f2;stroke:#ef4444;stroke-width:2;stroke-dasharray:7 5}.done{fill:#dcfce7;stroke:#16a34a;stroke-width:2}.recover{fill:#fff7ed;stroke:#f97316;stroke-width:2}.normal{fill:#eff6ff;stroke:#3b82f6;stroke-width:2}.warn{fill:#fefce8;stroke:#eab308;stroke-width:1.8}.arrow{fill:none;stroke:#64748b;stroke-width:2.4;marker-end:url(#arrow)}.greenArrow{fill:none;stroke:#059669;stroke-width:2.7;marker-end:url(#greenArrow)}.step{fill:#172033}.stepText{font-size:14px;font-weight:700;fill:#fff}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#64748b"/></marker><marker id="greenArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#059669"/></marker>
+  </defs>
+  <rect width="1540" height="690" fill="#fff"/>
+  <text x="42" y="48" class="title">메모리 완료 상태를 잃으면 transaction 단위로 다시 적용해 hole을 닫는다</text>
+  <text x="42" y="77" class="sub">예시: C1은 미완료이고 C2·C3은 먼저 DB COMMIT됐지만, 안전하게 영속된 경계는 C0인 상태에서 재시작한다.</text>
+
+  <circle cx="62" cy="121" r="17" class="step"/><text x="62" y="126" text-anchor="middle" class="stepText">1</text>
+  <rect x="40" y="148" width="340" height="400" rx="17" class="panel"/>
+  <text x="210" y="183" text-anchor="middle" class="head">장애 직전</text>
+  <rect x="75" y="218" width="80" height="58" rx="9" class="safe"/><text x="115" y="244" text-anchor="middle" class="mono">C0</text><text x="115" y="263" text-anchor="middle" class="small">영속</text>
+  <rect x="168" y="218" width="80" height="58" rx="9" class="hole"/><text x="208" y="244" text-anchor="middle" class="mono">C1</text><text x="208" y="263" text-anchor="middle" class="small">미완료</text>
+  <rect x="261" y="218" width="80" height="58" rx="9" class="done"/><text x="301" y="244" text-anchor="middle" class="mono">C2·C3</text><text x="301" y="263" text-anchor="middle" class="small">먼저 완료</text>
+  <path d="M155 247H163" class="arrow"/><path d="M248 247H256" class="arrow"/>
+  <text x="210" y="323" text-anchor="middle" class="body">Gate Order · completed set · frontier</text>
+  <text x="210" y="349" text-anchor="middle" class="body">프로세스 종료와 함께 사라짐</text>
+  <rect x="75" y="390" width="270" height="92" rx="11" class="warn"/>
+  <text x="210" y="421" text-anchor="middle" class="head">DB에 남은 안전한 정보</text>
+  <text x="210" y="451" text-anchor="middle" class="mono">committed_lsa=C0</text>
+  <text x="210" y="472" text-anchor="middle" class="mono">final_lsa=R</text>
+
+  <path d="M385 348H411" class="arrow"/>
+
+  <circle cx="438" cy="121" r="17" class="step"/><text x="438" y="126" text-anchor="middle" class="stepText">2</text>
+  <rect x="416" y="148" width="340" height="400" rx="17" class="panel"/>
+  <text x="586" y="183" text-anchor="middle" class="head">Q부터 로그 재독</text>
+  <rect x="451" y="218" width="270" height="78" rx="11" class="safe"/>
+  <text x="586" y="248" text-anchor="middle" class="head">C0 이하</text><text x="586" y="276" text-anchor="middle" class="body">transaction 전체 skip</text>
+  <path d="M586 296V326" class="arrow"/>
+  <rect x="451" y="334" width="270" height="112" rx="11" class="recover"/>
+  <text x="586" y="364" text-anchor="middle" class="head">C0 뒤부터 R까지</text>
+  <text x="586" y="391" text-anchor="middle" class="body">C1·C2·C3 task 재구성</text>
+  <text x="586" y="417" text-anchor="middle" class="body">각 transaction의 item 전체 재적용</text>
+  <text x="586" y="485" text-anchor="middle" class="small">item 단위 skip 기준은 사용하지 않음</text>
+
+  <path d="M761 348H787" class="arrow"/>
+
+  <circle cx="814" cy="121" r="17" class="step"/><text x="814" y="126" text-anchor="middle" class="stepText">3</text>
+  <rect x="792" y="148" width="340" height="400" rx="17" class="panel"/>
+  <text x="962" y="183" text-anchor="middle" class="head">재적용 결과 판정</text>
+  <rect x="837" y="210" width="250" height="58" rx="11" class="recover"/>
+  <text x="962" y="236" text-anchor="middle" class="head">재적용 중 오류 발생</text>
+  <text x="962" y="258" text-anchor="middle" class="small">연산 종류 + 오류 코드 비교</text>
+  <path d="M962 268V286H884V300" class="greenArrow"/>
+  <path d="M962 268V286H1041V300" class="arrow"/>
+
+  <rect x="807" y="308" width="154" height="100" rx="11" class="recover"/>
+  <text x="884" y="335" text-anchor="middle" class="head">허용 조합</text>
+  <text x="884" y="360" text-anchor="middle" class="small">INSERT + unique 위반</text>
+  <text x="884" y="383" text-anchor="middle" class="small">UPDATE·DELETE +</text>
+  <text x="884" y="401" text-anchor="middle" class="small">대상 행 없음</text>
+
+  <rect x="975" y="308" width="142" height="100" rx="11" class="hole"/>
+  <text x="1046" y="348" text-anchor="middle" class="head">그 밖의 조합</text>
+  <text x="1046" y="377" text-anchor="middle" class="small">연산·오류 코드 불일치</text>
+
+  <path d="M884 408V432" class="greenArrow"/>
+  <path d="M1046 408V432" class="arrow"/>
+  <rect x="807" y="440" width="154" height="72" rx="11" fill="none" stroke="#111827" stroke-width="2"/>
+  <text x="884" y="468" text-anchor="middle" class="head">오류 처리만 skip</text>
+  <text x="884" y="493" text-anchor="middle" class="small">별도 counter</text>
+  <rect x="975" y="440" width="142" height="72" rx="11" class="hole"/>
+  <text x="1046" y="468" text-anchor="middle" class="head">기존 오류 처리</text>
+  <text x="1046" y="493" text-anchor="middle" class="small">frontier 전진 안 함</text>
+
+  <path d="M1137 348H1163" class="arrow"/>
+
+  <circle cx="1190" cy="121" r="17" class="step"/><text x="1190" y="126" text-anchor="middle" class="stepText">4</text>
+  <rect x="1168" y="148" width="332" height="400" rx="17" class="panel"/>
+  <text x="1334" y="183" text-anchor="middle" class="head">hole 복구 완료</text>
+  <rect x="1203" y="218" width="262" height="82" rx="11" class="done"/>
+  <text x="1334" y="249" text-anchor="middle" class="mono">C1 ✓ → C2 ✓ → C3 ✓</text>
+  <text x="1334" y="278" text-anchor="middle" class="body">frontier가 C3까지 전진</text>
+  <path d="M1334 300V330" class="greenArrow"/>
+  <rect x="1203" y="338" width="262" height="108" rx="11" class="safe"/>
+  <text x="1334" y="369" text-anchor="middle" class="head">apply-info 영속</text>
+  <text x="1334" y="397" text-anchor="middle" class="mono">committed_lsa=C3</text>
+  <text x="1334" y="425" text-anchor="middle" class="body">DB COMMIT 성공</text>
+  <text x="1334" y="485" text-anchor="middle" class="body">R 뒤부터 정상 오류 처리</text>
+
+  <rect x="40" y="582" width="1460" height="70" rx="12" class="normal"/>
+  <text x="770" y="609" text-anchor="middle" class="head">복구 완료 조건</text>
+  <text x="770" y="636" text-anchor="middle" class="body">R까지 재독  +  해당 task 모두 확정  +  frontier 도달  +  전진한 committed_lsa 영속 성공</text>
+</svg>

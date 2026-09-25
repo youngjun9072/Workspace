@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="830" viewBox="0 0 1500 830">
+  <defs>
+    <marker id="s6-arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L10 3L0 6Z" fill="#475569"/></marker>
+    <style>
+      text{font-family:'Droid Sans','Noto Sans KR','Malgun Gothic',sans-serif;fill:#172033}.title{font-size:28px;font-weight:700}.sub{font-size:16px;fill:#64748b}.head{font-size:18px;font-weight:700}.body{font-size:15px}.small{font-size:13px;fill:#64748b}.panel{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.6}.write{fill:#fff1f2;stroke:#e11d48;stroke-width:2.3}.ref{fill:#eff6ff;stroke:#2563eb;stroke-width:2.3}.result{fill:#f5f3ff;stroke:#7c3aed;stroke-width:2.3}.done{fill:#f0fdf4;stroke:#22c55e;stroke-width:2.3}.arrow{fill:none;stroke:#475569;stroke-width:2.3;marker-end:url(#s6-arrow)}.base{stroke:#cbd5e1;stroke-width:10;stroke-linecap:round}.progress{stroke:#22c55e;stroke-width:10;stroke-linecap:round}.tick{stroke:#64748b;stroke-width:2}
+    </style>
+  </defs>
+  <rect width="1500" height="830" fill="#fff"/>
+  <text x="750" y="48" text-anchor="middle" class="title">6. T13 부모 WRITE는 ref_seq=C12를 선택해 frontier C12까지 기다린다</text>
+  <text x="750" y="78" text-anchor="middle" class="sub">부모 삭제는 가장 늦은 REF 한 건만 보지 않고 C12까지의 연속 완료 경계를 gate로 사용한다</text>
+
+  <rect x="55" y="112" width="430" height="342" rx="18" class="panel"/>
+  <text x="85" y="150" class="head">① T13 행 연산과 writeset</text>
+  <rect x="85" y="180" width="370" height="82" rx="12" class="write"/>
+  <text x="270" y="212" text-anchor="middle" class="head">parent(id=1) DELETE</text><text x="270" y="240" text-anchor="middle" class="body">{H_P(1):WRITE}</text>
+  <rect x="85" y="292" width="370" height="112" rx="12" class="ref"/>
+  <text x="270" y="325" text-anchor="middle" class="head">probe 직전 H_P(1)</text><text x="270" y="356" text-anchor="middle" class="body">write_seq=C9</text><text x="270" y="382" text-anchor="middle" class="body">ref_seq=C12</text>
+
+  <rect x="535" y="112" width="430" height="342" rx="18" class="panel"/>
+  <text x="565" y="150" class="head">② WRITE probe 후보</text>
+  <rect x="565" y="180" width="370" height="112" rx="12" class="result"/>
+  <text x="750" y="214" text-anchor="middle" class="head">max(write_seq=C9, ref_seq=C12)</text><text x="750" y="249" text-anchor="middle" class="head">= C12</text><text x="750" y="276" text-anchor="middle" class="small">후보가 REF 이력에서 옴</text>
+  <text x="750" y="337" text-anchor="middle" class="body">P=max(history_start=C8, C12)=C12</text><text x="750" y="371" text-anchor="middle" class="head">dependency_seq=C12</text><text x="750" y="399" text-anchor="middle" class="body">dependency_is_ref=true</text>
+
+  <rect x="1015" y="112" width="430" height="342" rx="18" class="panel"/>
+  <text x="1045" y="150" class="head">③ 본인 위치와 publish</text>
+  <rect x="1045" y="180" width="370" height="92" rx="12" class="done"/>
+  <text x="1230" y="216" text-anchor="middle" class="head">본인 commit_lsa = C13</text><text x="1230" y="246" text-anchor="middle" class="body">frontier gate 통과 뒤 적용</text>
+  <rect x="1045" y="310" width="370" height="94" rx="12" class="write"/>
+  <text x="1230" y="345" text-anchor="middle" class="head">publish 결과</text><text x="1230" y="376" text-anchor="middle" class="body">write_seq=C13 · ref_seq=C12 유지</text>
+  <path d="M485 283H535" class="arrow"/><path d="M965 283H1015" class="arrow"/>
+
+  <rect x="55" y="500" width="1390" height="252" rx="18" class="panel"/>
+  <text x="85" y="538" class="head">슬레이브 gate · gap-free 완료 frontier</text>
+  <text x="85" y="568" class="body">T11(C11)과 T12(C12)는 병렬로 끝날 수 있지만, T13은 frontier가 C12에 닿을 때까지 대기한다.</text>
+  <line x1="170" y1="640" x2="1330" y2="640" class="base"/><line x1="170" y1="640" x2="1040" y2="640" class="progress"/>
+  <g text-anchor="middle">
+    <line x1="170" y1="620" x2="170" y2="660" class="tick"/><text x="170" y="689" class="body">C8</text><text x="170" y="712" class="small">세대 장벽</text>
+    <line x1="460" y1="620" x2="460" y2="660" class="tick"/><text x="460" y="689" class="body">C9</text><text x="460" y="712" class="small">부모 WRITE</text>
+    <line x1="750" y1="620" x2="750" y2="660" class="tick"/><text x="750" y="689" class="body">C11</text><text x="750" y="712" class="small">자식 REF</text>
+    <line x1="1040" y1="614" x2="1040" y2="666" class="tick"/><text x="1040" y="689" class="head">C12 ▲ frontier</text><text x="1040" y="712" class="small">두 자식까지 연속 완료</text>
+    <line x1="1330" y1="620" x2="1330" y2="660" class="tick"/><text x="1330" y="689" class="body">C13</text><text x="1330" y="712" class="small">T13 실행</text>
+  </g>
+  <rect x="330" y="770" width="840" height="46" rx="12" class="done"/>
+  <text x="750" y="799" text-anchor="middle" class="head">frontier=C12가 되면 T13의 부모 DELETE gate가 열린다</text>
+</svg>

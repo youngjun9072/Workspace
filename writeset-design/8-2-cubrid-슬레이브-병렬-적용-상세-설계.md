@@ -49,11 +49,13 @@ baseline:
 > │        │  └─ 재시작 복구 구간 error skip       — ⑧
 > │        ├─ la_commit_transaction()
 > │        └─ la_enqueue_apply_result()
+> │           └─ 첫 미수거 result이면 result_pending 설정·condition signal
 > ├─ la_get_last_ha_applied_info()                 — ⑧
 > ├─ 적용 반복
 > │  ├─ la_apply_pre()                              — ⑧
-> │  └─ reader 로그 반복
-> │     ├─ la_collect_apply_results()               — ⑤
+> │  └─ reader/coordinator 반복
+> │     ├─ result_pending 확인 또는 condition wake-up
+> │     │  └─ la_collect_apply_results()             — ⑤
 > │     ├─ LOG_GET_LOG_RECORD_HEADER()
 > │     ├─ la_log_record_process()                  — ②
 > │     │  └─ LOG_COMMIT에서 LA_APPLY_TASK 완성
@@ -63,9 +65,9 @@ baseline:
 >    └─ la_stop_apply_workers()                     — ①
 >
 > pending 재실행 순환
-> ⑤ la_collect_apply_results()
+> ⑤ result 알림 뒤 la_collect_apply_results()
 > └─ la_collect_worker_results()
->    └─ la_gate_drain_ready()                      — ⑥
+>    └─ la_gate_dispatch_ready_pending()           — ⑥
 >       └─ pending task를 ③과 같은 조건으로 재판정
 >          └─ 통과한 task는 ④ worker 반복으로 전달
 > ```
@@ -88,6 +90,9 @@ baseline:
 슬레이브는 병렬 적용 queue와 worker context를 먼저 준비하고, 각 worker의 DB 실행 환경 초기화가 끝난 뒤 task 배정을 시작해야 한다. 종료할 때는 신규 task 유입을 차단하고 시작된 worker를 join한 다음 queue와 동기화 객체를 회수해야 한다.
 
 worker는 독립된 DB session에서 transaction task 하나를 적용하고 결과를 reader에 돌려주어야 한다. 시작 단계에서는 worker별 입출력 queue와 동기화 객체뿐 아니라 8-2.4에서 설명할 dispatch·gate 상태도 빈 상태로 초기화해야 한다.
+
+> [!NOTE]
+> **정식 반영 라이브러리 — TBB.** worker·result queue는 정식 설계에서 **`tbb::concurrent_queue`**로 두어 손수 만든 링버퍼와 mutex/cond 대기를 대체한다. 완료 집합(completed set)은 고정 용량 오픈 어드레싱(2^18, 초과 시 복제 중단) 대신 **자동 성장 맵**으로 두어 용량 초과 중단을 없앤다 — reader 단일 스레드 접근이라 concurrent 컨테이너가 정합성상 필수는 아니고 자동 성장이 목적이므로 `std::unordered_map` 또는 TBB 중 택한다. 검증에 사용한 기존 구현은 손수 만든 링버퍼 queue와 고정 오픈 어드레싱 집합이며, 위 TBB 설계는 정식 반영 대상이지 기존 실측 성능의 근거가 아니다. 마스터 history map의 TBB 채택은 [8-1장](./8-1-cubrid-마스터-writeset-상세-설계.md)을 참조한다.
 
 ### task와 result 전달 형식
 
@@ -114,6 +119,8 @@ struct la_apply_result
   LOG_LSA commit_lsa;         /* 완료 집합과 frontier에 반영할 본인 seq */
 };
 ```
+
+정식 설계 용어는 `ref_seq`·`dependency_is_ref`다. PoC 코드의 필드명은 `read_seq`·`dependency_is_read`이며 위 인용은 코드 그대로다.
 
 `LA_APPLY_TASK`는 reader가 구성해 worker에 전달하는 입력이고, `LA_APPLY_RESULT`는 worker가 적용을 끝낸 뒤 reader에 반환하는 출력이다. 각 필드를 채우는 시점은 8-2.3과 8-2.5에서 설명한다.
 
@@ -293,7 +300,7 @@ transaction task는 worker가 트랜잭션 하나를 적용하는 데 필요한 
 호출 관계에서 reader가 처리하는 각 로그의 역할은 다음과 같다.
 
 - `LOG_REPLICATION_DATA`·`LOG_REPLICATION_STATEMENT`: 기존 `la_set_repl_log()`를 사용해 같은 `trid`의 `LA_APPLY`에 replication item을 연결해야 한다.
-- `LOG_DUMMY_WS_LABEL`: 새 `la_retrieve_ws_label()`로 `dependency_seq`와 `dependency_is_read`를 읽고, 공통 로그 헤더의 `trid`와 함께 COMMIT까지 reader 상태에 보관해야 한다. 이 레코드는 writeset 전체가 아니라 마스터가 계산한 dependency 결과만 전달한다.
+- `LOG_DUMMY_WS_LABEL`: 새 `la_retrieve_ws_label()`로 `dependency_seq`와 `dependency_is_ref`를 읽고, 공통 로그 헤더의 `trid`와 함께 COMMIT까지 reader 상태에 보관해야 한다. 이 레코드는 writeset 전체가 아니라 마스터가 계산한 dependency 결과만 전달한다.
 - `LOG_COMMIT`: 앞에서 보관한 replication item과 dependency를 소비해 `LA_APPLY_TASK`를 완성해야 한다. 구체적인 필드 구성은 아래의 `COMMIT에서 task 필드 구성`에서 설명한다.
 
 ![8-2-reader-task-flow](./figures/8-2-reader-task-flow.svg)
@@ -360,7 +367,7 @@ WS_LABEL의 `trid`가 COMMIT과 다르면 dependency를 현재 task에 연결하
 ```text
 8-2.3에서 LA_APPLY_TASK 완성
 ├─ ① la_gate_order_push(task.commit_lsa)
-└─ ② la_gate_is_satisfied(dependency_seq, dependency_is_read)
+└─ ② la_gate_is_satisfied(dependency_seq, dependency_is_ref)
    ├─ true  → ③ la_gate_dispatch_now(task)
    │           ├─ la_gate_choose_worker()
    │           ├─ la_dispatch_order_push()
@@ -383,7 +390,7 @@ la_gate_order_push(task.commit_lsa):
 
 #### ② dependency 판정
 
-`la_gate_is_satisfied()`는 `dependency_seq`와 `dependency_is_read`로 현재 task의 실행 가능 여부를 판정해야 한다.
+`la_gate_is_satisfied()`는 `dependency_seq`와 `dependency_is_ref`로 현재 task의 실행 가능 여부를 판정해야 한다.
 
 gate 판정에서 참조하는 완료 집합과 frontier도 이 지점에서 함께 정의해야 한다.
 
@@ -398,15 +405,15 @@ bool la_Gate_frontier_seeded;       /* frontier 초기값이 잡혔는지 */
 `la_gate_is_satisfied()`의 판정 순서는 다음과 같이 구현해야 한다.
 
 ```text
-la_gate_is_satisfied(dependency, dependency_is_read):
+la_gate_is_satisfied(dependency, dependency_is_ref):
     if dependency가 NULL이면:
         return true   # 기다릴 선행 트랜잭션이 없으므로 worker에 배정
 
     if frontier가 초기화됐고 dependency <= frontier이면:
         return true   # dependency까지 빠짐없이 완료됐으므로 worker에 배정
 
-    if dependency_is_read == true이면:
-        return false  # read_seq 유래 dependency는 frontier가 도달할 때까지 pending
+    if dependency_is_ref == true이면:
+        return false  # ref_seq 유래 dependency는 frontier가 도달할 때까지 pending
 
     # 여기까지 왔으면 WRITE 이력에서 온 dependency다.
     if la_gate_set_contains(dependency):
@@ -415,7 +422,7 @@ la_gate_is_satisfied(dependency, dependency_is_read):
     return false      # 해당 선행 트랜잭션이 아직 끝나지 않았으므로 pending
 ```
 
-- `dependency_is_read == true`는 최종 dependency가 과거 `read_seq`에서 선택됐다는 뜻이다. 해당 LSA의 트랜잭션 하나가 끝났더라도 그보다 앞선 다른 REF 트랜잭션이 실행 중일 수 있으므로, frontier가 dependency까지 전진할 때까지 기다려야 한다.
+- `dependency_is_ref == true`는 최종 dependency가 과거 `ref_seq`에서 선택됐다는 뜻이다. 해당 LSA의 트랜잭션 하나가 끝났더라도 그보다 앞선 다른 REF 트랜잭션이 실행 중일 수 있으므로, frontier가 dependency까지 전진할 때까지 기다려야 한다.
 - `la_gate_set_contains(dependency)`는 위 분기를 통과한 WRITE 이력 유래 dependency에만 적용한다. worker 결과를 수거할 때 `la_gate_mark_completed()`가 DB COMMIT에 성공한 `commit_lsa`를 `la_Gate_completed_slots`에 등록하며, 이 함수는 그 안에 `dependency`와 같은 LSA가 있는지 확인한다.
 
 #### ③ gate를 통과한 task의 즉시 배정
@@ -518,30 +525,46 @@ worker는 `LA_APPLY_RESULT`를 빈 값으로 초기화하고 task의 `seq`, `tra
 
 #### ⑤ result 반환
 
-`la_enqueue_apply_result()`는 적용 결과와 `commit_lsa`를 worker의 result queue에 넣어야 한다. worker는 전역 완료 상태를 직접 바꾸지 않으며, reader가 result를 수거해 처리하는 과정은 8-2.6에서 설명한다.
+`la_enqueue_apply_result()`는 적용 결과와 `commit_lsa`를 worker의 result queue에 넣어야 한다. 첫 미수거 result는 공통 `result_pending`을 `false`에서 `true`로 바꾸고 `result_available_cond`를 signal한다. 이미 `true`이면 queue에만 추가해 여러 worker 완료를 한 번의 알림으로 병합한다. worker는 전역 완료 상태를 직접 바꾸지 않으며, reader가 result를 batch로 수거해 처리하는 과정은 8-2.6에서 설명한다.
 
 ## 8-2.6 완료 결과와 안전 LSA 전진
 
 이 절은 그림 8-2-1의 **⑤ `la_collect_apply_results()`**에서 결과를 수거하고 완료 상태와 안전 LSA를 갱신하는 하위 구조를 설명한다.
 
-reader/coordinator는 worker 결과를 완료 상태와 dispatch entry에 반영하고, COMMIT 순서에 홀 없이 이어진 frontier를 계산한다.
+reader/coordinator는 첫 미수거 result의 알림으로 깨어나 여러 worker queue를 batch로 수거한다. 수거한 결과를 완료 상태와 dispatch entry에 반영하고, COMMIT 순서에 홀 없이 이어진 frontier를 계산한다.
 
 ![9-completion-frontier-asis-tobe_v3](./figures/9-completion-frontier-asis-tobe_v3.svg)
 
 *그림 8-2-7. `la_collect_apply_results()` → `la_collect_worker_results()` → `la_gate_advance_frontier()` — 먼저 도착한 후행 worker 결과는 보관하고 앞의 빈 구간이 채워졌을 때만 `committed_lsa`와 apply-info를 전진시키는 비교*
 
-이 처리는 reader의 로그 반복에서 `la_collect_apply_results()`로 진입한다. 결과를 도착한 순서대로 **수거하는 단계**와, 배정 순서의 앞에서부터 상태를 **확정하는 단계**가 분리되어 있다.
+현재 PoC는 reader의 로그 페이지 처리 반복 시작에서 `la_collect_apply_results()`를 polling한다. 정식 설계에서는 reader가 로그를 처리 중이면 레코드 경계에서 `result_pending`을 확인하고, 새 로그가 없거나 drain 중이면 `result_available_cond`에서 기다린다. 결과를 worker별 도착 순서대로 **batch 수거하는 단계**와, 배정 순서의 앞에서부터 상태를 **확정하는 단계**는 계속 분리한다.
 
 ### 처리 순서
 
 ```text
-la_collect_apply_results():
-    error = ① la_collect_worker_results()
-    if error != NO_ERROR:
-        return error
+worker_complete(result):
+    enqueue(worker.result_queue, result)
+    lock(result_event_mutex)
+    if result_pending == false:
+        result_pending = true
+        signal(result_available_cond)
+    unlock(result_event_mutex)
 
-    return ② la_retire_ready_results()
+collect_ready_results():
+    lock(result_event_mutex)
+    if result_pending == false:
+        unlock(result_event_mutex)
+        return
+    result_pending = false
+    unlock(result_event_mutex)
+
+    ① la_collect_worker_results()   # 여러 worker queue batch 수거
+    la_gate_advance_frontier()
+    la_gate_dispatch_ready_pending() # pending 재판정·재배정
+    ② la_retire_ready_results()
 ```
+
+worker는 result를 queue에 넣은 뒤 플래그를 검사한다. reader가 현재 알림을 `false`로 바꾸고 수거하는 동안 새 result가 도착하면 worker가 다시 `true`로 바꾸므로 다음 batch가 남는다. 평상시에는 건수 또는 시간 budget까지만 처리하고 로그 읽기로 돌아간다. 역할 전환 때도 같은 batch 수거 함수를 사용하되, 새 로그를 읽는 대신 남은 작업이 없어질 때까지 반복 호출한다.
 
 ### 주요 구현 흐름
 
@@ -558,8 +581,9 @@ la_collect_worker_results():
             if result.error == NO_ERROR and result.rectype == LOG_COMMIT:
                 la_gate_mark_completed(result.commit_lsa)      # DB COMMIT에 성공한 task만 완료로 등록
 
+    # batch 전체 수거 뒤 호출자가 한 번 수행
     la_gate_advance_frontier()
-    return la_gate_drain_ready()  # pending 재판정은 8-2.7
+    return la_gate_dispatch_ready_pending()  # pending 재판정은 8-2.7
 ```
 
 `la_dispatch_order_find_by_seq()`는 result를 원래 dispatch entry에 연결해야 한다. DB COMMIT에 성공한 result만 `la_gate_mark_completed()`로 완료 상태에 등록한 뒤, `la_gate_advance_frontier()`가 Gate Order를 사용해 frontier를 계산해야 한다.
@@ -632,19 +656,19 @@ retire에서 `tranid=0`으로 비운 슬롯은 다음 계산에서 제외된다.
 
 ## 8-2.7 pending task 재판정과 재배정
 
-이 절은 그림 8-2-1의 **⑥ `la_gate_drain_ready()`**에서 완료 상태 변경으로 실행 가능해진 pending task를 찾고 worker queue로 다시 보내는 하위 구조를 설명한다.
+이 절은 그림 8-2-1의 **⑥ `la_gate_dispatch_ready_pending()`**에서 완료 상태 변경으로 실행 가능해진 pending task를 찾고 worker queue로 보내는 하위 구조를 설명한다.
 
-`la_gate_drain_ready()`는 역할 전환을 위한 전체 drain 함수가 아니다. worker 결과로 `la_Gate_completed_slots`나 frontier가 바뀐 뒤 pending task를 다시 확인하는 함수다. 최초 task와 다른 기준을 사용하지 않도록 8-2.4의 `la_gate_is_satisfied()`를 그대로 호출해야 한다.
+`la_gate_dispatch_ready_pending()`은 reader가 worker result를 batch로 수거해 `la_Gate_completed_slots`나 frontier를 갱신한 뒤 pending task를 다시 확인하는 함수다. 최초 task와 다른 기준을 사용하지 않도록 8-2.4의 `la_gate_is_satisfied()`를 그대로 호출해야 한다. 현재 PoC의 함수명은 `la_gate_drain_ready()`지만, 역할 전환의 잔여 작업 소진과 혼동되므로 정식 설계에서는 이름을 바꾼다.
 
 ### 주요 구현 흐름
 
 ```text
-la_gate_drain_ready():
+la_gate_dispatch_ready_pending():
     repeat:
         dispatched = false
 
         for each task in pending queue:
-            if la_gate_is_satisfied(task.dependency_seq, task.dependency_is_read):
+            if la_gate_is_satisfied(task.dependency_seq, task.dependency_is_ref):
                 pending queue에서 task 제거
                 la_gate_dispatch_now(task)
                 dispatched = true
@@ -667,18 +691,20 @@ la_gate_drain_ready():
 copylogdb는 수신한 로그 페이지와 active copy log header를 계속 파일에 기록하며, applylogdb는 파일이 가득 찰 때까지 기다리지 않고 도착한 범위까지 반복해서 읽어야 한다. `ha_file_status=SYNCHRONIZED`는 파일 용량 상태가 아니라 copylogdb가 요청 시점의 마스터 `eof_lsa`까지 따라잡았다는 표시다.
 
 ```text
-reader/coordinator 반복
-├─ la_collect_apply_results()
-├─ active copy log header 다시 읽기
-├─ 읽을 로그가 있으면 la_log_record_process()
-└─ la_change_state()
-   ├─ final_lsa가 eof_lsa까지 도달했는지 확인
-   ├─ ha_file_status == SYNCHRONIZED 확인
-   ├─ ha_server_state 확인
-   └─ la_gate_drain_complete() 확인
+RUNNING
+├─ 로그 레코드 경계에서 result_pending 확인
+├─ result가 있으면 batch 수거·pending 재판정
+├─ 역할 전환 상태를 봐도 현재 eof_lsa까지 task 생성·배정 계속
+└─ 로그 끝 + SYNCHRONIZED + 역할 전환 상태 → DRAINING
+
+DRAINING
+├─ 신규 로그 task 생성 중단
+├─ result_available_cond 대기
+├─ signal을 받으면 result batch 수거·pending 재판정
+└─ la_gate_drain_complete() 재검사
 ```
 
-정상 실행 중 pending task를 다시 배정하는 `la_gate_drain_ready()`와 역할 전환 drain은 목적이 다르다. 역할 전환 drain은 별도의 적용 알고리즘을 실행하지 않고, ⑤ 결과 수거 → ⑥ pending 재배정 → ④ worker 적용 순환이 남은 작업을 소진할 때까지 기존 상태 전환을 보류해야 한다.
+`la_gate_dispatch_ready_pending()`은 평상시와 역할 전환 마무리에서 함께 사용하는 pending 재판정·배정 함수다. 역할 전환의 잔여 작업 소진은 별도 적용 알고리즘이 아니라, ⑤ 결과 수거 → ⑥ pending 재배정 → ④ worker 적용 순환이 모두 끝날 때까지 상태 전환을 보류하는 전체 과정이다.
 
 역할 전환의 개념 흐름은 6-2.7의 역할 변경 감지·drain·승격 준비 그림에서 설명한다. 이 절에서는 그 흐름이 `la_log_record_process()`, reader 반복과 `la_change_state()`에 대응하는 위치를 설명한다.
 
@@ -711,8 +737,8 @@ reader/coordinator 반복
 > TO-BE
 >
 > la_apply_log_file()
-> └─ reader/coordinator 반복
->    ├─ la_collect_apply_results()
+> └─ reader/coordinator
+>    ├─ RUNNING: 로그 경계에서 result_pending 확인·batch 수거
 >    ├─ active copy log header와 읽을 로그 확인
 >    ├─ 역할 변경 감지
 >    │  ├─ 정상 전환: la_log_record_process()
@@ -720,10 +746,10 @@ reader/coordinator 반복
 >    │  └─ 마스터 장애: copy log header의 ha_server_state = DEAD
 >    └─ la_change_state()
 >       └─ 로그 끝 + SYNCHRONIZED + DEAD·STANDBY·MAINTENANCE
->          └─ la_gate_drain_complete()
+>          └─ DRAINING 진입·la_gate_drain_complete()
 >             ├─ false → DONE 전환 보류
->             │  └─ reader/coordinator 반복 시작으로 복귀
->             │     └─ ⑤ 결과 수거 → 로그·header 확인 → ⑥ pending 재배정 → ④ worker 적용
+>             │  └─ result_available_cond 대기
+>             │     └─ ⑤ batch 수거 → ⑥ pending 재배정 → ④ worker 적용
 >             └─ true
 >                ├─ new_state = DONE
 >                ├─ la_log_commit(true)
@@ -741,7 +767,7 @@ and dispatch order에 회수·확정할 task가 없음
 and COMMIT 순서 FIFO가 비어 있음
 ```
 
-worker queue와 실행 중 task는 dispatch order에 대응 항목이 남아 있으므로 별도 조건으로 중복 검사하지 않는다. drain이 끝나지 않은 상태에서 로그 입력도 더 이상 전진하지 않으면, reader loop는 설정한 제한 시간까지 기존 결과 수거와 pending 재배정을 계속해야 한다. 제한 시간을 넘기면 무한 대기 상태로 두지 않고 오류를 기록한 뒤 재시작 경로로 전환해야 한다.
+worker queue와 실행 중 task는 dispatch order에 대응 항목이 남아 있으므로 별도 조건으로 중복 검사하지 않는다. drain이 끝나지 않으면 reader/coordinator는 설정한 제한 시간 안에서 result signal을 기다리고, 깨어날 때마다 batch 수거와 pending 재배정을 반복해야 한다. 제한 시간을 넘기면 무한 대기 상태로 두지 않고 오류를 기록한 뒤 재시작 경로로 전환해야 한다.
 
 `la_gate_drain_complete()`만 true라고 해서 즉시 승격하면 안 된다. `la_change_state()`는 로그 끝에 도달했고 active log가 `SYNCHRONIZED`이며 서버 상태가 `DEAD`, `STANDBY` 또는 `MAINTENANCE`인지 먼저 확인해야 한다. drain 완료 뒤에도 `la_log_commit(true)`가 안전한 `committed_lsa`와 apply-info를 DB에 영속하고, `boot_notify_ha_log_applier_state(DONE)`이 성공해야 `apply_state`를 `DONE`으로 바꿔야 한다.
 

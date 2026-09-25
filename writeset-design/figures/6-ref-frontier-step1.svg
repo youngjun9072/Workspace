@@ -19,7 +19,7 @@
   <rect x="80" y="246" width="580" height="176" class="panel"/>
   <text x="110" y="279" class="head">마스터 history[H(parent PK, 7)]</text>
   <rect x="110" y="300" width="520" height="48" class="write"/><text x="130" y="331" class="body">write_seq (이전 WRITE 위치) = T0 COMMIT</text>
-  <rect x="110" y="360" width="520" height="42" class="node"/><text x="130" y="387" class="body">read_seq (이전 REF 위치 최댓값) = NULL</text>
+  <rect x="110" y="360" width="520" height="42" class="node"/><text x="130" y="387" class="body">ref_seq (이전 REF 위치 최댓값) = NULL</text>
 
   <rect x="740" y="246" width="580" height="176" class="panel"/>
   <text x="770" y="279" class="head">슬레이브 적용 상태</text>

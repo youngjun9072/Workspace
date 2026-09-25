@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1420" height="900" viewBox="0 0 1420 900" role="img" aria-labelledby="title desc">
+  <title id="title">result 수거와 두 순서 상태 처리</title>
+  <desc id="desc">여러 worker result를 첫 미수거 결과의 알림 한 번으로 묶어 reader coordinator가 batch 수거한다. Dispatch Order에서 같은 배정 순번의 entry에 연결하고, 성공한 COMMIT은 completed set에 등록해 Gate Order와 대조해 frontier를 전진시킨다. Dispatch Order에서는 head부터 결과를 확정하고 transaction slot을 정리한다.</desc>
+  <defs>
+    <style>
+      text{font-family:"Pretendard","Noto Sans KR",sans-serif;fill:#172033}
+      .title{font-size:28px;font-weight:700}.sub{font-size:16px;fill:#64748b}
+      .lane{font-size:18px;font-weight:700}.head{font-size:18px;font-weight:700}
+      .body{font-size:14px}.small{font-size:13px;fill:#64748b}.mono{font:14px ui-monospace,SFMono-Regular,Menlo,monospace}
+      .result{fill:#f5f3ff;stroke:#8b5cf6;stroke-width:2}
+      .reader{fill:#eff6ff;stroke:#3b82f6;stroke-width:2}
+      .gate{fill:#ecfdf5;stroke:#10b981;stroke-width:2}
+      .gateState{fill:#f0fdf4;stroke:#22c55e;stroke-width:2}
+      .dispatch{fill:#fff7ed;stroke:#f97316;stroke-width:2}
+      .finish{fill:#f8fafc;stroke:#64748b;stroke-width:2}
+      .warn{fill:#fff7ed;stroke:#f59e0b;stroke-width:1.5}
+      .line{fill:none;stroke:#64748b;stroke-width:2.5;marker-end:url(#arrow)}
+      .green{fill:none;stroke:#16a34a;stroke-width:2.8;marker-end:url(#greenArrow)}
+      .orange{fill:none;stroke:#ea580c;stroke-width:2.8;marker-end:url(#orangeArrow)}
+      .dash{stroke-dasharray:7 6}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#64748b"/></marker>
+    <marker id="greenArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#16a34a"/></marker>
+    <marker id="orangeArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 Z" fill="#ea580c"/></marker>
+  </defs>
+
+  <rect width="1420" height="900" fill="#ffffff"/>
+  <text x="42" y="48" class="title">result를 연결한 뒤 Gate Order와 Dispatch Order를 서로 다른 목적으로 처리한다</text>
+  <text x="42" y="78" class="sub">성공한 DB COMMIT만 완료 상태에 넣고, transaction slot은 Dispatch Order의 head부터 정리한다.</text>
+
+  <rect x="42" y="120" width="300" height="170" rx="18" class="result"/>
+  <text x="192" y="151" text-anchor="middle" class="head">worker result queues</text>
+  <rect x="76" y="178" width="232" height="40" rx="8" fill="#ffffff" stroke="#a78bfa"/>
+  <text x="192" y="203" text-anchor="middle" class="mono">seq=3 · C3 · success</text>
+  <rect x="76" y="228" width="232" height="40" rx="8" fill="#ffffff" stroke="#a78bfa"/>
+  <text x="192" y="253" text-anchor="middle" class="mono">seq=1 · C1 · success</text>
+  <text x="192" y="280" text-anchor="middle" class="small">첫 미수거 result만 signal · 나머지는 병합</text>
+
+  <rect x="410" y="120" width="440" height="170" rx="18" class="reader"/>
+  <text x="630" y="156" text-anchor="middle" class="head">reader/coordinator가 batch 수거</text>
+  <text x="450" y="193" class="body">① result_pending 확인 · 모든 worker queue drain</text>
+  <text x="450" y="222" class="body">② result.seq로 Dispatch Order entry 연결</text>
+  <text x="450" y="251" class="body">③ 성공한 LOG_COMMIT만 완료 상태로 전달</text>
+  <path d="M342 205H405" class="line"/>
+  <text x="376" y="194" text-anchor="middle" class="small">알림 1회</text>
+
+  <rect x="930" y="120" width="440" height="170" rx="18" class="finish"/>
+  <text x="1150" y="156" text-anchor="middle" class="head">수거 직후의 두 입력</text>
+  <text x="970" y="194" class="body">Gate 경로: 성공 COMMIT의 commit_lsa</text>
+  <text x="970" y="224" class="body">Dispatch 경로: result가 연결된 entry</text>
+  <rect x="970" y="245" width="360" height="28" rx="7" class="warn"/>
+  <text x="1150" y="264" text-anchor="middle" class="small">오류 result는 entry에만 연결하고 completed set에는 넣지 않음</text>
+  <path d="M850 205H925" class="line"/>
+
+  <text x="42" y="352" class="lane" fill="#047857">Gate Order 경로 · 빈 구간 없는 완료 경계 계산</text>
+  <line x1="42" y1="368" x2="1370" y2="368" stroke="#a7f3d0" stroke-width="2"/>
+
+  <rect x="42" y="400" width="280" height="125" rx="16" class="gate"/>
+  <text x="182" y="434" text-anchor="middle" class="head">completed set 갱신</text>
+  <text x="182" y="468" text-anchor="middle" class="mono">{ C1, C3 }</text>
+  <text x="182" y="497" text-anchor="middle" class="small">DB COMMIT 성공 위치</text>
+
+  <rect x="372" y="400" width="300" height="125" rx="16" class="gate"/>
+  <text x="522" y="434" text-anchor="middle" class="head">Gate Order</text>
+  <text x="522" y="468" text-anchor="middle" class="mono">head → C1 → C2 → C3</text>
+  <text x="522" y="497" text-anchor="middle" class="small">reader가 읽은 COMMIT 순서</text>
+
+  <rect x="722" y="400" width="300" height="125" rx="16" class="gateState"/>
+  <text x="872" y="434" text-anchor="middle" class="head">head부터 completed set 대조</text>
+  <text x="872" y="468" text-anchor="middle" class="mono">C1 ✓ · C2 ✕</text>
+  <text x="872" y="497" text-anchor="middle" class="small">C2에서 중단 · C3은 보관</text>
+
+  <rect x="1072" y="400" width="298" height="125" rx="16" class="gateState"/>
+  <text x="1221" y="434" text-anchor="middle" class="head">frontier = C1</text>
+  <text x="1221" y="468" text-anchor="middle" class="body">C1까지 빈 구간 없이 완료</text>
+  <text x="1221" y="497" text-anchor="middle" class="small">완료 상태 변경 뒤 pending 재판정</text>
+
+  <path d="M322 462H367" class="green"/>
+  <path d="M672 462H717" class="green"/>
+  <path d="M1022 462H1067" class="green"/>
+  <path d="M1020 290V335H182V395" class="green dash"/>
+  <text x="600" y="328" text-anchor="middle" class="small">성공한 LOG_COMMIT만 등록</text>
+
+  <text x="42" y="603" class="lane" fill="#c2410c">Dispatch Order 경로 · result 확정과 transaction slot 정리</text>
+  <line x1="42" y1="619" x2="1370" y2="619" stroke="#fed7aa" stroke-width="2"/>
+
+  <rect x="42" y="651" width="420" height="155" rx="16" class="dispatch"/>
+  <text x="252" y="685" text-anchor="middle" class="head">Dispatch Order</text>
+  <rect x="72" y="708" width="110" height="65" rx="8" fill="#ffffff" stroke="#f97316"/>
+  <text x="127" y="733" text-anchor="middle" class="mono">seq 1 · T1</text>
+  <text x="127" y="756" text-anchor="middle" class="small">ready</text>
+  <rect x="197" y="708" width="110" height="65" rx="8" fill="#ffffff" stroke="#f97316"/>
+  <text x="252" y="733" text-anchor="middle" class="mono">seq 2 · T2</text>
+  <text x="252" y="756" text-anchor="middle" class="small">waiting</text>
+  <rect x="322" y="708" width="110" height="65" rx="8" fill="#ffffff" stroke="#f97316"/>
+  <text x="377" y="733" text-anchor="middle" class="mono">seq 3 · T3</text>
+  <text x="377" y="756" text-anchor="middle" class="small">ready</text>
+
+  <rect x="522" y="651" width="370" height="155" rx="16" class="dispatch"/>
+  <text x="707" y="685" text-anchor="middle" class="head">head부터 retire</text>
+  <text x="557" y="724" class="body">① seq 1 결과·오류 확인</text>
+  <text x="557" y="753" class="body">② T1 slot과 COMMIT node 정리</text>
+  <text x="557" y="782" class="body">③ seq 2가 미준비이므로 중단</text>
+
+  <rect x="952" y="651" width="418" height="155" rx="16" class="finish"/>
+  <text x="1161" y="685" text-anchor="middle" class="head">정리 결과</text>
+  <text x="992" y="724" class="body">T1 slot 재사용 가능</text>
+  <text x="992" y="753" class="body">T3 result와 slot은 그대로 보존</text>
+  <text x="992" y="782" class="body">committed_lsa는 frontier까지만 전진</text>
+
+  <path d="M462 729H517" class="orange"/>
+  <path d="M892 729H947" class="orange"/>
+  <path d="M1150 290V585H252V646" class="orange dash"/>
+  <text x="705" y="575" text-anchor="middle" class="small">연결한 result를 Dispatch Order entry에 보존</text>
+
+  <text x="710" y="860" text-anchor="middle" class="sub">Gate Order는 COMMIT 순서의 hole을 계산하고, Dispatch Order는 result를 배정 entry에 연결해 slot을 정리한다.</text>
+</svg>

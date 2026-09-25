@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="620" viewBox="0 0 1160 620">
+ <style>text{font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR",sans-serif;fill:#172033}.t{font-size:24px;font-weight:700}.h{font-size:17px;font-weight:700}.b{font-size:14px}.s{font-size:12px;fill:#475569}.grid{stroke:#d9e0ea;stroke-width:1}.axis{stroke:#64748b;stroke-width:1.5}</style>
+ <rect width="1160" height="620" fill="#fbfdff"/><text x="35" y="42" class="t">writeset 비용과 슬레이브 병렬 적용 개선</text>
+ <text x="65" y="88" class="h">마스터 writeset 비중</text><text x="600" y="88" class="h">develop 직렬 대비 적용 속도</text>
+ <line x1="90" y1="500" x2="510" y2="500" class="axis"/><line x1="90" y1="120" x2="90" y2="500" class="axis"/>
+ <line x1="625" y1="500" x2="1080" y2="500" class="axis"/><line x1="625" y1="120" x2="625" y2="500" class="axis"/>
+ <g class="grid"><line x1="90" y1="405" x2="510" y2="405"/><line x1="90" y1="310" x2="510" y2="310"/><line x1="90" y1="215" x2="510" y2="215"/><line x1="625" y1="405" x2="1080" y2="405"/><line x1="625" y1="310" x2="1080" y2="310"/><line x1="625" y1="215" x2="1080" y2="215"/></g>
+ <rect x="125" y="471" width="70" height="29" fill="#5b8fd1"/><text x="137" y="463" class="b">0.03%</text><text x="119" y="525" class="s">단건 INSERT</text>
+ <rect x="220" y="424" width="70" height="76" fill="#5b8fd1"/><text x="232" y="416" class="b">0.08%</text><text x="217" y="525" class="s">단건 UPDATE</text>
+ <rect x="315" y="329" width="70" height="171" fill="#4a9b67"/><text x="327" y="321" class="b">0.18%</text><text x="310" y="525" class="s">단건 FK</text>
+ <rect x="410" y="129" width="70" height="371" fill="#d39b2d"/><text x="422" y="121" class="b">0.39%</text><text x="405" y="525" class="s">대량 FK</text>
+ <text x="93" y="575" class="s">단건: 1행×1만 커밋 / 대량 FK: 5만 행, WRITE+REF 10만 키</text>
+ <rect x="685" y="158" width="90" height="342" fill="#4f86c6"/><text x="711" y="148" class="h">4.4×</text><text x="682" y="525" class="b">독립 UPDATE</text>
+ <rect x="820" y="267" width="90" height="233" fill="#6a9ed8"/><text x="846" y="257" class="h">3.0×</text><text x="821" y="525" class="b">독립 INSERT</text>
+ <rect x="955" y="205" width="90" height="295" fill="#4a9b67"/><text x="981" y="195" class="h">3.8×</text><text x="970" y="525" class="b">FK 자식</text>
+ <text x="660" y="575" class="s">10 worker 백로그 apply span 기준</text>
+</svg>
