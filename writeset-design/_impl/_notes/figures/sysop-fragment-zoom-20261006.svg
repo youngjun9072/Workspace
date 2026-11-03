@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1390" height="424" font-family="DejaVu Sans, sans-serif">
+<rect width="1390" height="424" fill="#fff"/>
+<text x="30" y="34" font-size="20" font-weight="bold" fill="#111">Zoom: a serial(AUTO_INCREMENT) transaction keeps its order WITHOUT stalling others (~240ms window)</text>
+<text x="30" y="58" font-size="13" fill="#555">blue = transaction body commit   orange = serial fragment apply   bold red = the serial transaction trid=4075</text>
+<text x="30" y="76" font-size="13" fill="#555">x-axis = milliseconds (0 = the moment trid=4075 body commit must wait for its own serial fragment)</text>
+<line x1="364.6" y1="110" x2="364.6" y2="360" stroke="#888" stroke-dasharray="4 3" stroke-width="1"/>
+<line x1="827.5" y1="110" x2="827.5" y2="360" stroke="#888" stroke-dasharray="4 3" stroke-width="1"/>
+<rect x="250" y="120" width="1100" height="60" fill="#f5f6f8" stroke="#dde"/>
+<text x="238" y="155.0" font-size="14" fill="#333" text-anchor="end">worker 0</text>
+<rect x="250" y="198" width="1100" height="60" fill="#f5f6f8" stroke="#dde"/>
+<text x="238" y="233.0" font-size="14" fill="#333" text-anchor="end">worker 1</text>
+<rect x="250" y="276" width="1100" height="60" fill="#f5f6f8" stroke="#dde"/>
+<text x="238" y="311.0" font-size="14" fill="#333" text-anchor="end">worker 2</text>
+<rect x="364.6" y="206" width="9.2" height="44" rx="3" fill="#e8720c" stroke="none" stroke-width="0"/>
+<text x="364.6" y="204" font-size="12" fill="#222">trid 4079 serial</text>
+<rect x="364.6" y="128" width="9.2" height="44" rx="3" fill="#e8720c" stroke="#c0152f" stroke-width="3"/>
+<text x="364.6" y="126" font-size="12" fill="#222">trid 4075 serial</text>
+<rect x="364.6" y="284" width="13.8" height="44" rx="3" fill="#2d6cdf" stroke="none" stroke-width="0"/>
+<text x="364.6" y="282" font-size="12" fill="#222">trid 4081 commit</text>
+<rect x="827.5" y="128" width="9.2" height="44" rx="3" fill="#2d6cdf" stroke="#c0152f" stroke-width="3"/>
+<text x="827.5" y="126" font-size="12" fill="#222">trid 4075 commit</text>
+<rect x="832.1" y="206" width="6.0" height="44" rx="3" fill="#2d6cdf" stroke="none" stroke-width="0"/>
+<text x="832.1" y="204" font-size="12" fill="#222">trid 4089 commit</text>
+<line x1="373.8" y1="106" x2="827.5" y2="106" stroke="#c0152f" stroke-width="1.5"/>
+<line x1="373.8" y1="106" x2="373.8" y2="112" stroke="#c0152f" stroke-width="1.5"/>
+<line x1="827.5" y1="106" x2="827.5" y2="112" stroke="#c0152f" stroke-width="1.5"/>
+<text x="600.6" y="101" font-size="13" fill="#c0152f" text-anchor="middle">trid 4075 body waits ~99ms for its own serial order — only this txn waits</text>
+<line x1="250" y1="362" x2="1350" y2="362" stroke="#888"/>
+<line x1="364.6" y1="362" x2="364.6" y2="368" stroke="#888"/>
+<text x="364.6" y="384" font-size="12" fill="#444" text-anchor="middle">0ms</text>
+<line x1="479.2" y1="362" x2="479.2" y2="368" stroke="#888"/>
+<text x="479.2" y="384" font-size="12" fill="#444" text-anchor="middle">25ms</text>
+<line x1="593.8" y1="362" x2="593.8" y2="368" stroke="#888"/>
+<text x="593.8" y="384" font-size="12" fill="#444" text-anchor="middle">50ms</text>
+<line x1="708.3" y1="362" x2="708.3" y2="368" stroke="#888"/>
+<text x="708.3" y="384" font-size="12" fill="#444" text-anchor="middle">75ms</text>
+<line x1="822.9" y1="362" x2="822.9" y2="368" stroke="#888"/>
+<text x="822.9" y="384" font-size="12" fill="#444" text-anchor="middle">100ms</text>
+<line x1="937.5" y1="362" x2="937.5" y2="368" stroke="#888"/>
+<text x="937.5" y="384" font-size="12" fill="#444" text-anchor="middle">125ms</text>
+<line x1="1052.1" y1="362" x2="1052.1" y2="368" stroke="#888"/>
+<text x="1052.1" y="384" font-size="12" fill="#444" text-anchor="middle">150ms</text>
+<line x1="1166.7" y1="362" x2="1166.7" y2="368" stroke="#888"/>
+<text x="1166.7" y="384" font-size="12" fill="#444" text-anchor="middle">175ms</text>
+<line x1="1281.2" y1="362" x2="1281.2" y2="368" stroke="#888"/>
+<text x="1281.2" y="384" font-size="12" fill="#444" text-anchor="middle">200ms</text>
+</svg>
