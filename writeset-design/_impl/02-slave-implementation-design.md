@@ -165,6 +165,9 @@ src/transaction/
 │  ├─ log_applier_result_queue.hpp / .cpp
 │  ├─ log_applier_worker.hpp / .cpp
 │  ├─ log_applier_stat.hpp / .cpp
+│  ├─ log_applier_stat_internal.hpp
+│  ├─ log_applier_stat_store.hpp / .cpp
+│  ├─ log_applier_stat_print.hpp / .cpp
 │  └─ log_applier_debug.hpp
 ├─ log_applier.c
 ├─ log_applier.h
@@ -190,11 +193,14 @@ unit_tests/log_applier/
 - `log_applier_coordinator.hpp / .cpp`: 완성된 task의 dependency 판정, pending 보류와 해제, worker 배정, result 수거, frontier 전진과 배정 순서 retire를 조율한다. gate·pending·in-flight·queue의 개별 저장 구조는 각 모듈에 두고, coordinator는 이들을 하나의 처리 흐름으로 연결한다.
 - `log_applier_gate.hpp / .cpp`: commit-order ring과 frontier, gate 판정, 라벨 낮추기를 맡는다. coordinator 전용이며 잠금이 없다.
 - `log_applier_pending.hpp / .cpp`: pending list다. coordinator 전용이며 잠금이 없다.
-- `log_applier_inflight.hpp / .cpp`: in-flight list와 배정 번호를 맡는다. coordinator 전용이며 잠금이 없다.
+- `log_applier_inflight.hpp / .cpp`: in-flight list와 배정 번호를 맡는다. coordinator 전용이며 잠금이 없다. entry의 필드는 구현 파일에 숨기고, 다른 모듈은 조회·소유권 이전 API로만 접근한다.
 - `log_applier_task_queue.hpp / .cpp`: task queue다. coordinator와 worker가 함께 쓰며 자체 mutex와 condition variable로 보호한다.
 - `log_applier_result_queue.hpp / .cpp`: result queue다. coordinator와 worker가 함께 쓰며 자체 mutex와 condition variable로 보호한다. 두 큐의 mutex를 동시에 잡는 스레드는 없다.
 - `log_applier_worker.hpp / .cpp`: worker 스레드의 시작과 join, worker별 connection, worker context(압축 해제 버퍼, 레코드 pool)를 맡는다. `log_applier.c`의 적용 함수는 콜백으로만 부른다.
-- `log_applier_stat.hpp / .cpp`: `_db_ha_apply_stat`, `_db_ha_apply_worker_stat` 통계와 `applyinfo` 출력을 맡는다. worker별 현재 상태와 동시 실행 worker 수는 `la_Worker_live_lock`으로 보호하고, 나머지 카운터는 coordinator만 바꾼다.
+- `log_applier_stat.hpp / .cpp`: 메모리 통계를 수집한다. worker별 현재 상태와 동시 실행 worker 수는 `la_Worker_live_lock`으로 보호하고, 나머지 카운터는 coordinator만 바꾼다.
+- `log_applier_stat_internal.hpp`: 수집과 DB 영속화가 함께 쓰는 통계 상태의 비공개 경계다. 일반 호출자는 포함하지 않는다.
+- `log_applier_stat_store.hpp / .cpp`: `_db_ha_apply_stat`, `_db_ha_apply_worker_stat` 행의 초기화와 저장을 맡는다.
+- `log_applier_stat_print.hpp / .cpp`: 저장된 통계를 읽어 `applyinfo`의 "Parallel Apply Info"를 출력한다. 메모리 통계 상태에는 접근하지 않는다.
 - `log_applier_debug.hpp`: debug 빌드 전용 로그 매크로와 시간 측정 매크로다.
 
 나머지 파일은 기존 파일이며, 바뀐 내용은 다음과 같다.
@@ -592,6 +598,8 @@ in-flight list는 고리 버퍼다.
 - `result_ready`, `result`: 붙은 result와 그 여부.
 - `la_Inflight`(`LA_INFLIGHT_LIST`): 항목 배열(`entries`)과 `capacity`, `head`, `tail`, `count`.
 - `la_Dispatch_sequence`: 다음 배정 번호. 다시 쓰지 않으므로 result 하나는 항목 하나에만 대응한다. `la_inflight_init`에서 0으로 되돌린다.
+
+위 필드는 자료구조의 의미를 설명하기 위해 표시한 것이다. 실제 헤더는 `LA_INFLIGHT_ENTRY`를 불완전 타입으로만 공개한다. coordinator와 `log_applier.c`는 `la_inflight_entry_get_*()`로 값을 읽고, sysop fragment 슬롯의 소유권을 넘겨받을 때만 `la_inflight_entry_take_apply()`를 쓴다. 따라서 목록의 저장 형식과 소유권 표시는 in-flight 모듈 밖에서 직접 바꿀 수 없다.
 
 ### 2.5 task queue, result queue와 용량
 
@@ -2543,6 +2551,8 @@ develop이 여기서 풀던 `rec_type`, unzip 버퍼, recdes pool은 worker cont
 
 값을 모으고 저장하는 방식은 다음과 같다.
 
+- **모듈 경계**: `log_applier_stat.cpp`는 실행 중 카운터와 worker 상태만 갱신한다. `log_applier_stat_store.cpp`는 같은 상태를 읽어 두 시스템 테이블에 저장하고, `log_applier_stat_print.cpp`는 DB에 저장된 행만 조회해 출력한다. 수집 경로가 DB API나 출력 형식에 의존하지 않도록 세 책임을 분리한다.
+
 - **시각을 남기는 곳**: coordinator는 task 제출, dependency 미충족 task의 pending 진입, dependency 충족 확인, task queue 삽입과 result 수거 시각을 남긴다. queue가 가득 차 pending에 들어가더라도 dependency가 이미 충족했으면 `pending_begin_ns`는 0이고 `ready_ns`는 이미 설정된다. worker는 `la_task_queue_pop` 직후의 dequeue 시각과 적용 시작·종료 시각을 남긴다. 간격 계산은 모두 `CLOCK_MONOTONIC`을 사용한다.
 - **간격 계산**: 한 task의 시각은 다음처럼 해석한다.
 
@@ -2620,7 +2630,7 @@ trace 수준과 상관없이 남는 줄은 다음과 같다.
 - CMake 옵션 `UNIT_TEST_LOG_APPLIER`(또는 `UNIT_TESTS`)를 켜면 실행 파일 `test_log_applier`가 만들어진다. Unix에서만 빌드한다.
 - 시험 대상 소스는 직접 컴파일해 넣는다. 이 모듈들은 상태를 파일 static에 두고 `cubridcs`에서 내보내지 않기 때문이다. 오류 관리자 등 나머지 클라이언트 런타임은 `cubridcs`를 링크해 쓴다.
 - 넣는 소스는 `applier/`의 `log_applier_coordinator.cpp`, `log_applier_inflight.cpp`, `log_applier_gate.cpp`, `log_applier_pending.cpp`, `log_applier_task_queue.cpp`, `log_applier_result_queue.cpp`, `log_applier_worker.cpp`다.
-- 시험 대상이 아닌 것도 있다. 통계(`log_applier_stat.cpp`)는 단위 테스트가 없다. worker가 부르는 적용 callback, applied-tx 마커, apply info 저장처럼 서버 연결이 필요한 `log_applier.c` 경로는 여기서 시험하지 않는다.
+- 시험 대상이 아닌 것도 있다. 통계 수집·영속화·출력 모듈은 단위 테스트가 없다. worker가 부르는 적용 callback, applied-tx 마커, apply info 저장처럼 서버 연결이 필요한 `log_applier.c` 경로는 여기서 시험하지 않는다.
 - worker 시험은 `db_restart_sub`와 `db_shutdown_sub`를 시험 파일 안의 stub으로 바꾼다. task를 넣지 않으므로 `run_task` 콜백은 불리지 않는다. 즉 task 적용 경로(5.2절)는 단위 테스트 대상이 아니다.
 - `test_log_applier_common.hpp`는 LSA와 task를 만드는 도우미(`test_lsa`, `test_task`)를 둔다.
 
@@ -2843,21 +2853,25 @@ trace 수준과 상관없이 남는 줄은 다음과 같다.
 - `la_worker_startup_failed` 398: 5.1절, 10절
 - `la_worker_context_init` 421, `la_worker_context_final` 456, `la_clear_recdes_pool` 479, `la_realloc_recdes_data` 522, `la_assign_recdes_from_pool` 561, `la_release_oversized_recdes` 598, `la_init_recdes_pool` 628: 2.6절, 5.1절
 
-**src/transaction/applier/log_applier_stat.cpp**
-- `LA_WORKER_LIVE` 54, `LA_WORKER_STAT` 64, `LA_APPLY_STAT` 83, `la_Worker_live`·`la_Worker_live_lock` 99~100: 9.1절
+**src/transaction/applier/log_applier_stat_internal.hpp / log_applier_stat.cpp**
+- `LA_WORKER_LIVE`, `LA_WORKER_STAT`, `LA_APPLY_STAT`, `la_Worker_live`·`la_Worker_live_lock`: 9.1절
 - `la_stat_reset`, `la_stat_count_*`, `la_stat_note_result_collected`, `la_stat_worker_begin`, `la_stat_worker_end`: 9.1절
 - `la_stat_add_result`: 4.6절, 9.1절
 - `la_stat_note_error`: 5.3절, 9.1절
-- `la_stat_init_rows` 270: 7.4절, 9.1절
-- `la_stat_store` 383, `la_stat_update_rows` 432: 7.2절, 9.1절
-- `la_stat_sprint_time` 591, `la_stat_print_applyinfo` 613: 9.1절
+
+**src/transaction/applier/log_applier_stat_store.cpp**
+- `la_stat_init_rows`: 7.4절, 9.1절
+- `la_stat_store`, `la_stat_update_rows`: 7.2절, 9.1절
+
+**src/transaction/applier/log_applier_stat_print.cpp**
+- `la_stat_sprint_time`, `la_stat_print_applyinfo`: 9.1절
 
 **src/transaction/applier/ 헤더**
 - `log_applier_task.hpp`: `LA_TASK` 37. 2.2절
 - `log_applier_result.hpp`: `LA_STATS` 36, `LA_RESULT` 52(`tranid` 56), `la_result_init` 86. 2.2절, 10절
-- `log_applier_inflight.hpp`: `LA_INFLIGHT_ENTRY` 34. 2.4절
+- `log_applier_inflight.hpp`: 불완전 타입 `LA_INFLIGHT_ENTRY`와 entry 조회·소유권 이전 API. 2.4절
 - `log_applier_worker.hpp`: `LA_MAX_WORKER_COUNT` 39, `LA_TASK_QUEUE_CAPACITY` 41, `LA_COMMIT_ORDER_CAPACITY` 47. 2.5절, 1.2절. `LA_WORKER` 50, `LA_WORKER_SESSION` 64, `LA_RECDES_POOL` 75, `LA_APPLY_WORKER_CONTEXT` 88, `LA_WORKER_CONFIG` 110. 2.6절
-- `log_applier_stat.hpp`: `LA_STAT_APPLIER` 38. 9.1절
+- `log_applier_stat.hpp`: 메모리 통계 수집 API. `log_applier_stat_store.hpp`: `LA_STAT_APPLIER`와 DB 영속화 API. `log_applier_stat_print.hpp`: applyinfo 출력 API. 9.1절
 - `log_applier_debug.hpp`: `LA_DEBUG_LOG` 31. 9.2절
 
 **그 밖의 파일**
