@@ -1,479 +1,378 @@
 # 컨셉 설계에서 실제 구현까지 바뀐 내용
 
-이 문서는 발표한 컨셉 설계와 현재 구현 사이의 차이를 설명한다. 독자는 [[6-1-cubrid-마스터-writeset-설계|마스터 컨셉 설계]]와 [[6-2-cubrid-슬레이브-병렬-적용-설계|슬레이브 컨셉 설계]]를 보았지만, 구현 과정의 리뷰와 장애 분석은 보지 않았다고 가정한다.
+컨셉 설계를 구현하면서 바꾼 선택과, 처음 설계에 빠져 있어 추가한 처리를 정리한다. 구현 중 발견한 오류도 함께 다루되, 설계 자체를 바꾼 경우와 구분한다. 각 절에서는 어떤 문제가 있었고 왜 현재 방식으로 구현했는지를 설명한다. 현재 함수와 처리 흐름의 상세 명세는 01 마스터 구현 설계와 02 슬레이브 구현 설계에서 다룬다.
 
-변경 하나는 다음 순서로 읽는다.
+## 1. 주요 변경 내용
 
-```text
-컨셉 설계의 원안
-  → 실제 구현
-  → 바꾼 이유
-  → 근거
-  → 정합성·성능·운영 영향
-```
+마스터가 제약 키로 dependency를 만들고, 슬레이브가 그 순서를 지키면서 독립 트랜잭션을 병렬로 적용한다는 기본 구조는 유지했다. 구현에서는 다음과 같은 선택을 바꾸거나 빠진 처리를 보완했다.
 
-근거 표기는 다음과 같다.
+| 구분 | 주요 내용 |
+|---|---|
+| 설계 변경 | 인덱스 비교에 맞춘 키 해시, 로그의 `dependency_is_ref` 제거와 frontier로 통일한 완료 판정, 공유 task/result queue, 오류 skip을 대신하는 applied-tx 마커 |
+| 누락된 처리 보완 | 마스터 재시작, SYSOP·2PC·부분 rollback, worker별 적용 자원, 로그 보존과 종료 순서 |
+| 구현 오류 수정 | 늦은 history clear와 probe의 경쟁, 중첩 SYSOP의 조기 기록, dbname 잠금 위치, 통계 저장 실패 후 마커 삭제 |
 
-- **코드 확인**: 현재 브랜치의 함수와 자료구조에서 직접 확인했다.
-- **검증 기록**: `_impl/_notes`, `fixes`, `review`의 재현·시험 결과가 있다.
-- **커밋 근거**: 변경 목적이 커밋 제목과 diff에 남아 있다.
-- **코드 기반 추정**: 위 세 근거에 명시적인 결정 이유가 없어 현재 호출 관계와 불변식으로 추정했다.
+*표 1-1. 컨셉 설계의 변경, 누락된 처리의 보완, 구현 중 발견한 오류 수정의 구분*
 
-이 문서에서 자주 쓰는 용어는 다음 세 가지다.
+이후 설명에서 사용하는 핵심 용어는 다음과 같다.
 
-- **dependency**: 현재 적용 단위보다 먼저 완료돼야 하는 마스터 로그 위치다. `WSET_LABEL.dependency_seq`로 전달한다.
-- **history**: 마스터가 충돌 키별 마지막 WRITE·REF COMMIT 위치를 보관하는 메모리 map이다.
-- **frontier**: 슬레이브가 로그 앞에서부터 빈틈없이 적용을 끝낸 마지막 적용 경계다. 적용 경계는 COMMIT 또는 라벨이 붙은 SYSOP_END의 LSA다. 뒤 경계가 먼저 끝나도 앞에 미완료 경계가 있으면 전진하지 않는다.
-
-현재 동작의 전체 명세는 [[01-master-implementation-design|01 마스터 구현 설계]]와 [[02-slave-implementation-design|02 슬레이브 구현 설계]]가 담당한다. 이 문서는 같은 내용을 반복하지 않고 **왜 달라졌는지**에 집중한다.
-
-## 1. 변경 지형도
-
-초기 설계의 큰 방향은 유지됐다. 마스터는 제약 키로 dependency를 만들고, 슬레이브는 dependency를 지키면서 독립 트랜잭션을 worker에 보낸다. 실제 구현에서는 그 사이의 실패·재시작·동시성 경계를 닫기 위해 구조가 늘었다.
-
-```mermaid
-flowchart LR
-  subgraph MASTER[마스터에서 보강]
-    M1[인덱스와 같은 키 해시]
-    M2[history 동시성·재시작 하한]
-    M3[COMMIT·SYSOP 라벨 원자 기록]
-    M4[커밋 중인 키와 FK 분할 처리]
-  end
-
-  subgraph LOG[복제 로그]
-    L1[WSET_LABEL]
-    L2[COMMIT 또는 SYSOP_END]
-  end
-
-  subgraph SLAVE[슬레이브에서 보강]
-    S1[frontier 하나로 gate 판정]
-    S2[pending·in-flight·공유 queue]
-    S3[worker별 connection과 적용 context]
-    S4[applied-tx 마커와 재시작]
-    S5[DONE drain·required_lsa·자원 정리]
-  end
-
-  M1 --> M2 --> M3 --> L1 --> L2 --> S1 --> S2 --> S3 --> S4 --> S5
-  M4 --> M3
-```
-
-가장 큰 결정 변경은 세 가지다.
-
-1. 충돌 키는 단순 packed bytes가 아니라 **B-tree가 같다고 판단하는 값**을 만들어야 한다.
-2. `dependency_is_ref`로 대기 방식을 나누지 않고, 모든 라벨을 **연속 완료 경계(frontier)** 로 판정한다.
-3. 재시작 중복 적용은 제한적 error-skip이 아니라 **데이터와 함께 커밋하는 applied-tx 마커**로 판정한다.
+- **dependency**: 현재 적용 단위보다 먼저 완료돼야 하는 마스터 로그 위치다. `LOG_DUMMY_WSET_LABEL`의 `dependency_seq`로 전달한다.
+- **history**: 마스터가 충돌 키별 WRITE·REF COMMIT 위치를 보관하는 메모리 map이다.
+- **frontier**: 슬레이브가 앞에서부터 빈틈없이 적용한 마지막 COMMIT 또는 독립 적용되는 SYSOP_END의 LSA다. 뒤의 작업이 먼저 끝나도 앞에 미완료 작업이 있으면 전진하지 않는다.
 
 ## 2. 마스터 구현에서 바뀐 내용
 
-마스터의 기본 역할은 제약 키를 모아 dependency를 기록하고, COMMIT LSA를 history에 게시하는 것이다. 실제 구현에서는 인덱스 동등성, history 동시성, 재시작과 SYSOP·2PC까지 이 순서 보장의 범위를 넓혔다.
+마스터에서는 먼저 실제 인덱스 비교와 키 해시를 대조했다. 이후 여러 트랜잭션의 history 접근을 검토하고, 일반 COMMIT 외에 재시작·SYSOP·2PC·부분 rollback에서도 순서 정보가 유지되도록 보완했다.
 
 ### 2.1 충돌 식별자에서 클래스 OID를 제거했다
 
-- **원안**: `H(class_oid, index VFID, normalized key)`로 클래스와 인덱스를 함께 구분한다.
-- **구현**: `H(index VFID, index와 같은 의미로 정규화한 key)`를 사용한다. 부모 PK의 WRITE와 자식 FK의 REF도 같은 부모 인덱스 VFID를 사용한다.
-- **이유**: 상속 계층의 여러 클래스가 물리적으로 같은 UNIQUE 인덱스를 공유할 수 있다. 클래스 OID를 넣으면 같은 인덱스·같은 값인데도 다른 해시가 되어 충돌을 놓친다.
-- **근거**: [[fixes/10-inherited-index-writeset-key|상속 공유 인덱스 분석]], 커밋 `0ab0a6173`, `6c6fe71a8`; `writeset_key_hash.cpp`.
-- **영향**: 같은 물리 인덱스의 충돌은 클래스가 달라도 만난다. 서로 다른 인덱스는 VFID로 계속 분리된다.
+컨셉 설계는 `H(class_oid, index VFID, normalized key)`로 클래스와 인덱스를 함께 구분했다. 그러나 상속 계층의 여러 클래스가 물리적으로 같은 UNIQUE 인덱스를 공유할 수 있었다. 이때 클래스 OID를 넣으면 같은 인덱스의 같은 값도 다른 해시가 되어 충돌을 놓친다.
+
+현재는 `H(index VFID, index와 같은 의미로 정규화한 key)`를 사용한다. 부모 PK의 WRITE와 자식 FK의 REF도 같은 부모 인덱스 VFID를 사용한다. 같은 물리 인덱스의 충돌은 클래스가 달라도 만나고, 서로 다른 인덱스는 VFID로 구분된다.
+
+수정 전에는 상속 클래스 간 공유 B-tree의 dependency가 누락됐다. 수정 후 단위 테스트 47건·4,728 assertion과 HA 시험이 통과했다.
 
 ### 2.2 키 해시를 B-tree 비교 의미에 맞췄다
 
-- **원안**: 문자열은 collation을 반영하고, 그 밖의 값은 packed image를 해시한다.
-- **구현**: 인덱스가 같은 값으로 보는 표현을 타입별로 맞춘다.
-  - 문자열은 collation pseudo key를 쓰고 인덱스가 무시하는 뒤쪽 문자를 제외한다.
-  - `FLOAT`·`DOUBLE`의 `-0.0`은 `+0.0`과 같게 만든다.
-  - `TIMESTAMPTZ`·`DATETIMETZ`는 인덱스 비교에 들어가지 않는 zone을 제외한다.
-  - 복합 키의 각 원소는 `MAX_ALIGNMENT` 경계에서 패킹한다.
-  - 복합 FK REF는 자식 FK의 각 원소를 대응하는 부모 PK 원소 domain으로 변환한 뒤 부모 복합 PK와 같은 MIDXKEY로 해시한다. MATCH SIMPLE에서 원소 하나라도 NULL이면 부모 참조가 없으므로 REF를 만들지 않는다.
-  - NaN은 하나의 동치 해시로 표현할 수 없어 그 트랜잭션을 commit-order로 보낸다.
-- **이유**: 같은 인덱스 키가 다른 해시가 되는 false negative는 필요한 dependency를 없앤다. packed bytes가 같아 보이는지만으로는 인덱스의 collation·타입 비교와 일치하지 않는다.
-- **근거**: 커밋 `cf8955a91`, `17aae152e`, `b717e2688`, `357f0568a`, `fc4b08eb3`; [[fixes/12-index-equal-key-hash-survey|동일 키 해시 조사]], [[_notes/07-poc-productization-followups|제품화 보완]].
-- **영향**: 해시는 단순 직렬화 최적화가 아니라 정합성 경계가 됐다. 지원하지 못하는 값은 조용히 누락하지 않고 DML 오류 또는 commit-order 폴백으로 처리한다.
+처음에는 문자열에 collation을 반영하고, 나머지 값은 packed image를 해시했다. 실제 인덱스와 대조하니 같은 값으로 비교되는 키도 타입이나 저장 표현에 따라 다른 해시가 될 수 있었다. 필요한 dependency가 사라지는 문제이므로, 키를 해시하기 전에 B-tree의 비교 규칙에 맞춰 정규화하도록 바꿨다.
+
+| 대상 | 변경한 처리와 이유 |
+|---|---|
+| 문자열 | 인덱스가 무시하는 뒤쪽 문자를 제외한다. UCA expansion collation은 기존 pseudo key로 같은 키를 다르게 해시할 수 있어 비교 가중치열을 해시하고, 나머지는 기존 pseudo key를 사용한다. |
+| NUMERIC | precision·scale이 달라도 같은 숫자는 같은 십진 문자열로 만들어 해시한다. |
+| MONETARY | 인덱스가 비교하지 않는 통화 종류를 통일해 같은 금액이 같은 해시가 되게 한다. |
+| VARBIT | 인덱스가 비트 길이 대신 바이트 수를 비교하므로 길이를 바이트 단위로 맞춘다. |
+| FLOAT·DOUBLE | 같은 값으로 비교되는 `-0.0`과 `+0.0`을 하나로 맞춘다. |
+| TIMESTAMPTZ·DATETIMETZ | 인덱스 비교에 사용하지 않는 zone을 제외한다. |
+| 복합 키 | 원소를 `MAX_ALIGNMENT` 경계에서 패킹한다. 복합 FK는 각 원소를 대응하는 부모 PK domain으로 변환해 부모 키와 같은 MIDXKEY를 만든다. MATCH SIMPLE에서 원소 하나라도 NULL이면 REF를 만들지 않는다. |
+| NaN | 하나의 동치 해시로 표현할 수 없어 트랜잭션 전체를 commit-order로 보낸다. |
+
+*표 2-1. 인덱스 비교와 해시가 같은 키를 가리키도록 보완한 타입별 처리*
+
+VARBIT·문자열 NUL·공백·복합 키·FK REF·NaN 등을 다룬 HA 쌍 시험 17건에서는 마스터와 슬레이브의 최종 데이터가 일치했고 적용 오류가 없었다. NaN은 commit-order 폴백으로 확인했다. 이 결과는 이후 추가한 NUMERIC 정규화와 UCA 가중치 해시까지 검증한 결과는 아니다.
+
+정규화할 수 없는 값을 일부만 제외한 채 정상 writeset으로 사용해서는 안 된다. 키 생성 실패는 DML 오류로 반환하고, NaN처럼 별도로 정한 경우는 트랜잭션 전체를 commit-order로 처리한다.
 
 ### 2.3 로컬 writeset과 전역 history를 모듈로 분리했다
 
-- **원안**: `LOG_TDES.ws_hashes`와 전역 history map을 한 writeset 구성요소로 설명했다.
-- **구현**: 트랜잭션 키 수집, 키 해시, dependency 순서 계산, history map, 설정, trace, 통계를 별도 모듈로 나눴다. 전역 history는 transaction table 준비·최종 해제 경로에 연결하고, `wset_History_initialized`로 잠금과 map의 중복 초기화·해제를 막는다.
-- **이유**: 로컬 목록은 트랜잭션 생명주기이고, history는 서버 생명주기와 잠금 규칙을 가진다. 한 파일에 두면 공개 API와 내부 TBB accessor가 섞이고 초기화·정리 책임도 모호해진다.
-- **근거**: [[_notes/05-modularization-analysis|모듈화 분석]], [[_notes/writeset-module-boundary-review|모듈 경계 리뷰]], 커밋 `865d9a3c2`, `a1c7c09bc`.
-- **영향**: 호출자는 TBB를 알지 않고 `writeset_history` API만 사용한다. 구현 문서와 단위 테스트도 모듈 책임별로 나뉜다.
+컨셉 설계에서는 트랜잭션의 키 목록과 전역 history를 하나의 writeset 구성요소로 설명했다. 구현에서는 두 자료의 수명과 잠금 책임이 달라 모듈을 나눴다. 로컬 목록은 트랜잭션이 끝나면 비우지만, history는 서버가 동작하는 동안 여러 트랜잭션이 함께 사용한다.
+
+트랜잭션 키 수집, 키 해시, dependency 계산, history map, 설정, trace, 통계를 각각 분리했다. history의 준비·최종 해제는 transaction table 경로에 연결하고, `wset_History_initialized`로 잠금과 map의 중복 초기화·해제를 막는다.
+
+호출자는 TBB accessor를 직접 다루지 않고 `writeset_history` API를 사용한다. 이 분리는 코드의 수명주기와 공개 API 경계를 기준으로 했으며, 구현 문서와 단위 테스트도 같은 책임에 맞춰 나눴다.
 
 ### 2.4 history clear와 probe에 같은 세대의 스냅샷을 보장했다
 
-- **원안**: map이 가득 차면 비우고 `history_start`를 올린다고만 정의했다.
-- **구현**:
-  - 키별 probe·publish는 map 공유 잠금과 TBB 키 accessor를 쓴다.
-  - 전체 clear는 `seq_lock`과 map 배타 잠금을 함께 잡는다.
-  - clear의 하한은 clear를 수행한 트랜잭션 하나가 아니라, 그 시점까지 기록된 가장 큰 COMMIT LSA(`prev_commit_lsa`)다.
-  - probe는 `history_start`, `prev_commit_lsa`, map을 clear 전 세대 또는 clear 후 세대 중 하나로만 읽는다.
-  - 여러 트랜잭션이 공유 잠금 아래에서 동시에 게시할 때는 `wset_Publish_reserved`로 게시할 키 수를 먼저 예약한다. `map size + 전체 예약량`이 상한을 넘으면 배타 clear 경로로 전환한다.
-- **이유**: COMMIT 순서와 publish 완료 순서는 다를 수 있다. 늦게 publish한 과거 트랜잭션이 clear하면서 더 최신 slot을 지우거나, probe가 clear 전 map과 clear 후 하한을 섞어 읽으면 dependency가 낮아진다.
-- **근거**: [[_notes/06-history-clear-concurrency|history clear 동시성]], [[_notes/07-probe-snapshot-consistency|probe 스냅샷]], `writeset_history.cpp`.
-- **영향**: 키별 접근의 병렬성은 유지하고, 드문 전체 clear에서만 전역 배타 구간을 사용한다. 동시에 시작한 게시가 각각의 검사만 통과해 history 상한을 넘는 경우도 막는다.
+컨셉 설계에는 map이 가득 차면 비우고 `history_start`를 올리는 규칙이 있었다. 구현을 검토하면서 COMMIT 순서와 history 게시 완료 순서가 다를 수 있다는 문제가 드러났다. 늦게 게시한 과거 트랜잭션이 map을 비우면, 먼저 게시된 최신 COMMIT의 슬롯도 함께 지워진다. 그 과거 COMMIT만 새 하한으로 삼으면 지워진 최신 커밋을 이후 dependency에서 놓친다.
+
+그래서 clear의 하한은 clear를 수행한 트랜잭션의 LSA가 아니라, 그 시점까지 기록된 가장 큰 COMMIT LSA인 `prev_commit_lsa`로 정했다. probe도 map·`history_start`·`prev_commit_lsa`를 clear 전 상태 또는 clear 후 상태 중 하나로만 읽도록 잠금 범위를 맞췄다. 이전 map과 새 하한을 섞어 읽으면 dependency가 낮아질 수 있기 때문이다.
+
+키별 probe·publish는 `history_lock`을 공유로 잡고 TBB accessor로 접근한다. 전체 clear에서만 `seq_lock`과 배타 `history_lock`을 함께 잡는다. 게시 용량은 `wset_Publish_reserved`로 먼저 예약해, 동시에 게시한 트랜잭션들이 각자 용량 검사만 통과하고 합계로는 한도를 넘는 경우도 막는다.
+
+단위 테스트에서 늦은 clear가 최신 하한을 보존하고 probe가 clear 전·후 상태를 섞지 않음을 확인했다. 운영 부하로 같은 타이밍을 재현한 결과는 없다. 키별 접근의 병렬성은 유지하고, 전체 clear에서만 배타 잠금을 사용한다.
 
 ### 2.5 폴백은 불완전한 writeset을 사용하지 않는다
 
-- **원안**: overflow나 키 변환 실패 때 직전 COMMIT 기준으로 보수 처리한다.
-- **구현**:
-  - 키 수 한도, statement 복제, NaN은 이유를 기록하고 로컬 키 전체를 버린 뒤 commit-order로 보낸다.
-  - serial PK 인덱스를 아직 얻지 못한 경우도 statement 계열 폴백으로 분류한다.
-  - 메모리 부족, 도메인 변환, 복합 키 추출처럼 키 생성 자체가 실패하면 폴백하지 않고 DML 오류를 반환한다.
-  - 폴백 dependency는 `prev_commit_lsa`뿐 아니라 `history_start`보다도 낮아지지 않는다. COMMIT 뒤에는 키별 map을 비우고 하한을 유지한다.
-- **이유**: A·B·C가 같은 키로 이어질 때 B의 키 일부만 빠지고 정상 writeset처럼 커밋하면 A→C만 연결되어 B의 순서를 잃는다. 안전한 폴백은 트랜잭션 전체를 한 경로로 바꿔야 한다.
-- **근거**: `writeset.cpp`, `writeset_types.hpp`; [[_notes/07-poc-productization-followups|제품화 보완]], [[review/CBRD-27508_review_issues/C2_overflow_label_missing_history_floor|C2]], 커밋 `028a2bd0a`, `cc88f37a5`.
-- **영향**: 폴백은 병렬성을 낮출 뿐 순서를 누락하지 않는다. 원인별 통계로 병렬성 손실 이유를 구분한다.
+초기 설계는 overflow나 키 변환 실패를 직전 COMMIT 기준으로 보수 처리했다. 이를 구현할 때는 정상 writeset을 포기하는 경우와 키 생성 자체가 실패한 경우를 구분했다.
+
+키 수 한도, statement 복제, NaN, serial PK 인덱스를 아직 얻지 못한 경우는 로컬 키 전체를 버리고 commit-order로 처리한다. 반면 메모리 부족·domain 변환·복합 키 추출 실패는 DML 오류로 반환한다. 일부 키만 빠진 목록으로 커밋하면 A·B·C의 같은 키 충돌에서 B가 사라져, A와 C 사이에만 dependency가 남을 수 있다.
+
+폴백 dependency는 `prev_commit_lsa`뿐 아니라 `history_start`보다도 낮아지지 않게 했다. COMMIT 뒤에는 키별 map을 비우고 하한을 유지해 이후 트랜잭션도 이 커밋을 기다리게 한다. 폴백은 병렬성을 줄일 수 있지만 순서를 누락해서는 안 된다.
+
+하한 누락을 확인하는 단위 테스트는 수정 전 실패했고 수정 후 28건·4,459 assertion이 통과했다. HA에서도 재시작 직후 DDL의 dependency가 복구 하한을 가리키는 것을 확인했다. 폴백 원인은 통계로 구분한다.
 
 ### 2.6 dependency 라벨에서 `dependency_is_ref`를 제거했다
 
-- **원안**: WRITE slot에서 온 dependency는 특정 완료를, REF slot에서 온 dependency는 그 LSA까지의 연속 완료를 기다리도록 플래그를 전달한다.
-- **구현**: 라벨은 `dependency_seq` 하나만 전달하고, 슬레이브는 모든 라벨을 `dependency_seq <= frontier`로 판정한다. completed 상태는 frontier를 전진시키는 내부 상태로만 쓴다. 다만 마스터 내부의 `candidate_is_ref`는 남아 있다. 마지막 후보가 `ref_seq`에서 왔으면 여러 참조 트랜잭션의 상한이므로 그대로 라벨에 쓰고, 그 밖의 후보는 `prev_commit_lsa`와의 경계를 적용하되 `history_start` 아래로 내리지 않는다. 즉 **전송 플래그만 제거**한 것이다.
-- **이유**: 특정 완료만 확인하는 지름길은 그 완료가 다른 선행 사슬 위에 있지 않을 때 중간 트랜잭션을 건너뛸 수 있었다. 실제 순서 역전 예에서 한 개의 최댓값과 출처 플래그만으로는 전체 선행 집합을 표현하지 못했다.
-- **근거**: [[_notes/11-dependency-label-design|dependency 라벨 재설계]]의 A1 결정, 커밋 이력의 `dependency_is_ref` 제거; `log_record.hpp`, `log_applier_gate.cpp`.
-- **영향**: gate가 한 조건으로 단순해지고 정합성 논증이 쉬워졌다. 일부 트랜잭션은 개별 완료 지름길보다 더 기다리지만, pending list 때문에 뒤의 독립 트랜잭션까지 막지는 않는다.
+컨셉 설계는 WRITE 슬롯에서 온 dependency이면 해당 트랜잭션 한 건의 완료를, REF 슬롯에서 왔으면 그 LSA까지의 연속 완료를 확인하도록 했다. 그러나 여러 키의 선행 관계를 가장 늦은 LSA 하나로 줄인 뒤에는, 그 트랜잭션 한 건이 끝났다는 사실만으로 나머지 선행 작업의 완료까지 알 수 없었다.
+
+실제 시험에서는 선행 관계 1,369개 중 18개가 보장되지 않았고, 8개가 역전돼 4행의 데이터가 달랐다. 이에 전송하는 `dependency_is_ref`를 제거하고 모든 dependency를 `dependency_seq <= frontier`로 판정하도록 바꿨다. 같은 seed의 수정 후 시험에서는 역전·미해제 pending·fail이 모두 0이었다.
+
+마스터 내부의 `candidate_is_ref`는 남아 있다. `ref_seq`에서 온 최종 후보는 여러 참조 트랜잭션의 상한이므로 그대로 사용한다. 다른 후보는 `prev_commit_lsa`와 비교하되 `history_start` 아래로 내리지 않는다. 제거한 것은 슬레이브의 대기 방식을 나누던 전송 플래그다.
+
+일부 task는 개별 완료만 볼 때보다 더 기다린다. 다만 기다리는 task는 pending list에 두므로 뒤의 독립 task까지 함께 멈추지는 않는다.
 
 ### 2.7 라벨 결정과 COMMIT 기록을 같은 로그 잠금 구간에 넣었다
 
-- **원안**: COMMIT 직전에 probe하고 `REPL → WSET_LABEL → COMMIT` 순서로 기록한다.
-- **구현**: dependency 계산, 복제 레코드, WSET_LABEL, COMMIT 기록, `prev_commit_lsa`·폴백 하한 갱신을 `prior_lsa_mutex` 안에서 수행한다. 키 publish는 COMMIT 뒤, 행 잠금과 MVCCID self-lock을 풀기 전에 수행한다.
-- **이유**: probe와 COMMIT 사이에 다른 COMMIT이 끼면 라벨이 실제 직전 상태를 놓친다. 반대로 키 수만큼 history를 갱신하는 publish까지 전역 로그 잠금 안에 두면 모든 로그 기록이 오래 멈춘다.
-- **근거**: 커밋 `7a4ab074d`, `913171f58`, `787defb50`; `log_manager.c`의 local commit 경로.
-- **영향**: 로그 순서 결정은 원자적이고, 키별 publish는 병렬로 수행된다. 같은 키의 다음 DML은 행·MVCC 잠금 때문에 publish 완료 뒤에만 COMMIT 경로에 온다.
+COMMIT 직전에 history를 조회하더라도, 조회와 COMMIT 기록 사이에 다른 COMMIT이 들어오면 dependency가 실제 로그 순서를 반영하지 못할 수 있다. 따라서 단순히 `REPL → WSET_LABEL → COMMIT`의 기록 순서를 지키는 것 외에, dependency 결정 시점도 같은 잠금 구간에 넣었다.
+
+현재는 dependency 계산, 복제 레코드·WSET_LABEL·COMMIT 기록, `prev_commit_lsa`와 폴백 하한 갱신을 `prior_lsa_mutex` 안에서 수행한다. 키 게시는 밖에서 하되 행 잠금과 MVCCID self-lock을 풀기 전에 끝낸다. 같은 키의 다음 트랜잭션은 이 잠금 때문에 게시 완료 뒤에 COMMIT 경로로 들어온다.
+
+키 수만큼 수행하는 게시까지 전역 로그 잠금 안에 두면 다른 로그 기록도 오래 멈춘다. 현재 분리는 로그 순서 결정은 한 잠금 구간에 두고, 키 게시는 병렬로 진행하기 위한 것이다. 이 호출 순서는 코드로 확인했으며, 별도의 HA 재현 결과는 없다.
 
 ### 2.8 서버 재시작은 복구된 로그 끝을 history 하한으로 삼는다
 
-- **원안**: 프로세스 메모리 history를 재시작 뒤 어떻게 연결할지는 초기 컨셉에 없었다.
-- **구현**: recovery가 끝나면 `history_start`를 복구된 로그의 끝으로 올린다. 재시작 전 키별 map은 복원하지 않고, 이후 라벨은 이 하한 아래로 내려가지 않는다.
-- **이유**: map이 빈 상태에서 재시작 뒤 트랜잭션이 dependency 없음으로 기록되면 재시작 전 트랜잭션과의 순서를 잃는다. history 전체 영속화보다 전역 경계 하나가 단순하고 보수적이다.
-- **근거**: [[12-cub_server-재시작|cub_server 재시작 설계]], [[_notes/05-cub-server-restart-barrier|초기 대안과 폐기 기록]], `log_manager.c`의 restart barrier.
-- **영향**: 재시작 직후 일부 독립 트랜잭션도 이전 epoch 완료를 기다리지만, 이전·이후 epoch의 순서는 끊기지 않는다. 복구 로그 끝은 적용 경계가 아닐 수 있으므로 슬레이브는 현재 task보다 앞서 읽은 마지막 적용 경계로 라벨을 낮춘다. 이 경계는 COMMIT 또는 라벨이 붙은 SYSOP_END다. 낮추지 않으면 frontier가 존재하지 않는 LSA에 도달하지 못해 task가 자기 자신을 기다린다([[review/CBRD-27508_review_issues/C1_master_restart_floor_gate_stall|C1]], 커밋 `285786829`).
+history는 프로세스 메모리이므로 서버가 재시작하면 비어 있다. 이 상태에서 새 트랜잭션을 dependency 없이 기록하면 재시작 전 트랜잭션과의 순서가 끊긴다. 초기 컨셉 설계에는 이 연결 방법이 없었다.
+
+history 전체를 저장·복원하는 대신, recovery가 끝났을 때 복구된 로그 끝을 `history_start`로 설정한다. 이후 dependency가 이 하한 아래로 내려가지 않게 해 재시작 전 작업이 끝난 뒤 새 작업을 적용하도록 했다. 일부 독립 트랜잭션도 기다리지만 재시작 전후의 순서는 보존된다.
+
+복구된 로그 끝은 마지막 COMMIT 또는 독립 SYSOP_END보다 뒤일 수 있다. 이 값을 그대로 기다리면 슬레이브의 frontier가 도달하지 못해 새 task가 막힌다. 그래서 슬레이브는 현재 task보다 앞서 읽은 마지막 적용 경계로 dependency를 낮춘다. 해당 경계는 COMMIT 또는 라벨이 붙은 SYSOP_END다.
+
+이 대기 조건은 단위 테스트에서 수정 전 실패했고, 수정 후 25건·4,304 assertion이 통과했다. HA에서는 apply info COMMIT 때문에 조건이 가려졌다. 분석 기록은 C1, 수정 커밋은 `285786829`다.
 
 ### 2.9 SYSOP_END를 별도 commit-order 적용 경계로 만들었다
 
-- **원안**: 일반 트랜잭션 COMMIT 중심으로 probe·label·publish를 설명했고, develop이 중간 적용 경계로 쓰는 SYSOP_END는 빠져 있었다.
-- **구현**:
-  - 복제 레코드가 SYSOP 경계에서 확정되면 `WSET_LABEL → LOG_SYSOP_END`를 같은 로그 잠금 구간에 기록한다.
-  - SYSOP dependency는 `max(prev_commit_lsa, history_start)`이고, 기록 뒤 `history_start`를 SYSOP_END까지 올린다.
-  - serial 키는 수집하지만, 독립 top operation은 완전한 충돌 집합을 보장할 수 없어 commit-order 장벽으로 처리한다.
-  - 이미 로그로 flush 표시된 복제 레코드는 표시한 SYSOP_END에서만 기록해 중복 경계를 만들지 않는다.
-  - SYSOP 시작 때 로컬 writeset 위치를 표시하고, 라벨을 붙여 독립 적용한 SYSOP 또는 ABORT·부분 rollback으로 사라진 변경의 뒤쪽 키는 바깥 COMMIT의 writeset에서 제거한다. 다만 해당 SYSOP에서 이미 commit-order 폴백한 사실은 안전을 위해 바깥 트랜잭션에 남긴다.
-- **이유**: develop은 SYSOP_END에서 항목을 중간 적용한다. 병렬 reader가 이를 무시하거나 바깥 COMMIT까지 임의로 누적하면 serial·INCR/DECR·checksumdb의 생존 범위와 순서가 달라진다.
-- **근거**: [[_notes/10-sysop-end-investigation|SYSOP_END 조사와 결정]], 커밋 `3fb54e549`, `501e5f315`; `log_sysop_commit_internal()`.
-- **영향**: SYSOP은 병렬성을 일부 제한하지만 앞뒤 트랜잭션이 경계를 건너뛰지 않는다. 슬레이브는 라벨이 붙은 SYSOP_END를 fragment task로 적용한다(3.6절).
+초기 컨셉 설계는 일반 COMMIT의 dependency 계산과 게시를 중심으로 했지만, develop은 SYSOP_END에서도 복제 항목을 중간 적용한다. serial·INCR/DECR·checksumdb의 독립 operation은 바깥 트랜잭션이 ABORT해도 결과가 남아야 하므로, 병렬 applier도 이를 바깥 COMMIT과 별도로 처리해야 했다.
+
+복제 레코드가 확정되는 SYSOP_END 앞에 WSET_LABEL을 기록하고, dependency를 `max(prev_commit_lsa, history_start)`로 정했다. 기록 뒤에는 `history_start`를 그 SYSOP_END까지 올린다. 완전한 충돌 키 집합을 보장할 수 없는 경로도 포함하므로, 독립 SYSOP는 키별 병렬 처리 대신 commit-order 장벽으로 순서를 지킨다. 슬레이브의 fragment 처리는 3.6절에서 설명한다.
+
+이 처리를 추가한 뒤에는 중첩 SYSOP가 바깥 연산의 복제 레코드를 너무 일찍 기록하는 오류도 수정했다. 로그 위치가 정해지기 전에 기록하면 슬레이브가 해당 항목을 건너뛰고, 이후 바깥 연산이 ABORT되면 이미 전달한 변경을 취소할 수 없다. 복제 레코드 기록을 표시한 구간 안에서는 중첩 SYSOP가 그 레코드를 기록하지 않고, 구간을 닫은 연산의 SYSOP_END에서 기록하도록 고쳤다.
+
+SYSOP 시작 때 로컬 writeset 위치도 표시한다. 독립 적용한 SYSOP의 키와 ABORT·부분 rollback으로 사라진 변경의 키는 바깥 COMMIT에서 다시 게시하지 않도록 제거한다. 다만 이미 발생한 commit-order 폴백은 안전을 위해 바깥 트랜잭션에도 유지한다.
+
+NEED_FLUSH 생산자는 serial·INCR/DECR·checksumdb 세 경로다. 초기 fragment 시험은 최종 데이터가 일치했지만 라벨 19건이 선행 경계보다 낮아 현재 장벽 방식으로 보완했다. 중첩 SYSOP의 조기 기록은 INCR 100건 중 3건 유실로 재현해 `501e5f315`에서 수정했다. 같은 원인의 ABORT 위험은 코드 경로로 확인했다.
 
 ### 2.10 커밋 중인 키와 분할 부모 FK를 실제 충돌 대상으로 맞췄다
 
-- **원안**: 부모 PK WRITE와 자식 FK REF가 같은 해시에서 만난다는 정적 관계를 설명했다.
-- **구현**:
-  - FK·UNIQUE 검사 중 다른 트랜잭션이 같은 키를 커밋 중이면 그 COMMIT을 기다린다.
-  - 분할 부모를 참조하는 FK REF는 root가 아니라 실제 키를 보유한 partition의 인덱스 공간을 사용한다.
-- **이유**: 검사 시점에 커밋 중인 inserter/deleter를 단순히 없음으로 보면 마스터의 허용 결과와 history 게시 순서가 어긋난다. 분할 부모의 WRITE와 REF가 다른 VFID를 쓰면 slave에서 충돌을 놓친다.
-- **근거**: [[review/CBRD-27508_review_issues/C3_fk_check_committing_inserter|C3]], [[review/CBRD-27508_review_issues/C11_partitioned_parent_fk_key_mismatch|C11]], develop `CBRD-27034`, 커밋 `8a23bb8f6`, `5ebe894ef`, `f7078fe07`, `b84567f36`.
-- **영향**: FK 검사 결과와 writeset dependency가 같은 커밋 순서를 본다. 분할 테이블도 부모·자식 순서를 보존한다.
+부모 PK WRITE와 자식 FK REF가 같은 해시를 만들더라도, FK·UNIQUE 검사 시점에 다른 트랜잭션이 그 키를 커밋 중일 수 있다. 이를 단순히 없는 키로 보면 마스터의 검사 결과와 history 게시 순서가 어긋난다. 커밋 중인 inserter·deleter의 COMMIT을 기다리도록 검사 경로를 보완했다.
+
+분할 부모를 참조하는 FK도 별도로 확인했다. 부모 WRITE는 실제 키가 들어 있는 partition의 인덱스를 사용하는데 REF가 root 인덱스 VFID를 쓰면 두 해시가 만나지 않는다. REF도 실제 partition의 인덱스 공간을 사용하도록 맞췄다.
+
+커밋 중인 부모 시험은 수정 전 2,000회 중 582행이 유실됐고 수정 후 10,000회 유실이 없었다. 분할 부모 시험도 수정 전 500/500 dependency 누락·81행 유실에서 수정 후 누락·유실·fail이 모두 0이 됐다.
 
 ### 2.11 2PC도 일반 COMMIT과 같은 dependency 경로를 탄다
 
-- **원안**: 1PC local commit 경로만 구체화했다.
-- **구현**: 2PC 완료 경로도 복제 정보와 라벨을 기록하고 COMMIT LSA로 history를 게시하는 공통 완료 함수를 사용한다. 준비된 트랜잭션을 loose-end descriptor로 옮길 때 로컬 키 목록, 폴백 상태·사유와 dependency도 함께 복사한다.
-- **이유**: 2PC가 null dependency로 나가고 키를 history에 게시하지 않으면 해당 트랜잭션과 뒤의 같은 키 트랜잭션이 모두 독립으로 보인다.
-- **근거**: [[fixes/06-2pc-commit-dependency|2PC dependency 분석]], 현재 `log_complete_for_2pc()` 호출 경로.
-- **영향**: 분산 트랜잭션도 일반 복제 트랜잭션과 같은 순서 정보에 포함된다.
+초기 설계는 1PC local commit 경로만 구체화했다. 2PC가 NULL dependency로 나가고 키도 history에 게시하지 않으면, 해당 트랜잭션과 뒤의 같은 키 트랜잭션이 서로 독립인 것처럼 보인다.
+
+2PC 완료도 복제 정보와 라벨을 기록하고 COMMIT LSA로 history를 게시하는 공통 완료 경로를 사용하도록 보완했다. 준비된 트랜잭션을 loose-end descriptor로 옮길 때는 로컬 키 목록, 폴백 상태·사유와 dependency를 함께 복사한다. 복제 레코드가 이동한 뒤에도 같은 키와 순서 정보로 커밋을 완료하기 위해서다.
+
+loose-end 전환부터 라벨·COMMIT 기록과 history 게시까지 코드 경로를 확인했다. 분산 트랜잭션 HA 실측 기록은 없다.
 
 ### 2.12 로컬 writeset은 rollback 범위와 함께 줄어든다
 
-- **원안**: ABORT한 트랜잭션은 publish하지 않는다고만 설명했고, savepoint·SYSOP 부분 rollback 뒤 로컬 키 목록은 구체화하지 않았다.
-- **구현**: 각 `LOG_WSET_ENTRY`에 수집 당시 LSA를 함께 보관한다. `repl_log_abort_after_lsa()`가 복제 항목을 제거하는 경계에서 `wset_discard_keys_after_lsa()`도 같은 경계 이후 키를 제거한다.
-- **이유**: 되돌린 변경의 키를 바깥 COMMIT에 게시하면 실제로 존재하지 않는 순서를 history에 남긴다. 특히 독립 SYSOP 키를 바깥 COMMIT 위치에 다시 게시하면 SYSOP_END에서 이미 확정된 적용 경계와 어긋난다.
-- **근거**: **코드 확인** — `LOG_WSET_ENTRY.lsa`, `wset_discard_keys_after_lsa()`, `log_sysop_commit_internal()`과 rollback 호출 경로. 명시적인 별도 결정 note는 없어 세부 배치 이유는 **코드 기반 추정**이다.
-- **영향**: rollback된 키가 뒤 트랜잭션에 불필요한 dependency를 만들지 않고, SYSOP와 바깥 COMMIT의 키 소유 범위가 분리된다.
+전체 ABORT에서는 키를 게시하지 않으면 되지만, savepoint나 SYSOP의 부분 rollback 뒤에는 트랜잭션이 계속될 수 있다. 되돌린 변경의 키까지 바깥 COMMIT에 게시하면 실제로 남지 않은 변경 때문에 불필요한 dependency가 생긴다. 독립 SYSOP의 키를 바깥 COMMIT 위치에 다시 게시하는 것도 이미 확정한 SYSOP_END 경계와 맞지 않는다.
+
+각 `LOG_WSET_ENTRY`에 수집 당시 LSA를 보관하고, `repl_log_abort_after_lsa()`가 복제 항목을 제거하는 경계에서 `wset_discard_keys_after_lsa()`로 같은 위치 이후의 키를 제거하도록 보완했다. 초기 설계에 없던 부분 rollback 처리를 추가한 것이다.
+
+복제 항목과 키 제거가 같은 LSA를 쓰는 것은 코드로 확인했다. 별도 재현 기록은 없으며, 이 위치에 배치한 세부 이유는 코드에서 추정한 내용이다.
 
 ## 3. 슬레이브 구현에서 바뀐 내용
 
-슬레이브의 기본 역할은 라벨을 task로 옮기고, dependency를 만족한 task만 worker에 넘긴 뒤, 완료 결과로 안전한 적용 위치를 전진시키는 것이다. 실제 구현에서는 task 소유권, 재시작 중복 적용, 종료와 관측까지 이 생명주기에 포함했다.
+슬레이브에서는 로그 읽기, worker 배정, 완료 처리의 순서가 서로 다르다는 점을 실제 자료구조로 나눴다. 여기에 SYSOP 중간 적용, 재시작 중복 방지, failover와 자원 정리를 연결했다.
 
-### 3.1 하나의 reader가 coordinator 역할까지 맡는다
+### 3.1 applylogdb 메인 스레드가 coordinator 역할을 맡는다
 
-- **원안**: reader, coordinator, worker를 개념적으로 나누어 설명했다.
-- **구현**: applylogdb 메인 스레드 하나가 로그 읽기와 task 조립, gate 판정, queue 배정, result 수거, retire, apply info 저장을 모두 맡는다. 구현 문서에서는 이 역할을 `coordinator`로 통일한다.
-- **이유**: 로그 순서 상태와 `LA_INFO`, 트랜잭션 슬롯은 기존 메인 스레드 소유다. 별도 coordinator 스레드를 추가하면 같은 상태에 새 잠금과 전달 queue가 필요하다.
-- **근거**: `log_applier.c`; [[_notes/08-applier-worker-design|worker 모듈 설계]].
-- **영향**: coordinator 전용 자료는 잠금 없이 다룬다. task/result queue와 worker 현재 상태만 스레드 간 공유한다.
+컨셉 설계는 로그 읽기와 배정·완료 처리를 역할별로 나눠 설명했다. 구현에서는 별도 coordinator 스레드를 만들지 않고, 기존 applylogdb 메인 스레드가 로그 읽기, task 구성, gate 판정, queue 배정, result 수거, retire와 apply info 저장을 맡는다.
+
+로그를 읽은 위치, `LA_INFO`, 트랜잭션 슬롯은 기존 메인 스레드가 관리하던 상태다. coordinator를 별도 스레드로 만들면 이 자료를 함께 쓰기 위한 잠금과 전달 queue가 추가로 필요하다. 같은 스레드에서 처리하므로 coordinator 전용 자료는 잠금 없이 다루고, worker와 주고받는 task/result queue 및 공유 상태만 보호한다.
+
+모듈 분리는 스레드 분리와 별개로 진행했다. 새 queue·목록·coordinator·worker 기능은 모듈로 나누되, 기존 적용 함수와 `LA_INFO` 상태는 `log_applier.c`에 두고 callback으로 연결했다. 기존 동작을 유지하면서 책임을 나누고, 코드 이동과 자원 수명 변경을 한꺼번에 진행하지 않기 위해서다. 이 경계는 현재 호출 관계를 기준으로 설명한 것이다.
 
 ### 3.2 task는 복제 항목을 복사하지 않고 트랜잭션 슬롯을 가리킨다
 
-- **원안**: 완성된 transaction task가 변경 목록을 가진다고 표현했다.
-- **구현**: `LA_TASK.apply`가 기존 `LA_APPLY` 슬롯을 가리킨다. coordinator는 worker result가 retire될 때까지 슬롯을 재사용하지 않고, worker는 그 포인터의 항목을 적용하며 해제한다.
-- **이유**: 복제 항목과 key image를 다시 복사하면 메모리와 소유권 전환 비용이 커진다. 반대로 슬롯을 일찍 재사용하면 worker가 해제된 목록을 읽는다.
-- **근거**: `log_applier_task.hpp`, `log_applier_inflight.cpp`; [[_notes/09-applier-in-flight-design|in-flight 설계]].
-- **영향**: task 복사는 작지만, 슬롯의 수명은 retire까지 연장된다. `required_lsa`도 pending·in-flight task가 가리키는 슬롯을 포함해야 한다.
+컨셉 설계에서는 완성된 task가 변경 목록을 가진다고 표현했다. 실제 구현은 복제 항목과 key image를 다시 복사하지 않고, `LA_TASK.apply`가 기존 `LA_APPLY` 슬롯을 가리키도록 했다. 목록을 복사할 때의 메모리 사용과 별도 소유권 관리를 줄이기 위한 선택이다.
+
+worker는 슬롯의 복제 항목을 적용하면서 해제한다. 항목을 모두 처리해도 슬롯 자체는 coordinator가 result를 retire할 때까지 재사용하지 않는다. 슬롯에 남은 `start_lsa`가 필요한 로그의 보존 기준이기 때문이다. 항목 해제와 슬롯 반환은 서로 다른 시점이다.
+
+이 수명은 task 정의와 in-flight 정리 경로에서 확인했다. `required_lsa`도 pending·in-flight task가 가리키는 슬롯을 포함하도록 연결했다.
 
 ### 3.3 완료 관리를 commit-order ring과 in-flight list로 나눴다
 
-- **원안**: pending·running·completed 상태와 연속 완료 경계를 개념적으로 설명했다.
-- **구현**:
-  - commit-order ring은 로그 순서의 적용 경계 LSA와 완료 여부를 보관해 frontier를 계산한다. 이름은 commit-order지만 라벨이 붙은 SYSOP_END도 들어간다.
-  - in-flight list는 worker에 넘긴 task와 result를 배정 순서(`seq`)로 대응시키고 head부터 retire한다.
-  - result는 완료 순서대로 오지만 retire는 배정 순서대로 한다.
-  - in-flight가 가득 찼을 때는 새 result를 기다리기 전에 이미 완료된 head부터 retire한다. 그렇지 않으면 목록은 완료 task로 가득 찼는데 앞으로 올 result가 없어 영구 대기할 수 있다.
-- **이유**: commit 순서, worker 배정 순서, 완료 순서는 서로 다르다. 한 자료구조가 세 순서를 모두 대표하면 안전 LSA와 슬롯 반환 중 하나가 틀어진다.
-- **근거**: [[_notes/09-applier-in-flight-design|in-flight 설계]], 커밋 `c1674aaa5`; `log_applier_gate.cpp`, `log_applier_inflight.cpp`.
-- **영향**: `committed_lsa`는 frontier만 따라가고, 슬롯은 in-flight head부터 안전하게 반환된다.
+로그에서 읽은 순서, worker에 배정한 순서, worker가 끝낸 순서는 서로 다르다. 하나의 목록으로 모두 관리하면 worker가 완료한 슬롯을 반환하는 순서와 안전한 적용 위치를 계산하는 순서가 섞인다. 컨셉 설계의 pending·running·completed 상태를 다음 두 자료구조로 구체화했다.
+
+- **commit-order ring**은 COMMIT과 라벨이 붙은 SYSOP_END를 로그 순서대로 보관한다. result가 오면 해당 항목을 완료로 표시하고, 앞에서부터 연속으로 완료된 위치까지 frontier를 전진시킨다. 별도의 완료 집합은 두지 않는다.
+- **in-flight list**는 배정한 task와 result를 배정 번호(`seq`)로 연결한다. result는 완료 순서대로 오지만, 슬롯과 통계는 목록 앞에서부터 retire하며 정리한다.
+
+검토 중에는 in-flight가 완료된 task로 가득 찬 상태에서 새 result를 기다리는 문제가 발견됐다. 더 실행 중인 task가 없다면 앞으로 올 result도 없어 영구 대기한다. 그래서 공간이 부족하면 새 result를 기다리기 전에 이미 완료된 head부터 retire하도록 고쳤다.
+
+이 대기 조건은 코드 시나리오로 확인했으며 운영 부하로 재현한 결과는 없다. `committed_lsa`는 frontier에 따라 이동하고, 슬롯 반환은 in-flight의 배정 순서를 따르도록 두 역할을 분리했다.
 
 ### 3.4 gate는 frontier 하나만 보고, 막힌 task는 별도 pending list에 둔다
 
-- **원안**: dependency 없음, 특정 선행 완료, REF 연속 완료의 세 판정을 사용했다.
-- **구현**: 모든 task는 `dependency_seq <= frontier` 하나로 판정한다. 통과하지 못하거나 task queue가 가득 찬 task는 pending list에 두고, coordinator는 뒤 로그를 계속 읽는다. 마스터 재시작 floor처럼 현재 task 앞의 마지막 적용 경계보다 높은 라벨은 그 경계로 낮춘 뒤 ring에 넣는다.
-- **이유**: 2.6절의 개별 완료 지름길 결함을 제거하면서도 MySQL식 head blocking은 피해야 했다. 판정과 대기 보관을 별도 모듈로 나누면 뒤의 독립 task를 계속 찾을 수 있다.
-- **근거**: [[_notes/11-dependency-label-design|A1 결정]], `log_applier_gate.cpp`, `log_applier_pending.cpp`.
-- **영향**: gate 정합성은 단순해지고, pending 앞의 장기 트랜잭션이 뒤의 독립 task를 막지 않는다.
+2.6절의 순서 역전 문제를 수정하면서 모든 dependency를 frontier로 판정하도록 통일했다. 이때 완료를 기다리는 task 때문에 coordinator의 로그 읽기까지 멈추면 뒤에 있는 독립 task도 실행하지 못한다.
+
+gate는 dependency 판정과 commit-order ring을 맡고, 아직 실행할 수 없는 task는 별도 pending list에 보관하도록 나눴다. dependency가 충족되지 않았거나 task queue에 공간이 없으면 pending에 두고, coordinator는 뒤의 로그를 계속 읽는다. 대기 조건이 풀리면 pending task를 다시 확인한다.
+
+마스터 재시작의 복구 위치처럼 현재 task보다 앞서 읽은 마지막 적용 경계보다 높은 dependency는 그 경계로 낮춘 뒤 ring에 넣는다. frontier가 도달할 수 없는 위치를 기다리지 않게 하는 보정이며, 배경은 2.8절에서 설명했다.
+
+A1 동일 seed 시험에서는 독립 task가 계속 배정됐고, 역전·미해제 pending은 0이었다. 재시작 하한 보정은 gate 단위 테스트로 확인했다. pending 앞의 장기 트랜잭션이 뒤의 독립 task까지 막지 않도록 한 구조다.
 
 ### 3.5 worker별 queue 대신 공유 task/result queue를 사용한다
 
-- **원안**: worker 선택과 worker queue 배정을 개념적으로 표현했다.
-- **구현**: coordinator 한 명이 공유 task ring에 넣고 여러 worker가 경쟁해 꺼낸다. 여러 worker의 result도 공유 result ring으로 돌아온다. task queue는 1024, commit-order ring·in-flight·result queue는 `worker_count × 1024` 용량이다. worker 수만 `ha_apply_worker_count`(기본 1, 최대 `HB_MAX_APPLY_WORKER_COUNT`)로 기동 시 정하고 queue 단위 용량은 고정한다.
-- **이유**: worker별 queue는 부하 편향과 worker 선택 정책을 추가한다. 공유 queue는 먼저 빈 worker가 가져가므로 별도 스케줄러 없이 부하를 분산한다.
-- **근거**: [[_notes/08-applier-worker-design|worker·queue 설계]], `log_applier_task_queue.cpp`, `log_applier_result_queue.cpp`.
-- **영향**: 특정 worker affinity는 없다. 같은 트랜잭션의 SYSOP fragment와 바깥 COMMIT 순서는 dependency로 보장하고, 같은 session에 묶는 방식은 사용하지 않는다.
+worker별 queue를 두면 coordinator가 어느 worker에게 보낼지 선택해야 하고, 긴 task가 몰린 worker의 queue에서 뒤 작업이 기다릴 수 있다. 이를 줄이기 위해 공유 task queue에 넣으면 먼저 준비된 worker가 꺼내도록 바꿨다. 완료 결과도 공유 result queue로 받으므로 별도의 worker 선택 정책은 두지 않는다.
 
-queue와 ring은 무한히 커지지 않는다. commit-order ring이 가득 차면 coordinator는 로그 읽기를 멈추고 result 수거·frontier 전진만 수행한다. 가장 오래된 ring 항목의 dependency는 이미 frontier 이하로 보정돼 있으므로 worker가 살아 있는 동안에는 앞 항목이 끝나고 공간이 생긴다. 이 backpressure는 reader가 worker보다 빠를 때 메모리 사용량을 제한하기 위해 구현 과정에서 추가됐다(**코드 확인** — `la_coordinator_wait_for_commit_order_slot()`, `LA_COMMIT_ORDER_CAPACITY`).
+worker 수는 `ha_apply_worker_count`로 기동 시 정한다. 기본값은 1이고 최댓값은 `HB_MAX_APPLY_WORKER_COUNT`다. queue의 단위 용량은 고정하며 task queue는 1024, commit-order ring·in-flight list·result queue는 `worker_count × 1024`다. 이 값과 공유 ring 구조는 현재 구현에서 확인했다.
+
+같은 트랜잭션의 SYSOP fragment와 바깥 COMMIT을 같은 worker에 고정하지는 않는다. 두 적용 단위의 순서는 dependency로 지킨다.
+
+공유 queue를 사용해도 coordinator가 무제한으로 로그를 읽을 수는 없다. commit-order ring이 가득 차면 로그 읽기를 멈추고 result 수거·frontier 전진을 수행한다. 별도 용량 token은 두지 않는다. 가장 오래된 ring 항목은 그보다 앞선 적용 경계까지만 기다리므로, worker가 정상 처리하면 완료되고 공간이 생긴다. 이 용량 제한은 coordinator가 worker보다 빠를 때 메모리가 계속 늘어나는 것을 막기 위해 추가했다(`la_coordinator_wait_for_commit_order_slot()`, `LA_COMMIT_ORDER_CAPACITY`).
 
 ### 3.6 라벨이 붙은 SYSOP_END를 fragment task로 적용한다
 
-- **원안**: COMMIT 단위 task가 중심이었고 SYSOP 중간 적용은 범위 밖이었다.
-- **구현**: coordinator는 SYSOP_END 이하의 복제 항목을 바깥 `LA_APPLY`에서 떼어 별도 fragment 슬롯과 task를 만든다. fragment 결과가 SYSOP_END LSA를 완료 처리하고, 바깥 COMMIT은 마지막 fragment LSA를 dependency로 포함한다. 라벨은 있으나 적용 항목이 없는 SYSOP_END도 task 없이 ring에서 완료 처리해, 뒤 task가 존재하지 않는 worker result를 기다리지 않게 한다.
-- **이유**: develop의 SYSOP_END는 중간 적용 경계다. 최종 COMMIT까지 무조건 누적하면 바깥 ABORT에서도 살아야 하는 serial 변경의 의미가 달라지고, coordinator가 직접 적용하면 worker 커밋과 경쟁한다.
-- **근거**: [[_notes/10-sysop-end-investigation|SYSOP 조사·대안·결정]], 커밋 `3fb54e549`; `la_coordinator_process_sysop_end()`.
-- **영향**: SYSOP fragment도 일반 task와 같은 gate·queue·result·frontier 경로를 탄다. 종료 때 retire되지 않은 fragment 전용 슬롯을 별도로 해제한다.
+마스터가 독립 SYSOP에 라벨을 남기더라도, 슬레이브가 그 항목을 바깥 COMMIT까지 쌓아 두면 중간 적용의 의미가 사라진다. 바깥 트랜잭션이 ABORT해도 남아야 하는 serial 변경 등이 함께 버려질 수 있기 때문이다. coordinator가 그 자리에서 직접 적용하는 것도 worker의 적용·커밋 경로와 나뉘므로 피했다.
+
+coordinator는 해당 SYSOP_END까지의 복제 항목을 바깥 `LA_APPLY`에서 떼어 별도 fragment 슬롯과 task를 만든다. fragment도 일반 task처럼 gate·queue·result 경로를 거치며 SYSOP_END LSA를 완료 처리한다. 바깥 COMMIT은 마지막 fragment LSA를 dependency에 포함해 그 뒤에 실행되게 한다.
+
+라벨이 있지만 적용 항목이 없는 SYSOP_END도 처리해야 했다. worker task를 만들지 않았다는 이유로 완료 표시까지 빠지면, 뒤 task가 앞으로 오지 않을 result를 기다리며 frontier가 멈춘다. 해당 경우는 task 없이 ring에서 바로 완료 처리하도록 보완했다. 실패를 재현한 뒤 `complete_without_task` 경로가 4회 실행되는 것을 확인했고, fragment 시험은 역전·미해제 pending·fail이 모두 0이었다.
+
+fragment 전용 슬롯은 원래 트랜잭션 슬롯 풀에 속하지 않는다. retire되지 않은 슬롯은 종료 경로에서 별도로 해제한다.
 
 ### 3.7 worker는 자기 DB connection과 적용 context를 가진다
 
-- **원안**: worker가 트랜잭션 전체를 한 DB 트랜잭션으로 적용한다고만 정의했다.
-- **구현**: worker마다 `db_restart_sub()`로 sub-client를 열고, 오류 context, unzip buffer, RECDES pool, applied-marker statement를 따로 가진다. 로그 page pin 목록도 worker thread별 저장소를 사용한다. connection 시작은 기존 client 전역 초기화 때문에 mutex로 직렬화한다. coordinator는 모든 worker의 READY를 기다리지 않는다. thread가 생성된 뒤 session 또는 apply context 초기화에 실패한 worker만 live count에서 빠지고, 하나라도 살아 있으면 공유 queue를 계속 처리하며 마지막 worker가 빠질 때 전체 종료를 요청한다. `pthread_create()` 자체가 실패하면 시작 함수가 실패하고, caller의 종료 경로가 이미 만든 thread에 종료를 알린 뒤 join한다.
-- **이유**: 기존 applylogdb의 client 상태와 압축·레코드 버퍼는 단일 스레드를 전제로 했다. 그대로 공유하면 offset·오류 context·page fix·버퍼가 서로 덮인다.
-- **근거**: [[_notes/04-cs-worker-pool-analysis|CS worker 분석]], [[_notes/08-applier-worker-design|worker 설계]], `applier/log_applier_worker.cpp`와 `la_stop_apply_workers()`.
-- **영향**: worker가 독립 트랜잭션을 실제로 동시에 COMMIT할 수 있다. `MULTI_CONN_TO_A_SERVER`가 없으면 worker를 1개로 제한하고 coordinator와 client를 번갈아 쓴다.
+컨셉 설계는 worker가 트랜잭션 전체를 한 DB 트랜잭션으로 적용한다고 설명했다. 이를 실행하려면 기존 단일 스레드가 사용하던 연결·오류 상태·압축 해제 버퍼·레코드 풀을 worker마다 분리해야 했다. 그대로 공유하면 한 worker의 적용 과정에서 다른 worker의 상태와 버퍼를 덮을 수 있다.
 
-이 구조는 writeset 코드만으로 성립하지 않는다. multi-connection 기반 브랜치가 인증·trigger·session parameter·network state·error context 등 기존 client 전역 상태를 sub-client별 또는 thread-local 상태로 바꿨고, 현재 브랜치는 그 API를 worker 수명주기에 연결했다. 근거는 develop 병합 커밋 `53fe1a6d13`과 `db_restart_sub()`·`db_shutdown_sub()` 호출 경로다.
+worker는 `db_restart_sub()`로 자기 sub-client를 열고, 오류 context, unzip buffer, RECDES pool, applied-marker statement를 따로 가진다. 로그 page pin 목록도 스레드별로 관리한다. 연결을 여는 과정은 기존 client 전역 초기화 때문에 mutex로 직렬화한다.
+
+공유 queue이므로 모든 worker의 READY를 기다리지는 않는다. session이나 적용 context 초기화에 실패한 worker만 live count에서 빠지고, 남은 worker가 task를 계속 처리한다. 마지막 worker까지 빠지면 전체 종료를 요청한다. `pthread_create()` 자체가 실패한 경우는 시작 함수가 오류를 반환하고, caller의 종료 경로에서 이미 만든 thread에 종료를 알린 뒤 join한다.
+
+worker별 session 정리와 시작 실패 처리는 코드 및 실패 훅으로 확인했다. 실패한 worker를 개별 재생성하는 시험은 없다. `MULTI_CONN_TO_A_SERVER`가 없는 빌드는 worker를 1개로 제한하고 coordinator와 client를 번갈아 사용한다.
+
+여기에는 CS의 다중 연결 기반이 필요하다. 인증·trigger·session parameter·network state·error context 등을 sub-client별 또는 thread-local로 분리한 기반 위에, 현재 브랜치가 worker 수명주기와 API 호출을 연결했다. develop 병합 커밋은 `53fe1a6d13`이며, 진입 API는 `db_restart_sub()`·`db_shutdown_sub()`다.
 
 ### 3.8 worker 1개는 commit order로만 적용한다
 
-- **원안**: worker 수와 무관하게 같은 dependency gate를 사용한다.
-- **구현**: worker가 하나면 pending을 사용하지 않고 모든 task를 FIFO task queue에 넣는다. multi-connection이 없는 빌드는 task 하나가 retire될 때까지 coordinator가 기다린다.
-- **이유**: worker가 하나인데 pending task 뒤 독립 task를 먼저 넣으면 실제 적용 순서가 master commit order와 달라진다. 병렬 이득도 없으므로 직렬 의미를 유지하는 편이 안전하다.
-- **근거**: [[fixes/05-single-worker-serial|single-worker 분석]], 커밋 `6dd13450b`; `la_coordinator_submit_task()`.
-- **영향**: 기본값 1은 develop과 같은 순서 특성을 제공하고, worker 수를 늘릴 때만 병렬 배정이 시작된다.
+worker가 하나인데도 dependency에 따라 pending에 두면, 뒤의 독립 task가 먼저 queue에 들어가 COMMIT 순서를 앞지를 수 있다. worker가 하나라 병렬 적용의 이득도 없으므로, 이 경우에는 develop처럼 COMMIT 순서를 지키도록 했다.
+
+pending을 사용하지 않고 모든 task를 FIFO task queue에 넣는다. 다중 연결이 없는 빌드는 task 하나가 retire될 때까지 coordinator가 기다린다. 기본값 1은 직렬 적용 순서를 유지하고, worker 수를 늘릴 때 병렬 배정을 시작한다.
+
+worker 1개 HA 시험에서 큰 UPDATE → 같은 키 UPDATE → 독립 marker가 로그 순서로 적용됐으며 pending 배정은 0이었다.
 
 ### 3.9 worker 결과 대기는 종료 요청을 주기적으로 확인한다
 
-- **원안**: result queue에서 완료 결과를 기다린다고만 정의했다.
-- **구현**: coordinator는 result를 100ms 단위로 기다리고 매번 종료 요청을 확인한다. 시작 실패로 살아 있는 worker가 0이 되거나 worker가 서버 연결 오류를 만나면 전체 종료를 요청한다.
-- **이유**: 무기한 condition wait 중 마지막 worker가 빠지면 앞으로 올 result가 없어 SIGTERM도 처리하지 못한다.
-- **근거**: [[review/CBRD-27508_review_issues/C4_coordinator_result_wait_ignores_shutdown|C4]], 커밋 `bb5bd7082`; result wait 경로.
-- **영향**: 실패 시 hang 대신 재시작 가능한 종료로 전환한다.
+result queue에서 무기한 기다리는 동안 마지막 worker가 시작에 실패하면 앞으로 올 result가 없다. coordinator가 대기에서 빠져나오지 못해 SIGTERM도 처리하지 못하는 상태가 재현됐다.
+
+result를 100ms 단위로 기다리고 대기할 때마다 종료 요청을 확인하도록 바꿨다. 시작 실패로 살아 있는 worker가 0이 되거나 worker가 서버 연결 오류를 만나면 전체 종료를 요청한다. 수정 후에는 전체 worker 시작 실패에서도 무기한 대기하지 않고 heartbeat의 재시작 경로로 빠져나왔다.
 
 ### 3.10 적용 데이터 COMMIT과 apply info COMMIT의 간극을 마커로 메웠다
 
-- **원안**: `committed_lsa` 이전의 연속 완료만 영속하고 재시작 범위를 다시 적용하며 제한된 오류를 skip한다.
-- **구현**: worker는 실제 적용 항목이 있는 task(`total_rows > 0`)에 대해, 적용 데이터와 같은 DB 트랜잭션에 task의 적용 경계 LSA를 담은 `ha_applied_tx_marker` 행을 기록한다. 일반 task는 COMMIT LSA, SYSOP fragment task는 SYSOP_END LSA를 쓴다. coordinator의 apply info가 뒤처진 채 죽으면 다음 실행이 현재 copied-log path의 마커를 모두 읽어 이미 적용한 task를 통째로 건너뛴다. 행 DML과 statement도 같은 마커 방식으로 처리한다. 처음에는 statement 전용 단일 마커와 recovery range 직렬화를 각각 도입했지만, task별 마커가 두 역할을 대체해 제거했다.
-- **이유**: worker 데이터 COMMIT과 coordinator apply info COMMIT은 원자적이지 않다. PK·UNIQUE UPDATE를 다시 실행하면 단순 duplicate/no-object skip만으로 원래 결과를 복원할 수 없다.
-- **근거**: [[fixes/08-applied-tx-marker|applied-tx marker]], [[review/CBRD-27508_review_issues/C17_recovery_range_statement_reapply|C17]], 커밋 `72650ce0d`, `d398beba2`, `fe230a932`.
-- **영향**: 재시작 멱등성 판단 단위가 개별 오류에서 task 완료 표식으로 바뀌었다. 마커는 apply info 저장과 같은 coordinator 트랜잭션에서 `committed_lsa` 이하만 지우며, 통계 저장 실패로 apply info가 abort되면 마커도 남긴다. 기동 때 일부 마커만 읽은 상태로 worker를 시작하지 않고 전체 로드 실패로 처리한다. marker DELETE는 잠금 승격으로 worker INSERT와 교착할 수 있어 coordinator COMMIT 직전 마지막 SQL로 실행한다.
+worker는 자기 connection에서 데이터를 COMMIT하고, coordinator는 `committed_lsa`를 다른 트랜잭션에서 나중에 저장한다. 이 사이에 프로세스가 종료되면 이미 적용한 데이터가 있어도 재시작 위치는 앞에 남는다. 초기에는 이 구간을 다시 적용하면서 제한된 오류를 skip했지만, 재적용으로 생기는 모든 문제를 해결하지는 못했다.
+
+현재는 실제 적용 항목이 있는 task(`total_rows > 0`)에 대해 적용 데이터와 같은 DB 트랜잭션에 `ha_applied_tx_marker` 행을 기록한다. 일반 task는 COMMIT LSA, SYSOP fragment task는 SYSOP_END LSA를 저장한다. 재시작 시 저장된 완료 위치 뒤의 마커를 읽어 이미 적용한 task를 통째로 건너뛴다. 복사 로그 경로로 applier를 구분하고, 행 DML과 statement에 같은 방식을 사용한다.
+
+이 방식으로 바꾸기까지는 병렬 재적용의 교착과, 직렬 재적용에서도 남는 데이터 불일치를 차례로 확인했다.
+
+**오류 skip에서 task별 마커로 바꾼 과정**
+
+1. **재적용 가능 구간을 구분했다.** `max_committed_lsa`를 worker에게 task를 넘기기 전에 저장해, 재시작 시 이미 적용됐을 가능성이 있는 구간의 상한으로 사용했다. 이 구간에서 INSERT의 중복 키와 UPDATE·DELETE의 대상 행 없음 오류를 허용했다. 이 값은 연속 완료 위치나 실제 완료 최댓값을 뜻하지 않았다.
+2. **복구 구간을 직렬로 실행했다.** 이미 후속 변경까지 적용된 행에 과거 행 이미지를 다시 적용하면, master에서 독립적이었던 트랜잭션도 slave에서 새롭게 잠금 충돌을 일으킬 수 있었다. 교착 후 재시작해도 같은 구간에서 교착을 반복해, 복구 구간에서는 task 하나가 retire될 때까지 기다린 뒤 다음을 넘겼다(`edd32308ac`).
+3. **statement 재실행을 먼저 막았다.** DDL의 재실행 오류와 `UPDATE t SET n = n + 1`의 이중 반영은 행 오류 skip으로 해결할 수 없었다. statement가 포함된 트랜잭션에 데이터와 함께 단일 마커를 기록하도록 했다(`74acb3ea8a`).
+4. **행 DML까지 task별 마커로 확장했다.** 아래 키 변경 예제처럼, COMMIT 순서대로 다시 적용해도 데이터가 달라질 수 있었다. statement 전용 마커를 모든 적용 task의 마커로 확장해 재실행 자체를 막았다(`72650ce0d0`). 이에 따라 복구 구간의 직렬 실행·오류 skip·`max_committed_lsa` 저장을 제거했다(`fe230a932f`).
+
+키를 바꾸는 UPDATE에서는 최초 적용 순서를 지켜도 문제가 발생한다. 다음은 T1과 T2의 데이터 COMMIT은 끝났지만 apply info가 그 위치까지 저장되지 않은 상태에서 중단된 경우다.
+
+```text
+최초 적용
+T1: PK=1 INSERT            → slave에 PK=1
+T2: PK를 1 → 2로 UPDATE   → slave에 PK=2만 남음
+
+apply info 저장 전 중단 → 마커 없이 재시작
+T1 재적용: PK=1이 없으므로 INSERT 성공 → PK=1이 다시 생김
+T2 재적용: 옛 PK=1로 찾아 PK=2로 변경하려 하지만 기존 PK=2와 충돌
+
+결과: master에 없는 PK=1 행이 slave에 남음
+```
+
+*예제 3-1. 마커 없이 INSERT와 키 변경 UPDATE를 다시 적용하면, COMMIT 순서를 지켜도 이전 키가 되살아나는 경우*
+
+T1의 INSERT는 중복 오류가 나지 않아 skip할 수 없다. T2의 UPDATE 유일 키 충돌은 당시 허용 오류에도 포함되지 않아 오류로 드러난다. 이 오류까지 무시하더라도 T1이 되살린 행은 남는다. 따라서 dependency나 gate의 순서를 바꾸는 것으로는 해결되지 않으며, 이미 적용한 T1·T2를 식별해 건너뛰어야 한다.
+
+재적용 교착은 10월 11일 시험에서 9건이 기록됐고, 10월 19일에도 교착에 따른 재시작 반복이 기록됐다. 정확한 잠금 순환은 전부 확인하지 못했다. statement 시험에서는 수정 전 master `n=1`, slave `n=2`였고, 마커 적용 후 2회 모두 `n=1`, DDL 재실행 오류·fail 0이었다. 10월 28일 PK 시험의 유효 회차에서는 마커 적용 후 T1·T2가 모두 `rows=0`으로 건너뛰어졌고 데이터가 일치했다. 이는 note에 남은 확인 범위이며, 모든 재시작 조합을 검증했다는 뜻은 아니다.
+
+재시작 시 개별 오류를 보고 재적용을 허용하는 방식에서, task의 적용 완료 기록을 확인하는 방식으로 바뀌었다. 마커는 apply info 저장과 같은 coordinator 트랜잭션에서 `committed_lsa` 이하만 지운다. 통계 저장 실패로 apply info UPDATE까지 취소된 경우에는 마커를 남기고, 기동 시 마커를 일부만 읽었다면 worker를 시작하지 않는다. 마커 DELETE는 잠금 승격에 따른 worker INSERT와의 교착을 피하기 위해 coordinator COMMIT 직전 마지막 SQL로 실행한다.
 
 ### 3.11 `required_lsa`가 pending·in-flight fragment까지 포함한다
 
-- **원안**: 미완 트랜잭션의 `LA_APPLY.start_lsa` 최솟값을 보존한다.
-- **구현**: 트랜잭션 슬롯뿐 아니라 pending list와 in-flight list가 가진 fragment 슬롯의 `start_lsa`도 함께 훑는다.
-- **이유**: 바깥 트랜잭션이 ABORT되어 원래 슬롯이 비어도, 이미 분리한 SYSOP fragment는 worker queue·pending·in-flight에 남을 수 있다. 이를 빼면 필요한 archive log를 먼저 삭제한다.
-- **근거**: [[fixes/02-required-lsa-fragments|required_lsa fragment 분석]], `la_find_required_lsa()`.
-- **영향**: reader가 앞서가도 미완 task가 참조하는 로그는 보존된다.
+기존 `required_lsa`는 미완료 트랜잭션 슬롯의 `start_lsa` 최솟값을 기준으로 했다. fragment를 별도 task로 나눈 뒤에는 원래 슬롯만 보면 안 된다. 바깥 트랜잭션이 ABORT돼 슬롯이 비어도 fragment는 pending·in-flight에 남아 그 로그를 사용할 수 있기 때문이다.
 
-### 3.12 DONE 전환은 모든 읽은 작업이 끝날 때까지 보류한다
+pending list와 in-flight list의 fragment 슬롯도 함께 확인하도록 보완했다. coordinator가 로그를 앞서 읽어도 미완료 task가 사용하는 archive log를 먼저 삭제하지 않기 위한 처리다.
 
-- **원안**: 역할 전환 시 queue를 drain한 뒤 DONE으로 바꾼다.
-- **구현**: pending list, in-flight list, commit-order ring이 모두 비어야 drain 완료다. DONE 조건을 먼저 만나도 `holding done`으로 두고 result 수거·retire를 계속한다. 임의 30초 timeout으로 강제 해제하지 않는다.
-- **이유**: 읽은 로그가 남은 상태에서 DONE과 dbname lock 해제를 먼저 하면 다른 applier가 같은 DB에 쓰거나 승격 DB가 미적용 데이터를 노출한다. 시간 초과는 정합성 기준이 될 수 없다.
-- **근거**: [[fixes/01-done-deferred|DONE 보류]], [[review/CBRD-27508_review_issues/C6_failover_drain_backstop_never_runs|timeout 제거]], 커밋 `52b3b130e`.
-- **영향**: role change가 장기 트랜잭션만큼 늦어질 수 있지만, 완료되지 않은 작업을 버리고 승격하지 않는다.
+ABORT 뒤 fragment만 남는 코드 경로를 확인했다. backlog와 archive 삭제를 결합한 장애 재현은 없다.
+
+### 3.12 DONE 전환은 읽은 작업이 모두 끝날 때까지 보류한다
+
+컨셉 설계에는 failover 시 queue를 drain한 뒤 DONE으로 바꾸는 원칙이 있었다. 구현에서는 queue만 비었다고 완료된 것이 아니라는 점을 보완했다. pending task, 실행 중이거나 아직 retire하지 않은 task, 앞의 완료를 기다리는 ring 항목도 남을 수 있다.
+
+pending list·in-flight list·commit-order ring이 모두 비어야 drain이 끝난 것으로 판단한다. DONE 조건을 먼저 만나도 `holding done`으로 두고 result 수거와 retire를 계속한다. 임의의 30초 timeout으로 기다림을 끝내던 처리도 제거했다. 미완료 작업을 남긴 채 DONE과 dbname 잠금 해제를 알리면 다른 applier가 같은 DB에 쓰거나 승격된 DB에 아직 적용하지 않은 데이터가 남을 수 있기 때문이다.
+
+failback 시험에서는 DONE 조건을 다시 확인하지 않아 상태가 멈춘 사례가 있었다. `done_deferred` 처리와 timeout 제거 후 회귀 시험에서는 worker COMMIT을 기다린 뒤 정상 승격했다. 긴 트랜잭션 때문에 failover가 늦어질 수는 있어도, 미완료 작업을 버리고 승격하지는 않는다.
 
 ### 3.13 dbname lock을 실제 쓰기 task 앞에서 다시 잡는다
 
-- **원안**: applylogdb 기동 시 DB 소유권 잠금을 잡는 기존 흐름을 유지했다.
-- **구현**: 복제 항목이 있는 task를 queue에 넣기 전에 dbname lock을 확인·획득하고, drain 완료 뒤에만 푼다.
-- **이유**: HA 상태 전환으로 lock을 놓은 뒤 같은 프로세스가 다시 적용을 시작할 수 있다. 시작 때 한 번만 잡으면 이후에는 소유권 없이 쓸 수 있다.
-- **근거**: [[review/CBRD-27508_review_issues/C5_dbname_lock_taken_once|C5]], 커밋 `345300457`.
-- **영향**: 동시에 같은 slave DB를 쓰는 applier가 하나라는 기존 보장을 task 실행 시점에도 유지한다.
+develop은 트랜잭션을 적용하기 전에 dbname 잠금을 얻었다. 이식 중 이를 기동 시 한 번만 얻도록 바꾸면서 두 문제가 발생했다. 적용할 항목이 없는 비활성 applier도 시작부터 잠금을 기다려 로그 읽기·상태 보고·종료를 하지 못했고, HA 상태 변경으로 잠금을 놓은 뒤에는 다시 얻지 않은 채 적용을 계속했다.
+
+컨셉 설계를 바꾼 것이 아니라 이식 과정의 오류를 수정한 것이다. 복제 항목이 있는 task를 queue에 넣기 전에 coordinator가 잠금을 확인·획득하고, drain이 끝난 뒤에만 해제하도록 고쳤다. 여러 applier 중 하나만 같은 슬레이브 DB에 쓴다는 기존 보장을 실제 task 실행 시점에도 유지한다.
+
+replica·3노드 시험에서 잠금 소유자가 없는 쓰기 경로를 확인했다. 수정 후에는 실제 쓰기 applier가 소유자로 기록됐다.
 
 ### 3.14 항목 오류와 flush 오류를 트랜잭션 경계에서 처리한다
 
-- **원안**: worker가 트랜잭션을 적용하고 오류를 result로 돌려준다고 정의했다.
-- **구현**:
-  - 서버 연결·flush 오류는 task 실패로 worker result에 올려 applier를 멈춘다.
-  - retry 목록의 항목 오류는 같은 항목을 다시 시도한다. 그 밖의 항목 오류는 기존 develop 정책처럼 fail 통계와 로그에 남기고 다음 항목으로 진행한다.
-  - 마지막 항목의 비치명 오류가 task 전체 오류로 남지 않게 한다.
-  - 서버의 복제 force가 교착 희생 오류를 만나면 같은 호출의 다음 항목으로 넘어가지 않고 호출 전체를 실패시킨다.
-- **이유**: 마지막 항목 값만 함수 반환값으로 남으면 앞 항목과 같은 정책인데도 트랜잭션 전체가 중단된다. 반대로 교착 희생 뒤 잠금을 가진 채 다음 항목을 기다리면 교착을 끊지 못한다.
-- **근거**: [[fixes/04-item-error-policy|항목 오류 정책]], `locator_sr.c`, worker flush 경로.
-- **영향**: 항목 오류 정책과 task COMMIT 여부가 develop과 일관되고, 치명 오류는 result를 통해 applier 전체를 안전하게 멈춘다. 비치명 항목 오류는 해당 행이 빠진 부분 COMMIT이 될 수 있으며 `fail_counter`와 error log로 관측한다.
+컨셉 설계는 worker가 오류를 result로 반환한다고만 설명했다. 실제 적용에서는 develop이 이미 구분하던 항목 오류와 task를 중단해야 하는 오류를 유지해야 했다. 마지막 항목의 비치명 오류가 함수 반환값으로 남으면, 같은 오류를 앞에서 만났을 때와 달리 task 전체가 중단되는 문제가 있었다.
 
-### 3.15 기존 단일 스레드 공유 자원을 worker-safe하게 바꿨다
+서버 연결·flush 오류는 task 실패로 반환해 applier를 멈춘다. retry 목록의 항목 오류는 같은 항목을 다시 시도하고, 나머지 항목 오류는 develop처럼 fail 통계와 로그를 남긴 뒤 다음 항목으로 진행한다. 마지막 항목에서도 같은 정책을 적용하도록 반환값을 정리했다.
 
-- **원안**: worker 적용을 블랙박스로 보았기 때문에 기존 client 전역 자원의 경쟁은 다루지 않았다.
-- **구현**:
-  - 같은 file descriptor를 읽는 경로는 `pread`/`pwrite`로 offset 경쟁을 없앤다.
-  - SQL 로그 기록과 교체를 mutex로 직렬화한다.
-  - 로그 page cache의 fix는 worker별 목록으로 추적해 같은 worker가 해제한다.
-  - worker별 큰 RECDES 영역은 트랜잭션 뒤 바로 반환한다.
-  - VSZ 메모리 검사의 기준 크기는 worker 시작 뒤에 측정한다.
-  - copied-log page header 갱신과 archive 제거는 page cache mutex 아래에서 수행하고, 현재 copied log 끝을 조금 넘는 레코드는 즉시 손상으로 단정하지 않고 다음 복사분을 기다린다.
-- **이유**: 모두 develop에서는 스레드 하나라 드러나지 않던 공유 상태다. 병렬화 뒤에는 파일 offset, 로그 문자열, page fix, malloc arena가 worker 사이에서 경쟁하거나 메모리 누수처럼 보인다.
-- **근거**: [[review/CBRD-27508_review_issues/C13_sql_log_race|SQL 로그 경쟁]], [[review/CBRD-27508_review_issues/C16_vsz_memory_check_false_positive|VSZ 기준]], [[_notes/pagecache-race-analysis|page cache 분석]], 커밋 `bf560620e`, `9b2dd61b5`.
-- **영향**: 병렬 적용의 정합성뿐 아니라 종료·재시작과 장시간 실행의 자원 안정성을 확보한다.
+서버의 복제 force가 교착 희생 오류를 만났을 때도 호출 전체를 실패시켜야 했다. 잠금을 쥔 채 같은 호출의 다음 항목에서 다시 기다리면 교착을 끊지 못하기 때문이다.
 
-### 3.16 통계는 apply info와 같은 시점에 별도 시스템 테이블로 저장한다
+중복 CREATE INDEX 오류 뒤에도 applier가 후속 INSERT를 적용하는 것을 확인했다. 교착 오류 전파 보완 뒤 400,000건 부하는 deadlock·worker 오류·fail이 모두 0이었다. 다만 비치명 항목 오류를 허용하는 기존 정책은 해당 행이 빠진 부분 COMMIT이 될 수 있으며, 이는 `fail_counter`와 error log에 남는다.
 
-- **원안**: trace로 dependency와 worker 동작을 검증하는 데 집중했다.
-- **구현**: applier 전체와 worker별 통계를 `_db_ha_apply_stat`, `_db_ha_apply_worker_stat`에 저장하고 `applyinfo`가 출력한다.
-  - task/result에 `CLOCK_MONOTONIC` 기준의 `created_ns`, `pending_begin_ns`, `ready_ns`, `queue_enter_ns`, `dequeue_ns`, `apply_begin_ns`, `apply_end_ns`, `collected_ns`를 이어 전달한다.
-  - 이 시각으로 dependency 대기, 실행 가능한 뒤 worker가 가져갈 때까지의 대기, 실제 task queue 체류, 적용 완료 뒤 result 수거 지연, task 전체 지연을 각각 합산한다.
-  - worker busy 시간, 로그 순서와 다른 완료 횟수, 현재·최대 동시 실행 worker 수, task queue·pending 최대 깊이와 동시 실행 worker 수별 누적 시간(`concurrency_usec`)을 기록한다.
-  - `applyinfo`는 `total_worker_busy_usec / observation_usec`를 평균 병렬도, `total_worker_busy_usec / (worker_count × observation_usec) × 100`을 worker 활용률(%)로 출력한다.
-  - worker busy·동시 실행 수와 worker별 적용 건수는 `has_items=true`인 실제 적용 task만 센다. 빈 COMMIT은 queue·result 수명은 지나가도 적용 작업량에는 포함하지 않는다.
-  - 통계 갱신은 apply info 갱신 뒤 savepoint에서 수행하며, 실패해도 apply info를 되돌리지 않는다. worker result의 `total_rows`도 coordinator 누계에 합쳐 마지막 burst 뒤에 기존 apply-info 저장 조건이 동작하게 한다.
-- **이유**: trace는 개별 실행을 재현하기에는 유용하지만 양이 많아 병목이 dependency 대기인지 worker 부족인지 coordinator의 result 수거 지연인지 장기 비교하기 어렵다. 단계별 시간과 동시 실행 분포가 있어야 worker 수를 늘렸을 때 실제 병렬도가 올랐는지 판단할 수 있다. 반대로 관측 기능 때문에 복제 진행 위치 저장이 실패해서는 안 된다.
-- **근거**: [[_notes/03-ha-statistics-tables-design-근거|통계 설계 근거]], 커밋 `1d37565f7`, `d2ec8cbbe`, `9f9373252`; **코드 확인** — `LA_TASK`·`LA_RESULT`의 시각 필드, `log_applier_stat.cpp`, 시스템 카탈로그 정의와 `applyinfo` 출력. 단계별 지표를 선정한 상세 이유는 별도 note·커밋이 없어 위 호출 경계에 따른 **코드 기반 추정**이다.
-- **영향**: dependency가 만든 대기와 worker·queue·coordinator가 만든 대기를 분리하고, 평균 병렬도·worker 활용률·out-of-order 완료를 운영 중 비교할 수 있다. 빈 COMMIT 때문에 병렬도가 부풀지 않는다. 마스터의 고빈도 카운터는 DB 테이블 대신 메모리와 `SHOW WRITESET STATUS`로 조회한다.
+### 3.15 단일 스레드에서 공유하던 자원을 병렬 적용에 맞췄다
+
+초기 설계는 worker 내부 적용을 하나의 기능으로 다뤘지만, develop의 파일 offset·SQL 로그·페이지 cache·레코드 버퍼는 한 스레드가 사용한다는 전제였다. 여러 worker가 적용을 시작하면서 공유 상태의 경쟁과 메모리 사용 문제가 드러났다.
+
+| 대상 | 발생한 문제와 보완 |
+|---|---|
+| 파일 읽기·쓰기 | 같은 file descriptor의 offset을 바꿀 수 있어 `pread`·`pwrite`로 바꿨다. |
+| SQL 로그 | 여러 worker의 문장과 파일 교체가 섞이지 않도록 기록·교체를 mutex로 묶었다. |
+| 로그 페이지 cache | 다른 스레드가 쓰는 fix를 함께 풀지 않도록 스레드별 고정 목록을 사용한다. 공유 헤더를 갱신하는 copied-log header 갱신·archive 제거도 cache mutex로 보호한다. |
+| 큰 RECDES 영역 | worker 수만큼 큰 메모리가 남을 수 있어 트랜잭션 종료 후 바로 반환한다. |
+| COMMIT 뒤 MOP 정리 | 정리 중 새로 얻은 클래스 잠금을 다음 task 대기 중에도 유지하면 다른 worker의 DDL이 막힌다. 정리를 했다면 다시 COMMIT해 잠금을 푼다. |
+| VSZ 제한 | worker 시작에 따른 메모리 증가를 누수로 판단하지 않도록 기준 크기를 worker 시작 뒤에 측정한다. |
+
+*표 3-1. 병렬 worker 적용을 위해 보완한 공유 자원과 메모리 처리*
+
+수정 전에는 page cache 경합으로 `ER_LOG_PAGE_CORRUPTED` 재시작 루프가 발생했다. 보완 후 400,000건 부하는 page 오류·deadlock 없이 통과했고, SQL log 9,475항목과 worker 10개 VSZ 시험도 통과했다.
+
+공유 자원 경쟁과 별개로, 복사 중인 큰 레코드를 손상으로 오판하는 검사도 수정했다. 5.4MB 행 20건을 적용하는 시험에서 이 검사 때문에 7회 재시작했다. coordinator가 헤더를 읽었을 때 본문은 아직 복사 중일 수 있으므로, 다음 레코드 위치가 현재 copied log 끝보다 뒤라는 이유만으로 손상으로 판단하지 않도록 고쳤다. 필요한 페이지가 복사될 때까지 기존 경로에서 기다린다(`20442b73b`).
+
+### 3.16 통계는 apply info와 함께 별도 시스템 테이블에 저장한다
+
+trace는 개별 task의 dependency와 적용 순서를 추적하는 데 유용하지만, 양이 많고 실행마다 조건이 달라 병목을 비교하기 어렵다. dependency를 기다린 것인지, worker·queue가 부족한 것인지, coordinator의 result 수거가 늦은 것인지 나눠 보기 위해 통계를 추가했다.
+
+`CLOCK_MONOTONIC` 시각을 task/result에 이어 전달해 dependency 대기·실행 자원 대기·queue 체류·적용·result 수거 시간을 나눈다. `_db_ha_apply_stat`과 `_db_ha_apply_worker_stat`에는 queue·pending 최대 깊이, 순서가 바뀐 완료 건수, worker busy와 동시 실행 시간 분포(`concurrency_usec`)를 저장한다. `applyinfo`는 이를 바탕으로 평균 병렬도와 worker 활용률을 보여준다. busy·동시 실행·worker별 건수는 `has_items=true`인 task만 세어 빈 COMMIT이 병렬도를 부풀리지 않게 한다.
+
+통계는 apply info를 저장하는 트랜잭션에서 함께 갱신한다. 통계 문장만 실패하면 savepoint로 돌아가 apply info 저장을 계속한다. 그러나 전체 트랜잭션이 취소됐을 때까지 저장을 계속하면, apply info UPDATE는 사라졌는데 마커만 삭제되는 문제가 생긴다. 시험에서도 이 상태로 재시작해 29개 COMMIT이 재적용됐다. `b984637bb`에서 savepoint 복귀 실패를 오류로 전달하고, coordinator가 마커를 남긴 채 ABORT하도록 수정했다.
+
+시각 수집, 집계식, 카탈로그 저장과 `applyinfo` 출력은 코드로 확인했다. 지표 선정 효과를 비교한 별도 성능 시험은 없다. 마스터의 고빈도 카운터는 이 테이블에 저장하지 않고 메모리와 `SHOW WRITESET STATUS`로 조회한다.
 
 ### 3.17 라벨이 없거나 읽히지 않을 때 독립 task로 만들지 않는다
 
-- **원안**: 마스터가 항상 올바른 `WSET_LABEL`을 COMMIT 바로 앞에 기록한다는 정상 경로를 전제로 했다.
-- **구현**:
-  - 라벨 레코드가 page 경계 등으로 완전히 읽히지 않으면 `final_lsa`를 전진시키지 않고 같은 레코드를 다시 읽는다.
-  - 복제 항목이 있는 COMMIT인데 같은 `trid`의 라벨을 찾지 못하면, 직전 ring tail을 dependency로 넣어 앞선 모든 적용 경계 뒤에서 실행한다.
-  - 라벨 holder는 다음 COMMIT 또는 SYSOP_END 한 건이 소비하면 비운다.
-- **이유**: 읽기 실패를 NULL dependency로 바꾸면 가장 위험한 경우가 가장 병렬적인 task가 된다. 마스터가 라벨을 기록하지 못한 비정상·혼합 버전 경로도 같은 문제가 있다.
-- **근거**: **코드 확인** — `la_get_wset_label()`, `la_coordinator_set_commit_dependency()`; [[review/CBRD-27508_review_issues/C12_wset_label_read_failure|C12]], 커밋 `34b21c4a5`.
-- **영향**: 라벨 오류는 재독하거나 commit-order로 보수 처리한다. 데이터 변경이 없는 unlabeled COMMIT은 기존처럼 dependency 없이 완료할 수 있다.
+정상 경로에서는 마스터가 COMMIT 앞에 `LOG_DUMMY_WSET_LABEL`을 기록한다. 하지만 슬레이브가 이 레코드를 읽지 못했을 때 dependency를 NULL로 두고 넘어가면, 순서 정보를 모르는 task가 아무것도 기다리지 않고 실행된다.
 
-## 4. 구현하면서 추가된 교차 절차
+라벨이 페이지 경계 등으로 완전히 읽히지 않으면 `final_lsa`를 전진시키지 않고 같은 레코드를 다시 읽도록 했다. 복제 항목이 있는 COMMIT인데 같은 `trid`의 라벨이 없으면 직전 ring tail을 dependency로 사용해 앞선 적용 단위가 모두 끝난 뒤 실행한다. 읽은 라벨은 같은 트랜잭션의 다음 COMMIT 또는 SYSOP_END가 소비하면 비운다.
 
-앞 절은 마스터와 슬레이브로 나누었지만, 다음 항목은 두 쪽 배포·수명주기를 함께 봐야 한다.
+라벨 읽기 실패가 NULL dependency로 이어지는 경로는 코드로 확인했다. 실패 훅 실측은 없고 수정 후 일반 회귀 시험만 수행했다. 데이터 변경이 없는 COMMIT은 기존처럼 dependency 없이 완료할 수 있다.
+
+## 4. 배포와 종료에서 추가로 정한 사항
+
+새 로그 형식과 테이블은 양쪽 노드가 함께 이해해야 한다. 종료할 때도 worker만 멈추는 것으로 끝나지 않아, 공유 자료와 재시작에 남길 상태의 수명을 함께 정리했다.
 
 ### 4.1 로그 레코드 형식은 양 노드가 동시에 이해해야 한다
 
-- **원안**: 마스터와 슬레이브가 같은 `WSET_LABEL` 형식을 사용한다고 전제했다.
-- **구현**: `LOG_DUMMY_WSET_LABEL`은 같은 `trid`의 COMMIT 또는 SYSOP_END 바로 앞에 위치한다. `dependency_is_ref` 제거는 master 기록 형식과 slave 디코딩 형식을 동시에 바꿨다.
-- **이유**: 라벨 형식이 다르면 슬레이브가 dependency LSA의 offset을 잘못 읽어 안전한 혼합 운용이 불가능하다.
-- **근거**: **코드 확인** — `LOG_REC_WSET_LABEL`, 기록·읽기 경로; [[review/CBRD-27508_review_issues/C8_log_record_type_53|C8]].
-- **영향**: 서로 다른 바이너리를 섞은 HA는 이번 범위에서 지원하지 않으며, 새 로그 타입의 구버전 호환은 버전 업그레이드 정책에 맡긴다.
+`LOG_DUMMY_WSET_LABEL`은 같은 `trid`의 COMMIT 또는 SYSOP_END 바로 앞에 기록하고 슬레이브가 읽는 형식이다. `dependency_is_ref`를 제거할 때도 마스터 기록 형식과 슬레이브 해석을 함께 바꿨다. 한쪽만 바뀌면 dependency LSA의 offset을 잘못 읽을 수 있다.
+
+따라서 서로 다른 로그 형식을 쓰는 바이너리의 혼합 HA 운용은 이번 범위에서 지원하지 않는다. 새 로그 타입의 구버전 호환은 버전 업그레이드 정책에서 다뤄야 한다. 기록·복구·읽기 형식은 코드로 확인했으며, 신·구 버전 혼합 HA 시험은 없다.
 
 ### 4.2 통계·마커 테이블은 서로 다른 수명 정책을 쓴다
 
-- **원안**: 기존 `_db_ha_apply_info`에 진행 위치를 저장하는 구조가 중심이었고 새 테이블의 설치 수명은 다루지 않았다.
-- **구현**: 통계 테이블은 시스템 카탈로그로 설치하고, 없으면 통계만 끈다. `ha_applied_tx_marker`는 applylogdb가 직접 만들며 행 DML과 statement를 별도 표식으로 나누지 않는다.
-- **이유**: 통계는 관측 기능이라 없어도 적용을 계속해야 하지만, 마커는 재시작 중복 적용을 막는 정합성 상태라 적용 데이터와 같은 DB 트랜잭션에 있어야 한다.
-- **근거**: **코드 확인** — system catalog installer, marker 생성·삽입 경로; [[review/CBRD-27508_review_issues/C7_ha_apply_info_columns_no_migration|C7]].
-- **영향**: 기존 DB에 카탈로그 컬럼을 자동 추가하는 migration은 이번 범위에 넣지 않았다. 마커 테이블 생성·로드가 실패하면 applier 시작을 실패시킨다.
+기존 설계는 `_db_ha_apply_info`에 적용 위치를 저장하는 구조가 중심이었고, 새 테이블의 생성·실패 처리는 구체화하지 않았다. 구현에서는 통계와 마커의 역할이 달라 생성 방식과 실패 정책도 나눴다.
 
-### 4.3 종료 순서는 포인터가 가리키는 자원 수명과 반대로 간다
+통계 테이블은 시스템 카탈로그로 설치한다. 관측 기능이므로 테이블이 없으면 통계만 끄고 적용은 계속한다. 반면 `ha_applied_tx_marker`는 재시작 중복 적용을 막는 상태이며, worker 데이터와 같은 DB 트랜잭션에 기록해야 한다. applylogdb가 직접 만들고, 생성하거나 끝까지 읽는 데 실패하면 worker를 시작하지 않는다. 행 DML과 statement를 별도 마커로 나누지는 않는다.
 
-- **원안**: worker를 깨우고 join한 뒤 자원을 해제한다는 큰 순서만 있었다.
-- **구현**:
+HA 시험에서는 마커 테이블 생성이 상대 노드로 복제되지 않고 마커 행에 적용 데이터의 COMMIT LSA가 기록되는 것을 확인했다. 기존 DB에 카탈로그 컬럼을 자동 추가하는 migration은 이번 범위에 포함하지 않았다.
+
+### 4.3 worker가 참조하는 자료는 join 뒤에 해제한다
+
+컨셉 설계에는 worker를 깨우고 join한 뒤 자원을 해제하는 큰 순서가 있었다. 구현에서는 task가 가리키는 슬롯·마커 배열·page cache까지 그 순서를 지켜야 했다. 이 자료를 먼저 해제하거나 이전 task의 포인터를 남기면, 같은 프로세스의 재시작에서 `required_lsa` 계산이나 다음 task가 잘못된 메모리를 참조할 수 있다.
+
+slave kill 시험 3회 중 1회에서 해제된 자료를 가리키는 포인터 때문에 `required_lsa=0|0`이 저장됐고, 이후 699회 기동 실패가 반복됐다. 종료 처리는 다음 순서로 정리했다.
 
 ```text
-task queue 종료 신호
-  → worker가 현재 task를 끝냄
+task queue에 종료 알림
+  → worker가 현재 task를 끝내고 종료
   → worker join
-  → 미retire fragment 슬롯 해제
-  → in-flight·pending 비움
-  → LA_APPLY 슬롯과 page cache·마커 배열 정리
+  → retire되지 않은 fragment 슬롯 해제
+  → in-flight·pending 비우기
+  → LA_APPLY 슬롯·page cache·마커 배열 정리
 ```
 
-- **이유**: worker가 읽는 슬롯·마커·page cache를 먼저 해제하면 같은 프로세스 재시작에서 해제된 포인터가 `required_lsa`나 다음 task로 다시 노출된다.
-- **근거**: 커밋 `fb5fb198a`, `78cd10ce5`, `ed8b462ba`; [[fixes/07-inprocess-restart-state|프로세스 내 재시작 분석]].
-- **영향**: 같은 process 안에서 server-down 뒤 applier가 다시 시작해도 이전 실행의 pending·frontier·fragment 포인터를 물려받지 않는다.
+*그림 4-1. worker 종료 후 task와 공유 자원을 해제하는 순서*
 
-### 4.4 release 빌드에서도 순서 결정을 한 흐름으로 추적한다
-
-- **원안**: dependency와 worker 실행을 검증할 trace가 필요하다고만 정했다.
-- **구현**: `ha_writeset_trace_level` 0~3을 마스터와 슬레이브가 같이 사용한다. 현재 검증 구현에서 수준 1은 마스터의 dependency·fallback·라벨이 붙은 SYSOP와 슬레이브의 schedule·result·retire·worker task 시작/끝을 남긴다. 수준 2는 라벨이 없는 SYSOP 경계와 worker의 apply·flush·COMMIT 단계, 라벨 읽기를 더한다. 수준 3은 키 값·hash와 probe·publish까지 남긴다. `trid`, COMMIT/SYSOP LSA, dependency, worker 번호와 dispatch 순번을 공통 식별자로 쓴다.
-- **이유**: 마스터의 키 수집·dependency 결정과 슬레이브의 실제 배정·완료 순서를 한 실행에서 이어 보지 못하면, 최종 데이터 불일치가 키 누락인지 gate 오류인지 worker 적용 오류인지 구분할 수 없다.
-- **근거**: **코드 확인** — `writeset_trace.cpp`, `[WSET]` trace 호출부, `ha_writeset_trace_level`; [[_notes/trace-port-poc-base|trace 이식 기록]].
-- **영향**: release 실행에서도 장애 재현 근거를 남길 수 있다. trace는 관측 기능이며 dependency나 완료 판정의 입력으로 쓰지 않는다. worker COMMIT 직전 크래시 구간을 재현하는 `CUBRID_HA_TEST_BLOCK_*` 훅도 환경변수가 없으면 동작하지 않는 검증 전용 코드다.
-
-## 5. 검토했지만 현재 구현에 넣지 않은 안
-
-변경 이유를 이해하려면 채택하지 않은 안도 구분해야 한다. 다음 항목을 현재 코드의 기능으로 읽어서는 안 된다.
-
-| 안 | 현재 판단 | 제외 이유 |
-|---|---|---|
-| `dependency_is_ref`별 gate 분기 | 제거 | 한 dependency와 출처 플래그만으로 전체 선행 집합을 표현하지 못함 |
-| 특정 dependency가 completed set에 있으면 즉시 실행 | 제거 | frontier 앞의 hole을 건너뛸 수 있음 |
-| worker별 task queue | 미채택 | 공유 queue로 부하 분산이 가능하고 worker 선택 정책이 불필요함 |
-| 생성된 모든 worker의 session READY 뒤 dispatch | 제거 | session·context 초기화에 실패한 worker는 빠지고, 살아 있는 worker가 공유 queue를 처리할 수 있음. `pthread_create()` 실패는 여전히 전체 시작 실패임 |
-| SYSOP 항목을 최종 COMMIT까지 단순 누적 | 미채택 | 바깥 ABORT에서도 살아남는 top operation 의미와 다름 |
-| SYSOP마다 정밀 키별 dependency | 후속 최적화 | 현재 commit-order 장벽이 안전하며, serial·INCR/DECR 생산자별 정밀 수집 비용이 큼 |
-| 제한적 INSERT/UPDATE/DELETE error-skip으로 재시작 멱등성 확보 | 대체 | PK·UNIQUE UPDATE 등은 오류 종류만으로 이미 적용된 전체 효과를 판정할 수 없어 marker로 대체 |
-| statement 전용 단일 마커 | 대체 | statement뿐 아니라 행 키 변경도 중복 적용이 안전하지 않아 트랜잭션별 마커로 통합 |
-| 재시작 recovery range의 강제 직렬 적용 | 제거 | 재적용 교착을 피하기 위한 중간 해법이었으나 applied-tx 마커가 이미 적용한 task 자체를 건너뜀 |
-| SYSOP 전용 재시작 skip | 별도 구현하지 않음 | C9 검토에서 재현되지 않았고, 최종 구현은 COMMIT·SYSOP fragment를 모두 같은 applied-tx 마커 방식으로 각 적용 경계 LSA를 판정함 |
-| writeset history 전체 영속화 | 미채택 | 재시작 로그 끝 하한 하나로 안전하게 연결 가능하며 영속화 비용이 큼 |
-| failover drain 30초 강제 해제 | 제거 | 시간은 완료의 증거가 아니며 실제 정상 drain도 오래 걸릴 수 있음 |
-
-## 6. 근거 역추적표
-
-이 표는 구현 중 작성한 핵심 note가 본문의 어디에 반영됐는지 확인하기 위한 누락 검사다.
-
-| 근거 문서 | 반영 절 | 핵심 결정 |
-|---|---:|---|
-| `_notes/05-cub-server-restart-barrier` | 2.8 | 라벨 플래그 안을 폐기하고 복구 로그 끝 하한 채택 |
-| `_notes/06-history-clear-concurrency` | 2.4 | clear 하한을 최신 `prev_commit_lsa`로 올림 |
-| `_notes/07-probe-snapshot-consistency` | 2.4 | map과 두 LSA를 같은 세대로 읽음 |
-| `_notes/07-poc-productization-followups` | 2.5, 2.6 | 폴백·dependency 의미 누락 보완 |
-| `_notes/08-applier-worker-design` | 3.1, 3.5, 3.7 | worker·queue 모듈, READY 제거, 공유 queue |
-| `_notes/09-applier-in-flight-design` | 3.2, 3.3 | task-result 대응과 순서 보장 retire |
-| `_notes/10-sysop-end-investigation` | 2.9, 3.6 | SYSOP_END 독립 경계와 대안 비교 |
-| `_notes/11-dependency-label-design` | 2.6, 3.4 | frontier-only A1 채택 |
-| `_notes/dependency-root-cause-20261008` | 2.6, 3.4 | 개별 완료 판정이 선행 사슬의 hole을 건너뛰는 원인 분석 |
-| `_notes/gap-master`, `gap-slave`, `gap-e2e`, `design-gap-check`, `unimplemented` | 2.5~2.11, 3.4~3.17 | 초기 PoC의 누락 항목을 현재 코드에서 다시 확인한 작업 목록 |
-| `_notes/missed-scenarios-manual-survey` | 2.1, 2.2, 2.9, 2.10 | 상속·분할 FK·인덱스 동등성·SYSOP 생산자 조사 |
-| `_notes/unique-commit-order-20261019` | 2.7, 2.10 | 데이터 가시화와 로그 COMMIT 기록 순서 사이의 간극 보완 |
-| `_notes/restart-recovery-analysis`, `restart-recovery-deadlock`, `serial-guarantee-analysis` | 3.8, 3.10, 5 | 재시작 재적용 결함과 중간 직렬화 안, 최종 marker 대체 |
-| `_notes/wide-divergence-analysis` | 2.9, 3.6 | INCR SYSOP을 바깥 ABORT와 분리해야 하는 실측 근거 |
-| `_notes/pagecache-race-analysis` | 3.15 | 병렬 page cache fix·invalidate 수명과 잠금 보완 |
-| `_notes/trace-port-poc-base` | 4.4 | 마스터 dependency부터 worker retire까지 공통 trace 연결 |
-| `_notes/03-ha-statistics-tables-design-근거` | 3.16 | 운영 통계 테이블과 applyinfo |
-| `fixes/01~09` | 3.3, 3.8~3.14, 4.3, 5 | drain·required_lsa·오류·restart·in-flight 보완과 대체안 기록 |
-| `fixes/10`, `fixes/12` | 2.1, 2.2 | 인덱스 동일성 단위와 해시 동등성 |
-| review C1~C17 | 2.5, 2.8, 2.10, 3.9~3.17, 4.1~4.2, 5, 7 | 코드 리뷰에서 발견한 restart·FK·운영 결함 보완과 정책 경계 |
-
-## 7. 남은 경계
-
-현재 구현의 바깥에 둔 항목과 코드에서 확인한 한계를 구분해야 한다. 전자는 이번 구현이 해결하지 않기로 정한 범위이고, 후자는 현재 코드에 남아 있어 리뷰·시험에서 추적해야 할 동작이다.
-
-### 7.1 이번 구현의 바깥에 둔 항목
-
-- SYSOP 전역 장벽의 병렬성 손실은 정합성 결함이 아니라 후속 최적화다.
-- multi-connection 매크로의 최종 빌드 범위는 CS 모듈 소유자와 확정해야 한다.
-- 서로 다른 버전 바이너리를 섞은 HA와 시스템 카탈로그 자동 migration은 이번 범위 밖이다.
-- SHARED 컬럼과 CLASS ATTRIBUTE가 슬레이브에 복제되지 않는 현상은 develop에서도 같은 기존 HA 제약이다. writeset 순서 결함으로 분류하지 않았다.
-- slave에만 존재하는 UNIQUE 인덱스처럼 노드별 schema가 다른 경우는 마스터 writeset으로 순서를 만들 수 없으므로 운영 제약으로 남는다.
-
-### 7.2 현재 코드에서 확인한 한계
-
-- replica delay를 기다리는 동안 coordinator는 result를 수거·retire하지 않는다. delay 설정과 실제 반영 지연이 달라질 수 있고, time bound 앞의 task가 pending에 남을 수 있다.
-- 시작에 실패한 worker는 다시 만들지 않는다. 남은 worker가 있으면 설정값보다 적은 수로 계속하고, 모두 실패했을 때만 applier를 멈춘다.
-- FK 부모·자식 순서를 직접 검증하는 전용 gate 시험은 아직 없다. 현재 단위 테스트는 LSA 관계를 검증한다.
-- worker는 권한 context를 따로 초기화하지 않아 복제 객체를 만들 때 권한 검사를 끈다.
-- ABORT 등으로 비운 재사용 슬롯의 `last_sysop_fragment_lsa`가 남을 수 있다. 코드상 이전 SYSOP_END까지 불필요하게 기다릴 가능성은 있지만, 순서를 건너뛰는 경로는 확인되지 않았다. 이 영향 평가는 **코드 기반 추정**이며 재현 시험은 없다.
-- 같은 프로세스 안에서 applier가 다시 시작될 때 라벨 holder를 명시적으로 초기화하지 않는다. 로그를 같은 위치부터 다시 읽어 보통 같은 라벨로 덮지만, 다음 경계 전까지의 상태는 별도 재현이 필요하다. 이 영향 평가는 **코드 기반 추정**이다.
-- 재시작 COMMIT 직전 정지를 만드는 `CUBRID_HA_TEST_BLOCK_*` hook은 release 빌드에도 남아 있다. 환경변수가 없으면 정지하지 않지만 COMMIT마다 환경변수를 조회한다.
-
-상세 위치와 검증 범위는 [[02-slave-implementation-design#10. 알려진 한계|02 문서 10장]]에서 관리한다.
-
-### 7.3 관측 기능의 경계
-
-- trace와 통계는 정합성 판정에 사용하지 않는다. 관측 정보가 실패해도 apply info와 데이터 적용은 계속돼야 한다.
-
-구현 리뷰에서는 각 변경의 함수 이름보다 다음 세 질문을 먼저 확인하면 된다.
-
-1. 순서 정보가 누락될 때 전체 트랜잭션이 보수 경로로 전환되는가?
-2. worker 완료 순서와 무관하게 frontier와 재시작 위치가 hole을 넘지 않는가?
-3. 종료·재시작 때 task가 가리키는 슬롯·로그 페이지·마커가 worker보다 먼저 해제되지 않는가?
+다음 실행에서는 이전 pending·frontier·fragment 포인터가 사용되지 않도록 초기화한다. 해당 기동 실패 사례의 수정 후 반복 실측 기록은 없다.
