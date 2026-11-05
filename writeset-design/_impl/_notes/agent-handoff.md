@@ -65,7 +65,6 @@ e16f4177d  큐 ops → .cpp      ┘  (HEAD)
 - [마스터 구현 설계](../01-master-implementation-design.md): 키 수집과 history·커밋 경로
 - [슬레이브 구현 설계](../02-slave-implementation-design.md): coordinator·worker와 queue 생명주기
 - [개발자 테스트](../04-developer-test.md): 검증 방법과 테스트 시나리오
-- `02-develop-adaptation.md`: develop 포팅과 TBB 조사
 - `04-cs-worker-pool-analysis.md`: CS 워커풀 재사용 조사
 
 이전 초안과 작업 계획은 Git 이력에서 확인한다.

@@ -266,7 +266,7 @@ seq_lock 획득
 
 서버 재시작 시 map, `history_start`, `prev_commit_lsa`가 모두 빈 상태가 된다. 승격 failover drain과 달리, 짧은 재시작 뒤 같은 마스터 역할을 유지하는 경우에는 슬레이브에 재시작 전 backlog가 남아 있을 수 있다. 이때 재시작 후 동일 키 트랜잭션이 NULL dependency로 기록되면 과거 task를 추월할 수 있다.
 
-첫 재시작 후 복제 COMMIT에 epoch reset barrier를 기록하고, 슬레이브가 그 장벽 이전 task의 연속 완료를 확인한 뒤 새 epoch를 열도록 해야 한다. 검토한 대안과 폐기 이유는 [[05-cub-server-restart-barrier]]와 [[../../../12-cub_server-재시작|12장]]에 정리돼 있다.
+첫 재시작 후 복제 COMMIT에 epoch reset barrier를 기록하고, 슬레이브가 그 장벽 이전 task의 연속 완료를 확인한 뒤 새 epoch를 열도록 해야 한다. 검토한 대안과 폐기 이유는 [12장](../../12-cub_server-재시작.md)에 정리돼 있다.
 
 ### 8.5 최종 수정 우선순위
 
