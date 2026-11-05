@@ -9,11 +9,11 @@ supersedes: design-gap-check-20261008.md (같은 내용을 기능 미구현 우�
 # 미구현 목록과 작업 순서 (2026-10-08 기준)
 
 > [!NOTE]
-> **현재 상태 (2026-11-02, PR 브랜치 HEAD 9b2dd61b5 기준)**
-> - 1-1 재시작 경계: 구현됨(fb82b7db6, `log_initialize_internal` → `wset_raise_history_start`). 로그 끝이 커밋 위치가 아닌 문제는 slave 285786829(C1)가 라벨을 직전 커밋으로 낮춰 막는다.
+> **현재 상태 (2026-11-02, PR 브랜치 HEAD 8e3029e56 기준)**
+> - 1-1 재시작 경계: 구현됨(a7577f913, `log_initialize_internal` → `wset_raise_history_start`). 로그 끝이 커밋 위치가 아닌 문제는 slave bc7f11b3d(C1)가 라벨을 직전 커밋으로 낮춰 막는다.
 > - 1-6 history 해제: 구현됨(`logtb_undefine_trantable` → `wset_history_finalize`).
-> - 1-8 용량 초과·2-10 게시 중 메모리 부족·sysop ABORT 키: 구현됨(fb82b7db6, `wset_history_reserve_capacity`, `wset_publish_with_capacity`, `wset_abort_after_lsa`).
-> - 1-9 2PC: 구현됨(fb82b7db6, `log_complete_for_2pc`). "보류"는 옛 상태다.
+> - 1-8 용량 초과·2-10 게시 중 메모리 부족·sysop ABORT 키: 구현됨(a7577f913, `wset_history_reserve_capacity`, `wset_publish_with_capacity`, `wset_abort_after_lsa`).
+> - 1-9 2PC: 구현됨(a7577f913, `log_complete_for_2pc`). "보류"는 옛 상태다.
 > - 2-1 WSET_LABEL 할당 실패: 수정하지 않는다. develop의 다른 append 경로와 같은 처리(NULL이면 return)다.
 > - 2-3 긴 트랜잭션의 SYSOP_END: 지금 라벨을 받는지는 확인하지 않았다.
 > - 2-5 serial: 지금 코드가 의도한 동작이다. serial 키는 SYSOP_END에서 버리고 sysop 라벨로 순서를 잡는다. 폴백 이유가 STATEMENT로 기록되는 것은 01 9장 한계로 둔다.
@@ -29,10 +29,10 @@ supersedes: design-gap-check-20261008.md (같은 내용을 기능 미구현 우�
 | 순서 | 항목 | 설계 출처 | 상태 | 코드 근거 | 확인 |
 |---|---|---|---|---|---|
 | 1-1 | 재시작 경계 (cub_server 재시작 뒤 트랜잭션이 재시작 전 전부를 기다리게) | [12장 12.2](../../12-cub_server-재시작.md), [05장](05-cub-server-restart-barrier.md)(대체됨) | **반영 (5df8187ad)**, 문법 검사만, 재시작 실측 미착수 | 05장의 라벨 플래그·홀더 대신 `log_initialize_internal` 복구 직후 `wset_raise_history_start (append_lsa)`. 라벨 바닥 + A1 frontier gate로 경계가 됨. 12장 12.2·12.3·12.5·12.7·12.8 고쳐 씀, 05장은 대체 표시 | 확인 |
-| 1-2 | 재시작 복구 skip 완료 조건 (applylogdb 재기동 후 복구 구간의 재적용 오류 skip) | 9.1.3, [03 §4](03-verification-plan.md), [restart-skip-impl-plan](./restart-skip-impl-plan-20261007.md) | **반영 (3725009fe)**. 1-3과 같은 변경 | HEAD에는 final_lsa 상한 판(PoC)이 이미 있었고, 처음 표에 "HEAD 0건"이라 쓴 것은 오기. 10-08 WIP f5e1535db의 재시작 부분만 떼어 HEAD에 올림 | 확인 |
+| 1-2 | 재시작 복구 skip 완료 조건 (applylogdb 재기동 후 복구 구간의 재적용 오류 skip) | 9.1.3, 당시 복구 검증 계획 §4(Git 이력), [restart-skip-impl-plan](./restart-skip-impl-plan-20261007.md) | **반영 (3725009fe)**. 1-3과 같은 변경 | HEAD에는 final_lsa 상한 판(PoC)이 이미 있었고, 처음 표에 "HEAD 0건"이라 쓴 것은 오기. 10-08 WIP f5e1535db의 재시작 부분만 떼어 HEAD에 올림 | 확인 |
 | 1-3 | slave 복구 상한을 worker별 max_committed_lsa로 (apply info에 worker 행) | [02 §5·7](../02-slave-implementation-design.md) | **반영 (3725009fe)**, 문법 검사만, 빌드·런타임 미검증 | 카탈로그 `worker_id`·`max_committed_lsa_*` 컬럼, `la_get_ha_apply_worker_info` 등 3함수, `la_apply_worker_commit_task`에서 같은 트랜잭션에 행 갱신. **DB 재생성 필요(마이그레이션 없음)**. `db_ha_apply_info` 뷰에 워커 행이 함께 보이는 문제는 미결 | 확인 |
-| 1-4 | task queue 비차단·outstanding 상한, pending 상한, completed set 크기 설정 | [02 §3](../02-slave-implementation-design.md), [09 §2·5](09-applier-in-flight-design.md), 9.1.4 | **반영 (6a2494096)** | 상한 하나 `LA_OUTSTANDING_CAPACITY(worker_count)` = worker 수 × 1024 (파라미터 아님). gate의 commit-order FIFO 길이가 outstanding 수. 상한이면 reader가 task 경계에서 로그 읽기를 멈추고 결과 수거·frontier·retire·pending 재판정만 반복(`la_reader_wait_for_outstanding_room`). task queue push 비차단: 자리 없으면 ready task도 pending에 두고 다음 collect에서 배정, 신규보다 먼저 온 ready를 먼저 drain. in-flight list·result queue·completed set은 기동 때 상한 크기로 malloc. 남은 것: dependency가 영영 안 풀릴 때 상한에서 영구 대기(설계는 오류 처리) 감지 없음 | 확인 |
-| 1-5 | worker READY 핸드셰이크, worker 수·queue 용량의 설정 파라미터화 | [08 §5·12](08-applier-worker-design.md) | **반영**: worker 수 파라미터 (1cdd2016f). READY 핸드셰이크는 넣었다가(24efa298b, ea72ffbbc) 10-09 밤에 뺌 | `ha_apply_worker_count`(기본 10, 1~32). 배열 길이는 `LA_MAX_WORKER_COUNT`=32 고정, 기동 수만 런타임. 핸드셰이크 대신 살아 있는 worker 카운터: 기동 실패 worker는 ERROR 로그 남기고 빠지고, 0이 될 때만 `need_shutdown`(`la_apply_worker_startup_failed`). 08장 §5에 결정 기록. queue 용량 설정화는 1-4로 | 확인 |
+| 1-4 | task queue 비차단·outstanding 상한, pending 상한, completed set 크기 설정 | [02 §3](../02-slave-implementation-design.md), 당시 in-flight 설계 §2·5(Git 이력), 9.1.4 | **반영 (6a2494096)** | 상한 하나 `LA_OUTSTANDING_CAPACITY(worker_count)` = worker 수 × 1024 (파라미터 아님). gate의 commit-order FIFO 길이가 outstanding 수. 상한이면 reader가 task 경계에서 로그 읽기를 멈추고 결과 수거·frontier·retire·pending 재판정만 반복(`la_reader_wait_for_outstanding_room`). task queue push 비차단: 자리 없으면 ready task도 pending에 두고 다음 collect에서 배정, 신규보다 먼저 온 ready를 먼저 drain. in-flight list·result queue·completed set은 기동 때 상한 크기로 malloc. 남은 것: dependency가 영영 안 풀릴 때 상한에서 영구 대기(설계는 오류 처리) 감지 없음 | 확인 |
+| 1-5 | worker READY 핸드셰이크, worker 수·queue 용량의 설정 파라미터화 | 당시 worker 설계 §5·12(Git 이력) | **반영**: worker 수 파라미터 (1cdd2016f). READY 핸드셰이크는 넣었다가(24efa298b, ea72ffbbc) 10-09 밤에 뺌 | `ha_apply_worker_count`(기본 10, 1~32). 배열 길이는 `LA_MAX_WORKER_COUNT`=32 고정, 기동 수만 런타임. 핸드셰이크 대신 살아 있는 worker 카운터: 기동 실패 worker는 ERROR 로그 남기고 빠지고, 0이 될 때만 `need_shutdown`(`la_apply_worker_startup_failed`). 당시 worker 설계 §5(Git 이력)에 결정 기록. queue 용량 설정화는 1-4로 | 확인 |
 | 1-6 | `wset_history_finalize` 호출 (서버 종료 시 history 해제) | [01 §1.2.3](../01-master-implementation-design.md) | **반영 (644727743)** | `logtb_undefine_trantable`의 `lock_finalize` 옆(Reuse 아닐 때만). 01장 1.2.3의 `boot_server_all_finalize` 호출 트리는 고쳐야 함 | 확인 |
 | 1-7 | trace fallback_reason 분류 (serial / incr / checksum / overflow) | [10 §13.7.2](10-sysop-end-investigation.md) | **반영 (2fc4202c0)** SYSOP 줄만 | `[WSET] SYSOP master commit_order … reason=serial\|incr\|checksum\|mixed\|overflow`. repl 레코드의 class 이름(`_db_serial`), statement 여부, `wset_overflow`로 분류. COMMIT 줄의 fallback 사유는 기존 `fallback=` 그대로 | 확인 |
 | 1-8 | 용량 집계를 동시 게시분 포함 원자 예약으로 | 8-1 상세 설계에만 (파일명이 NFD라 링크 생략) | **반영 (d1b42e68e)**. 기능이 아니라 메모리 상한 정밀도 | 공유 락 경로에서 `wset_Publish_reserved`(atomic)에 자기 키 수를 더한 뒤 비교, 게시 뒤 되돌림. 독점 락 경로는 그대로 | 확인 |
@@ -98,7 +98,7 @@ lock 오류가 올라오는 경로:
 | pending 계측(배정 줄에 frontier, FIFO 노드 trid), gate 단위 테스트, 6-2.4·8-2.4 정정 | [a1-test](./a1-test-20261008.md) 남은 일 | 미착수 |
 | long transaction·DDL 경로 부하(`--wide-transactions`, `--ddl-transactions`), fullcheck/gatesim의 SYSOP 작업 포함 | [sysop-commit-order-test](./sysop-commit-order-test-20261008.md) 남은 일 | 미착수 |
 | 미빌드 커밋 3개 빌드·배포·DB 재생성·재측정 (같은 seed 20261006, 기대 ~14s, lag ~0.08s) | 13.7.10, 02 §5·7, 12.2 | 빌드 대기 |
-| failover 승격·failback 실측 | 9.2, [03 §4](03-verification-plan.md) | 미착수 |
+| failover 승격·failback 실측 | 9.2, 당시 복구 검증 계획 §4(Git 이력) | 미착수 |
 | 백로그(포화) 병렬성 측정 | a1-test, 03 §5 | 미착수 |
 | Run 1 wide 행 손상·slave crash 원인 | [sysop-end-test](./sysop-end-test-20261008.md) | 미착수 |
 | 복합 FK 단위 테스트 실행 기록 | 9.1.2 | 바이너리만, 기록 없음 |
@@ -107,7 +107,7 @@ lock 오류가 올라오는 경로:
 
 ## 4. 작업 순서 요약
 
-1. 미빌드 커밋 10개(조각 제거 28ea0b7ac, 재시작 상한 3725009fe, 재시작 경계 5df8187ad, history_finalize 644727743, worker 수 파라미터 1cdd2016f, READY 24efa298b, 대기 상한 ea72ffbbc, SYSOP reason 2fc4202c0, outstanding 상한 6a2494096, 용량 예약 d1b42e68e) 빌드·배포·**DB 재생성**·seed 20261006 재측정 (사용자 빌드 대기). 그 뒤 applylogdb 재시작과 cub_server 재시작 실측([03 §4](03-verification-plan.md), [12장 12.8](../../12-cub_server-재시작.md)).
+1. 미빌드 커밋 10개(조각 제거 28ea0b7ac, 재시작 상한 3725009fe, 재시작 경계 5df8187ad, history_finalize 644727743, worker 수 파라미터 1cdd2016f, READY 24efa298b, 대기 상한 ea72ffbbc, SYSOP reason 2fc4202c0, outstanding 상한 6a2494096, 용량 예약 d1b42e68e) 빌드·배포·**DB 재생성**·seed 20261006 재측정 (사용자 빌드 대기). 그 뒤 applylogdb 재시작과 cub_server 재시작 실측(당시 복구 검증 계획 §4(Git 이력), [12장 12.8](../../12-cub_server-재시작.md)).
 2. 기능 미구현: 없음. 1-9(2PC)는 보류, 1-10(조각)은 보류.
 3. 예외 처리: 2-1 → 2-2 → 2-3·2-4 → 2-5·2-7·2-8 → 2-9~2-11.
 4. 검증 3절.

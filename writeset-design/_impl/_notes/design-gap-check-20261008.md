@@ -7,7 +7,7 @@ code: cubrid-applier feature/CBRD-27508-parallel-applylogdb-writeset HEAD a9b87e
 # 설계 대비 미구현 점검 (2026-10-08)
 
 > [!NOTE]
-> **현재 상태 (2026-11-02, PR 브랜치 HEAD 9b2dd61b5 기준)**
+> **현재 상태 (2026-11-02, PR 브랜치 HEAD 8e3029e56 기준)**
 > - 이 점검은 unimplemented-20261008.md가 대체했다. 항목별 현재 상태는 그 문서 머리의 상태 줄을 본다.
 
 

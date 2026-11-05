@@ -1,8 +1,8 @@
 # C11. 분할(partition) 부모 테이블의 FK에서 자식 REF 키와 부모 WRITE 키가 맞지 않아 slave에서 자식 행이 사라짐
 
 > [!NOTE]
-> **현재 상태 (2026-11-02, PR 브랜치 HEAD 9b2dd61b5 기준)**
-> - 수정 커밋 4ed4a84d0은 10-28 이력 정리로 b84567f36(10-21)이 됐다. 코드는 `locator_wset_resolve_ref_partition`이다(01 4.3절).
+> **현재 상태 (2026-11-02, PR 브랜치 HEAD 8e3029e56 기준)**
+> - 수정 커밋 4ed4a84d0은 10-28 이력 정리로 51e1bdf80(10-21)이 됐다. 코드는 `locator_wset_resolve_ref_partition`이다(01 4.3절).
 > - 이 문서는 해시 키를 "(테이블 OID, VFID, 키)"로 설명한다. 10-30부터 class OID는 해시에 들어가지 않는다(fixes/10, 01 3.1절).
 > - 6절의 "부모 DELETE 방향"은 아직 시험하지 않았다.
 

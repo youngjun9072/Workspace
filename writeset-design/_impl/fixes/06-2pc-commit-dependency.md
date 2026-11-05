@@ -4,8 +4,8 @@ tags: [CBRD-27508, writeset, master, fixes]
 # 2PC 커밋이 의존 없는 라벨로 나가고 히스토리에 등록되지 않는 문제
 
 > [!NOTE]
-> **현재 상태 (2026-11-02, PR 브랜치 HEAD 9b2dd61b5 기준)**
-> - 수정은 fb82b7db6(10-09 master 커밋)에 들어 있다. 57239ff43, d449c8968은 지금 브랜치에 없다.
+> **현재 상태 (2026-11-02, PR 브랜치 HEAD 8e3029e56 기준)**
+> - 수정은 a7577f913(10-09 master 커밋)에 들어 있다. 57239ff43, d449c8968은 지금 브랜치에 없다.
 > - 대상 함수는 `log_complete_for_2pc`다. COMMIT 갈래가 `log_append_repl_info_and_commit_log` → `assert_release` → `wset_publish_commit_to_history` 순서로 1PC와 같다.
 > - `copy_to`가 복사하는 writeset 필드는 `wset_hashes`, `wset_overflow`, `wset_fallback_reason`, `wset_dependency_seq` 넷이다. 이 문서의 `wset_dependency_is_ref`는 라벨 형식에서 없어졌다.
 > - 01 문서 5.4절에 반영.

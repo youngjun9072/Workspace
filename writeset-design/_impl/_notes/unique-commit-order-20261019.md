@@ -4,9 +4,9 @@ tags: [CBRD-27508, master, unique, 커밋순서]
 # unique 검사와 커밋 기록 순서 역전
 
 > [!NOTE]
-> **현재 상태 (2026-11-02, PR 브랜치 HEAD 9b2dd61b5 기준)**
-> - 이 문서의 수정(3269e5493·79268ae56 → 현재 5ebe894ef, d1d02b9e4 → 현재 8a23bb8f6)은 11-01 develop 병합 3b3e37e16에서 develop CBRD-27034(ef4e7e812)의 대기로 대체됐다. 지금 코드에는 브랜치 고유 대기가 없다(01 5.3절).
-> - 4절의 "INCR 서브트랜잭션 self-lock" 빈틈은 INCR sysop이 commit-order 장벽 라벨을 받게 된 뒤(3fb54e549, 10-30) 해소됐을 가능성이 있으나 확인하지 않았다.
+> **현재 상태 (2026-11-02, PR 브랜치 HEAD 8e3029e56 기준)**
+> - 이 문서의 수정(3269e5493·79268ae56 → 현재 5ad146e8c, d1d02b9e4 → 현재 8d88cce80)은 11-01 develop 병합 3b3e37e16에서 develop CBRD-27034(ef4e7e812)의 대기로 대체됐다. 지금 코드에는 브랜치 고유 대기가 없다(01 5.3절).
+> - 4절의 "INCR 서브트랜잭션 self-lock" 빈틈은 INCR sysop이 commit-order 장벽 라벨을 받게 된 뒤(fffda6ccd, 10-30) 해소됐을 가능성이 있으나 확인하지 않았다.
 
 
 작성: 2026-10-19. 대상 사건: 10-19 14:20 `verify_until_error` 2라운드 unique에서 slave fail_counter 0 → 2. 사건 경과와 자료 위치는 `ha_bench_tool/log/verify_until_error_20261019_130529_report.md`에 있다. 수정은 커밋 `3269e5493`(수정 A), 대기 trace는 `18661fd25`.

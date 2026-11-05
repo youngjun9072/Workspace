@@ -6,7 +6,7 @@
 | 등급 | High |
 | 상태 | **방어 코드로 유지(10-23).** 수정 `ac9aa4bf7`(안 A', 단위 테스트 포함). 단위 테스트 25건 통과(10-21). HA 시험 2회(10-21 수정 전, 10-23 수정 후) 모두 정지 조건이 만들어지지 않아(MASKED) 수정 경로는 HA에서 실행되지 않음(9.3절). 재현 커밋 `fc27d96b1`은 수정 커밋에 접음(접기 전 기록: 브랜치 `backup/c1c2-before-fold-20261021`) |
 | 판정 | 코드 경로는 확정. HA에서는 영구 정지가 재현되지 않음(10-21, 10-23 모두 MASKED). 2노드 상호 구성에서는 재시작 직후 applylogdb의 apply info 갱신 커밋이 먼저 들어와 정지 조건을 가린다(9.3절). 단위 테스트로 정지 조건을 재현함(4.2절). 가림막이 없는 구성(replica 등)이나 순서에서 생길 수 있는 경로라 방어 코드로 둔다 |
-| 신규/기존 | 신규. master 쪽은 fb82b7db6(Master-side writeset generation), slave gate는 45825ca17(Slave-side parallel applylogdb) |
+| 신규/기존 | 신규. master 쪽은 a7577f913(Master-side writeset generation), slave gate는 45825ca17(Slave-side parallel applylogdb) |
 | 관련 이슈 | C2(overflow 라벨에 하한이 빠짐, 같이 수정해야 함), C6(drain 백스톱 미동작, 이 정지를 끊지 못함) |
 | 지적한 리뷰어 | 9명: architect_1y(U1), architect_5y, architect_10y(Critical), sysdev_1y, sysdev_5y, sysdev_10y, appdev_5y, qa_3y, qa_5y, qa_10y |
 

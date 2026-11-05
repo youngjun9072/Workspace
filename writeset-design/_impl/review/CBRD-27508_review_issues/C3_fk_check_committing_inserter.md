@@ -1,10 +1,10 @@
 # C3. 자식 INSERT의 FK 검사가 커밋 도중인 부모 inserter를 기다리지 않아 slave에서 자식 행이 사라짐
 
 > [!NOTE]
-> **현재 상태 (2026-11-02, PR 브랜치 HEAD 9b2dd61b5 기준)**
-> - 브랜치 수정(db599ab64 → 현재 f7078fe07, 행 경로 d1d02b9e4 → 8a23bb8f6, unique 경로 79268ae56·3269e5493 → 5ebe894ef)은 11-01 develop 병합 3b3e37e16에서 develop CBRD-27034(ef4e7e812)로 대체됐다. `btree_is_mvccid_committing`과 ROW/UNIQUE WAIT trace는 지금 코드에 없다.
+> **현재 상태 (2026-11-02, PR 브랜치 HEAD 8e3029e56 기준)**
+> - 브랜치 수정(db599ab64 → 현재 b9be48cf8, 행 경로 d1d02b9e4 → 8d88cce80, unique 경로 79268ae56·3269e5493 → 5ad146e8c)은 11-01 develop 병합 3b3e37e16에서 develop CBRD-27034(ef4e7e812)로 대체됐다. `btree_is_mvccid_committing`과 ROW/UNIQUE WAIT trace는 지금 코드에 없다.
 > - 지금은 develop의 `logtb_is_active_other_mvccid`가 커밋 중인 트랜잭션의 MVCCID self-lock을 기다린다. writeset은 그 self-lock이 풀리기 전에 게시를 끝낸다(01 5.3절).
-> - 787defb50(11-01): RETAIN LOCK 커밋에서 self-lock을 일찍 풀던 브랜치 코드를 빼고 develop과 같게 했다.
+> - f2677bdef(11-01): RETAIN LOCK 커밋에서 self-lock을 일찍 풀던 브랜치 코드를 빼고 develop과 같게 했다.
 
 
 ## 1. 메타

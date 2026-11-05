@@ -30,26 +30,26 @@
 
 현재는 `H(index VFID, index와 같은 의미로 정규화한 key)`를 사용한다. 부모 PK의 WRITE와 자식 FK의 REF도 같은 부모 인덱스 VFID를 사용한다. 같은 물리 인덱스의 충돌은 클래스가 달라도 만나고, 서로 다른 인덱스는 VFID로 구분된다.
 
-수정 전에는 상속 클래스 간 공유 B-tree의 dependency가 누락됐다. 수정 후 단위 테스트 47건·4,728 assertion과 HA 시험이 통과했다.
+수정 전에는 상속 클래스 간 공유 B-tree의 dependency가 누락됐다. 상속 키 테스트를 추가했고, 당시 writeset 단위 테스트 전체와 관련 HA 시험이 통과했다.
 
 ### 2.2 키 해시를 B-tree 비교 의미에 맞췄다
 
 처음에는 문자열에 collation을 반영하고, 나머지 값은 packed image를 해시했다. 실제 인덱스와 대조하니 같은 값으로 비교되는 키도 타입이나 저장 표현에 따라 다른 해시가 될 수 있었다. 필요한 dependency가 사라지는 문제이므로, 키를 해시하기 전에 B-tree의 비교 규칙에 맞춰 정규화하도록 바꿨다.
 
-| 대상 | 변경한 처리와 이유 |
-|---|---|
-| 문자열 | 인덱스가 무시하는 뒤쪽 문자를 제외한다. UCA expansion collation은 기존 pseudo key로 같은 키를 다르게 해시할 수 있어 비교 가중치열을 해시하고, 나머지는 기존 pseudo key를 사용한다. |
-| NUMERIC | precision·scale이 달라도 같은 숫자는 같은 십진 문자열로 만들어 해시한다. |
-| MONETARY | 인덱스가 비교하지 않는 통화 종류를 통일해 같은 금액이 같은 해시가 되게 한다. |
-| VARBIT | 인덱스가 비트 길이 대신 바이트 수를 비교하므로 길이를 바이트 단위로 맞춘다. |
-| FLOAT·DOUBLE | 같은 값으로 비교되는 `-0.0`과 `+0.0`을 하나로 맞춘다. |
-| TIMESTAMPTZ·DATETIMETZ | 인덱스 비교에 사용하지 않는 zone을 제외한다. |
-| 복합 키 | 원소를 `MAX_ALIGNMENT` 경계에서 패킹한다. 복합 FK는 각 원소를 대응하는 부모 PK domain으로 변환해 부모 키와 같은 MIDXKEY를 만든다. MATCH SIMPLE에서 원소 하나라도 NULL이면 REF를 만들지 않는다. |
-| NaN | 하나의 동치 해시로 표현할 수 없어 트랜잭션 전체를 commit-order로 보낸다. |
+| 대상                     | 변경한 처리와 이유                                                                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 문자열                    | 인덱스가 무시하는 뒤쪽 문자를 제외한다. UCA expansion collation은 기존 pseudo key로 같은 키를 다르게 해시할 수 있어 비교 가중치열을 해시하고, 나머지는 기존 pseudo key를 사용한다.             |
+| NUMERIC                | precision·scale이 달라도 같은 숫자는 같은 십진 문자열로 만들어 해시한다.                                                                                       |
+| MONETARY               | 인덱스가 비교하지 않는 통화 종류를 통일해 같은 금액이 같은 해시가 되게 한다.                                                                                           |
+| VARBIT                 | 인덱스가 비트 길이 대신 바이트 수를 비교하므로 길이를 바이트 단위로 맞춘다.                                                                                            |
+| FLOAT·DOUBLE           | 같은 값으로 비교되는 `-0.0`과 `+0.0`을 하나로 맞춘다.                                                                                                   |
+| TIMESTAMPTZ·DATETIMETZ | 인덱스 비교에 사용하지 않는 zone을 제외한다.                                                                                                            |
+| 복합 키                   | 원소를 `MAX_ALIGNMENT` 경계에서 패킹한다. 복합 FK는 각 원소를 대응하는 부모 PK domain으로 변환해 부모 키와 같은 MIDXKEY를 만든다. MATCH SIMPLE에서 원소 하나라도 NULL이면 REF를 만들지 않는다. |
+| NaN                    | 하나의 동치 해시로 표현할 수 없어 트랜잭션 전체를 commit-order로 보낸다.                                                                                        |
 
 *표 2-1. 인덱스 비교와 해시가 같은 키를 가리키도록 보완한 타입별 처리*
 
-VARBIT·문자열 NUL·공백·복합 키·FK REF·NaN 등을 다룬 HA 쌍 시험 17건에서는 마스터와 슬레이브의 최종 데이터가 일치했고 적용 오류가 없었다. NaN은 commit-order 폴백으로 확인했다. 이 결과는 이후 추가한 NUMERIC 정규화와 UCA 가중치 해시까지 검증한 결과는 아니다.
+VARBIT·문자열 NUL·공백·복합 키·FK REF·NaN 등을 다룬 HA 쌍 시험 17건에서는 마스터와 슬레이브의 최종 데이터가 일치했고 적용 오류가 없었다. NaN은 commit-order 폴백으로 확인했다. 이후 NUMERIC과 UCA 확장 collation도 별도 HA 시험에서 수정 후 데이터 일치를 확인했다. NUMERIC은 단위 테스트 76개 assertion을 통과했고, UCA는 전용 단위 테스트 1,808개 assertion으로 비교 규칙을 확인했다. UCA 테스트에서 추가 발견한 끝 가중치 처리 문제도 보완했으며, 조사 기록에는 이 후속 수정의 배포 후 HA 재시험이 남아 있다.
 
 정규화할 수 없는 값을 일부만 제외한 채 정상 writeset으로 사용해서는 안 된다. 키 생성 실패는 DML 오류로 반환하고, NaN처럼 별도로 정한 경우는 트랜잭션 전체를 commit-order로 처리한다.
 
@@ -83,15 +83,11 @@ VARBIT·문자열 NUL·공백·복합 키·FK REF·NaN 등을 다룬 HA 쌍 시�
 
 ### 2.6 dependency 라벨에서 `dependency_is_ref`를 제거했다
 
-컨셉 설계는 WRITE 슬롯에서 온 dependency이면 해당 트랜잭션 한 건의 완료를, REF 슬롯에서 왔으면 그 LSA까지의 연속 완료를 확인하도록 했다. 그러나 여러 키의 선행 관계를 가장 늦은 LSA 하나로 줄인 뒤에는, 그 트랜잭션 한 건이 끝났다는 사실만으로 나머지 선행 작업의 완료까지 알 수 없었다.
+슬레이브가 개별 완료 여부로 후속 task를 통과시키던 판정을 없애고, 모든 dependency를 frontier로 확인하도록 바꿨다. 이에 대기 방식을 구분하던 `dependency_is_ref`도 필요 없어져 `LOG_DUMMY_WSET_LABEL`에는 `dependency_seq`만 전달한다. 완료 집합을 사용한 목적, 순서 역전이 발생한 이유와 시험 결과는 슬레이브 변경을 설명하는 3.4절에서 다룬다.
 
-실제 시험에서는 선행 관계 1,369개 중 18개가 보장되지 않았고, 8개가 역전돼 4행의 데이터가 달랐다. 이에 전송하는 `dependency_is_ref`를 제거하고 모든 dependency를 `dependency_seq <= frontier`로 판정하도록 바꿨다. 같은 seed의 수정 후 시험에서는 역전·미해제 pending·fail이 모두 0이었다.
+마스터 history의 WRITE·REF 두 슬롯과 내부 `candidate_is_ref`는 유지한다. `ref_seq`에서 온 최종 후보는 여러 참조 트랜잭션의 상한이므로 그대로 사용한다. 다른 후보는 `prev_commit_lsa`와 비교하되 `history_start` 아래로 내리지 않는다. 제거한 것은 슬레이브의 대기 방식을 나누던 전송 플래그다.
 
-마스터 내부의 `candidate_is_ref`는 남아 있다. `ref_seq`에서 온 최종 후보는 여러 참조 트랜잭션의 상한이므로 그대로 사용한다. 다른 후보는 `prev_commit_lsa`와 비교하되 `history_start` 아래로 내리지 않는다. 제거한 것은 슬레이브의 대기 방식을 나누던 전송 플래그다.
-
-일부 task는 개별 완료만 볼 때보다 더 기다린다. 다만 기다리는 task는 pending list에 두므로 뒤의 독립 task까지 함께 멈추지는 않는다.
-
-### 2.7 라벨 결정과 COMMIT 기록을 같은 로그 잠금 구간에 넣었다
+### 2.7 dependency 계산과 COMMIT 기록을 같은 로그 잠금 구간에 넣었다
 
 COMMIT 직전에 history를 조회하더라도, 조회와 COMMIT 기록 사이에 다른 COMMIT이 들어오면 dependency가 실제 로그 순서를 반영하지 못할 수 있다. 따라서 단순히 `REPL → WSET_LABEL → COMMIT`의 기록 순서를 지키는 것 외에, dependency 결정 시점도 같은 잠금 구간에 넣었다.
 
@@ -105,29 +101,74 @@ history는 프로세스 메모리이므로 서버가 재시작하면 비어 있�
 
 history 전체를 저장·복원하는 대신, recovery가 끝났을 때 복구된 로그 끝을 `history_start`로 설정한다. 이후 dependency가 이 하한 아래로 내려가지 않게 해 재시작 전 작업이 끝난 뒤 새 작업을 적용하도록 했다. 일부 독립 트랜잭션도 기다리지만 재시작 전후의 순서는 보존된다.
 
-복구된 로그 끝은 마지막 COMMIT 또는 독립 SYSOP_END보다 뒤일 수 있다. 이 값을 그대로 기다리면 슬레이브의 frontier가 도달하지 못해 새 task가 막힌다. 그래서 슬레이브는 현재 task보다 앞서 읽은 마지막 적용 경계로 dependency를 낮춘다. 해당 경계는 COMMIT 또는 라벨이 붙은 SYSOP_END다.
+다만 복구된 로그 끝은 재시작 전 마지막 COMMIT보다 뒤일 수 있다. COMMIT 외의 로그도 기록되므로 마지막 커밋 위치와 복구된 로그 끝이 항상 같지는 않기 때문이다. 이후 트랜잭션은 이 `history_start`를 하한으로 계산한 `dependency_seq`를 슬레이브에 전달한다.
 
-이 대기 조건은 단위 테스트에서 수정 전 실패했고, 수정 후 25건·4,304 assertion이 통과했다. HA에서는 apply info COMMIT 때문에 조건이 가려졌다. 분석 기록은 C1, 수정 커밋은 `285786829`다.
+슬레이브가 재시작 전 작업을 모두 적용해도 frontier는 마지막 COMMIT 또는 독립 SYSOP_END까지 도달한다. 그보다 뒤인 복구 위치가 새 task의 dependency로 전달되면 `dependency_seq <= frontier`를 만족하지 못한다. 새 task는 대기하고, frontier도 그 복구 위치까지 전진하지 못해 적용이 막힌다.
+
+그래서 슬레이브는 dependency가 현재 task보다 앞서 읽은 마지막 적용 경계보다 크면 그 경계까지 낮춘다. 해당 경계는 COMMIT 또는 라벨이 붙은 SYSOP_END다. 재시작 전 작업의 완료는 기다리되, frontier가 도달하지 못하는 중간 로그 위치를 계속 기다리지 않도록 한 것이다.
+
+이 대기 조건은 단위 테스트에서 수정 전 실패했고, 수정 후 25건·4,304 assertion이 통과했다. HA에서는 apply info COMMIT 때문에 조건이 가려졌다. 분석 기록은 C1, 수정 커밋은 `bc7f11b3d`다.
 
 ### 2.9 SYSOP_END를 별도 commit-order 적용 경계로 만들었다
 
 초기 컨셉 설계는 일반 COMMIT의 dependency 계산과 게시를 중심으로 했지만, develop은 SYSOP_END에서도 복제 항목을 중간 적용한다. serial·INCR/DECR·checksumdb의 독립 operation은 바깥 트랜잭션이 ABORT해도 결과가 남아야 하므로, 병렬 applier도 이를 바깥 COMMIT과 별도로 처리해야 했다.
 
-복제 레코드가 확정되는 SYSOP_END 앞에 WSET_LABEL을 기록하고, dependency를 `max(prev_commit_lsa, history_start)`로 정했다. 기록 뒤에는 `history_start`를 그 SYSOP_END까지 올린다. 완전한 충돌 키 집합을 보장할 수 없는 경로도 포함하므로, 독립 SYSOP는 키별 병렬 처리 대신 commit-order 장벽으로 순서를 지킨다. 슬레이브의 fragment 처리는 3.6절에서 설명한다.
+독립 적용해야 한다는 것과 키별로 병렬 적용할 수 있다는 것은 별개였다. serial은 키를 직접 수집하지만, INCR/DECR·checksumdb처럼 기존 키 수집 경로를 거치지 않거나 statement로 복제되는 작업과 writeset overflow에서는 충돌 키로 dependency를 계산할 수 없다. 따라서 이런 경로는 commit-order 처리가 필요했다.
+
+키가 있는 SYSOP만 키별로 병렬 처리하는 안도 시험했다. 그러나 SYSOP의 후보 LSA를 `prev_commit_lsa`까지 낮추면서 선행 SYSOP를 건너뛰는 문제가 있었고, 같은 트랜잭션의 SYSOP 간 순서와 재시작 중복 적용도 별도로 보장해야 했다. 이번 구현은 이 경로를 유지하지 않고 복제 항목을 남긴 독립 SYSOP를 commit-order로 통일했다. SYSOP 자체가 병렬화 불가능해서가 아니라, 키를 얻지 못하는 경로까지 공통으로 처리하고 순서 보장을 우선하기 위한 선택이다.
+
+복제 레코드가 확정되는 SYSOP_END 앞에 WSET_LABEL을 기록하고, dependency를 `max(prev_commit_lsa, history_start)`로 정한다. 기록 뒤에는 `history_start`를 그 SYSOP_END까지 올려 이후 작업도 이 SYSOP를 기다리게 한다. 슬레이브의 fragment 처리는 3.6절에서 설명한다.
 
 이 처리를 추가한 뒤에는 중첩 SYSOP가 바깥 연산의 복제 레코드를 너무 일찍 기록하는 오류도 수정했다. 로그 위치가 정해지기 전에 기록하면 슬레이브가 해당 항목을 건너뛰고, 이후 바깥 연산이 ABORT되면 이미 전달한 변경을 취소할 수 없다. 복제 레코드 기록을 표시한 구간 안에서는 중첩 SYSOP가 그 레코드를 기록하지 않고, 구간을 닫은 연산의 SYSOP_END에서 기록하도록 고쳤다.
 
 SYSOP 시작 때 로컬 writeset 위치도 표시한다. 독립 적용한 SYSOP의 키와 ABORT·부분 rollback으로 사라진 변경의 키는 바깥 COMMIT에서 다시 게시하지 않도록 제거한다. 다만 이미 발생한 commit-order 폴백은 안전을 위해 바깥 트랜잭션에도 유지한다.
 
-NEED_FLUSH 생산자는 serial·INCR/DECR·checksumdb 세 경로다. 초기 fragment 시험은 최종 데이터가 일치했지만 라벨 19건이 선행 경계보다 낮아 현재 장벽 방식으로 보완했다. 중첩 SYSOP의 조기 기록은 INCR 100건 중 3건 유실로 재현해 `501e5f315`에서 수정했다. 같은 원인의 ABORT 위험은 코드 경로로 확인했다.
+NEED_FLUSH 생산자는 serial·INCR/DECR·checksumdb 세 경로다. 초기 키별 fragment 시험은 최종 데이터가 일치했지만 라벨 19건이 선행 경계보다 낮아 현재 장벽 방식으로 보완했다. commit-order 방식에서 길게 나타났던 지연은 결과 수거의 주기적 대기를 없앤 뒤 같은 부하에서 62.3초에서 0.08초로 줄었다. 이 재측정 결과도 키별 SYSOP 게시 경로를 제거하고 commit-order로 통일한 근거다. 중첩 SYSOP의 조기 기록은 INCR 100건 중 3건 유실로 재현해 `de8620e32`에서 수정했다. 같은 원인의 ABORT 위험은 코드 경로로 확인했다.
 
-### 2.10 커밋 중인 키와 분할 부모 FK를 실제 충돌 대상으로 맞췄다
+### 2.10 커밋 중인 키와 파티션된 부모 테이블의 FK를 실제 충돌 대상으로 맞췄다
 
-부모 PK WRITE와 자식 FK REF가 같은 해시를 만들더라도, FK·UNIQUE 검사 시점에 다른 트랜잭션이 그 키를 커밋 중일 수 있다. 이를 단순히 없는 키로 보면 마스터의 검사 결과와 history 게시 순서가 어긋난다. 커밋 중인 inserter·deleter의 COMMIT을 기다리도록 검사 경로를 보완했다.
+부모 PK WRITE와 자식 FK REF가 같은 해시를 만들더라도, FK·UNIQUE 검사 시점에 다른 트랜잭션이 그 키를 커밋 중일 수 있다. 이를 단순히 없는 키로 보면 마스터의 검사 결과와 history 게시 순서가 어긋난다. 커밋 중인 inserter·deleter의 COMMIT을 기다리도록 검사 경로를 보완했다. 커밋 중인 부모 시험은 수정 전 2,000회 중 582행이 유실됐고 수정 후 10,000회 유실이 없었다.
 
-분할 부모를 참조하는 FK도 별도로 확인했다. 부모 WRITE는 실제 키가 들어 있는 partition의 인덱스를 사용하는데 REF가 root 인덱스 VFID를 쓰면 두 해시가 만나지 않는다. REF도 실제 partition의 인덱스 공간을 사용하도록 맞췄다.
+파티션된 부모 테이블을 참조하는 FK에서는 별도의 문제가 있었다. 부모 WRITE는 실제 행이 저장된 파티션의 인덱스를 사용하는데, 자식 REF는 FK 정의에 있는 루트 테이블의 인덱스를 사용했다. 부모 키 값이 같아도 인덱스 VFID가 달라 history에서 만나지 않았다.
 
-커밋 중인 부모 시험은 수정 전 2,000회 중 582행이 유실됐고 수정 후 10,000회 유실이 없었다. 분할 부모 시험도 수정 전 500/500 dependency 누락·81행 유실에서 수정 후 누락·유실·fail이 모두 0이 됐다.
+다음은 실제 재현 시험의 스키마와 연산을 설명하기 위해 테이블 이름을 `parent`·`child`로 바꾼 예시다. 부모 테이블만 파티션되어 있고, 자식의 FK는 루트 테이블 `parent`를 참조한다.
+
+```sql
+CREATE TABLE parent (
+    id INT PRIMARY KEY
+) PARTITION BY HASH (id) PARTITIONS 4;
+
+CREATE TABLE child (
+    id INT PRIMARY KEY,
+    pid INT,
+    FOREIGN KEY (pid) REFERENCES parent (id)
+);
+
+-- T1: 부모 추가 후 COMMIT
+INSERT INTO parent VALUES (7);
+COMMIT;
+
+-- T2: 부모 7을 참조하는 자식 추가 후 COMMIT
+INSERT INTO child VALUES (7, 7);
+COMMIT;
+```
+
+*예제 2-1. 파티션된 부모 테이블의 키를 별도 자식 테이블이 참조하는 경우*
+
+마스터에서는 T1이 커밋한 부모를 확인하고 T2의 FK 검사가 통과한다. 그러나 수정 전 writeset은 다음처럼 서로 다른 인덱스로 충돌 키를 만들었다.
+
+| 항목 | 수정 전 충돌 키 | 수정 후 충돌 키 |
+|---|---|---|
+| T1의 WRITE | `H(행 7이 저장된 파티션의 PK 인덱스 VFID, 7)` | 동일 |
+| T2의 REF | `H(루트 parent의 PK 인덱스 VFID, 7)` | `H(행 7이 저장된 파티션의 PK 인덱스 VFID, 7)` |
+
+*표 2-2. 부모 WRITE와 자식 REF가 같은 인덱스 공간에서 만나도록 바꾼 처리*
+
+루트와 각 파티션은 별도의 B-tree를 가지므로, 수정 전 T2의 REF로는 T1의 WRITE를 찾을 수 없었다. T2가 T1을 기다리지 않고 슬레이브에 먼저 배정되면 부모가 없어 FK 오류가 발생하고 자식 행이 유실됐다. FK 검사가 실제 부모 행을 찾는 것과, writeset이 그 부모의 COMMIT을 dependency로 찾는 것은 서로 다른 경로였던 것이다.
+
+자식 REF를 수집할 때도 FK 검사와 같은 방식으로 부모 키가 속한 파티션과 PK 인덱스를 구하도록 수정했다. 부모 WRITE는 그대로 두고 REF를 실제 파티션의 인덱스 공간에 맞춘 것이다.
+
+4개 파티션을 사용한 HA 시험 500회에서는 수정 전 500건 모두 부모 dependency가 누락됐고 자식 81행이 유실됐다. 수정 후 같은 조건에서는 dependency 누락과 행 유실이 없었으며, 마스터·슬레이브의 자식 500행이 일치하고 적용 오류도 0이었다. 부하를 늘린 2,000회 시험과 파티션 없는 FK 회귀 시험도 통과했다. 상세 기록은 `review/CBRD-27508_review_issues/C11_partitioned_parent_fk_key_mismatch.md`에 있다.
 
 ### 2.11 2PC도 일반 COMMIT과 같은 dependency 경로를 탄다
 
@@ -137,13 +178,27 @@ NEED_FLUSH 생산자는 serial·INCR/DECR·checksumdb 세 경로다. 초기 frag
 
 loose-end 전환부터 라벨·COMMIT 기록과 history 게시까지 코드 경로를 확인했다. 분산 트랜잭션 HA 실측 기록은 없다.
 
-### 2.12 로컬 writeset은 rollback 범위와 함께 줄어든다
+### 2.12 일부 작업을 취소하면 해당 writeset 키도 제거한다
 
-전체 ABORT에서는 키를 게시하지 않으면 되지만, savepoint나 SYSOP의 부분 rollback 뒤에는 트랜잭션이 계속될 수 있다. 되돌린 변경의 키까지 바깥 COMMIT에 게시하면 실제로 남지 않은 변경 때문에 불필요한 dependency가 생긴다. 독립 SYSOP의 키를 바깥 COMMIT 위치에 다시 게시하는 것도 이미 확정한 SYSOP_END 경계와 맞지 않는다.
+초기 설계는 트랜잭션 전체를 ABORT하면 키를 history에 게시하지 않는다고 설명했다. 하지만 SAVEPOINT까지 되돌리거나 실패한 SQL 문장만 취소한 뒤에도 트랜잭션은 계속될 수 있다. 이때 취소한 변경의 키가 남으면, 나중에 COMMIT할 때 실제로 남지 않은 변경까지 history에 게시해 불필요한 dependency를 만든다.
 
-각 `LOG_WSET_ENTRY`에 수집 당시 LSA를 보관하고, `repl_log_abort_after_lsa()`가 복제 항목을 제거하는 경계에서 `wset_discard_keys_after_lsa()`로 같은 위치 이후의 키를 제거하도록 보완했다. 초기 설계에 없던 부분 rollback 처리를 추가한 것이다.
+예를 들어 A를 변경한 뒤 SAVEPOINT를 잡고 B를 변경했다가 되돌렸다면, COMMIT할 변경은 A뿐이다.
 
-복제 항목과 키 제거가 같은 LSA를 쓰는 것은 코드로 확인했다. 별도 재현 기록은 없으며, 이 위치에 배치한 세부 이유는 코드에서 추정한 내용이다.
+```text
+A 변경                  → writeset에 A 추가
+SAVEPOINT 설정
+B 변경                  → writeset에 B 추가
+SAVEPOINT까지 ROLLBACK   → B의 변경 취소, 해당 범위의 키 제거
+COMMIT                  → 남은 키를 history에 게시
+```
+
+*예제 2-2. 트랜잭션 전체를 끝내지 않고 일부 변경만 취소하는 경우의 writeset 처리*
+
+이를 위해 각 `LOG_WSET_ENTRY`에 키 수집 당시의 LSA를 함께 저장했다. SYSOP를 ABORT하며 `repl_log_abort_after_lsa()`로 복제 항목을 제외하는 위치에서, 같은 rollback 경계를 `wset_discard_keys_after_lsa()`에 전달해 그보다 뒤의 LSA를 가진 키를 제거한다. SAVEPOINT rollback과 실패한 문장의 취소도 이 경로로 연결된다.
+
+새 로그가 기록되기 전에 수집해 LSA가 rollback 경계와 같은 키는 보수적으로 남을 수 있다. 이 경우 불필요한 대기는 남지만 필요한 순서를 빠뜨리지는 않는다. 해당 작업 중 발생한 writeset overflow도 해제하지 않는다.
+
+이 절은 취소한 변경의 키 정리이며, 이미 독립 적용한 SYSOP의 키를 바깥 COMMIT에서 다시 게시하지 않도록 버리는 처리는 2.9절에서 다룬다. 복제 항목과 키 제거가 같은 경계를 사용하는 것은 코드로 확인했지만, 부분 rollback의 별도 재현 시험 기록은 없다. 불필요한 키 게시를 줄이려는 배치 이유는 코드에서 추정한 내용이다.
 
 ## 3. 슬레이브 구현에서 바뀐 내용
 
@@ -161,7 +216,7 @@ loose-end 전환부터 라벨·COMMIT 기록과 history 게시까지 코드 경�
 
 컨셉 설계에서는 완성된 task가 변경 목록을 가진다고 표현했다. 실제 구현은 복제 항목과 key image를 다시 복사하지 않고, `LA_TASK.apply`가 기존 `LA_APPLY` 슬롯을 가리키도록 했다. 목록을 복사할 때의 메모리 사용과 별도 소유권 관리를 줄이기 위한 선택이다.
 
-worker는 슬롯의 복제 항목을 적용하면서 해제한다. 항목을 모두 처리해도 슬롯 자체는 coordinator가 result를 retire할 때까지 재사용하지 않는다. 슬롯에 남은 `start_lsa`가 필요한 로그의 보존 기준이기 때문이다. 항목 해제와 슬롯 반환은 서로 다른 시점이다.
+worker는 슬롯에 연결된 아이템(`LA_ITEM`)을 처리하면서 하나씩 목록에서 제거하고 해제한다. 항목을 모두 처리해도 슬롯 자체는 coordinator가 result를 retire할 때까지 재사용하지 않는다. 슬롯에 남은 `start_lsa`가 필요한 로그의 보존 기준이기 때문이다. 항목 해제와 슬롯 반환은 서로 다른 시점이다.
 
 이 수명은 task 정의와 in-flight 정리 경로에서 확인했다. `required_lsa`도 pending·in-flight task가 가리키는 슬롯을 포함하도록 연결했다.
 
@@ -178,13 +233,77 @@ worker는 슬롯의 복제 항목을 적용하면서 해제한다. 항목을 모
 
 ### 3.4 gate는 frontier 하나만 보고, 막힌 task는 별도 pending list에 둔다
 
-2.6절의 순서 역전 문제를 수정하면서 모든 dependency를 frontier로 판정하도록 통일했다. 이때 완료를 기다리는 task 때문에 coordinator의 로그 읽기까지 멈추면 뒤에 있는 독립 task도 실행하지 못한다.
+초기에는 완료한 트랜잭션의 LSA를 별도 완료 집합에 보관했다. WRITE 슬롯에서 온 dependency는 해당 LSA가 완료 집합에 있으면 frontier를 기다리지 않고 후속 task를 배정했다. REF 슬롯에서 온 dependency만 연속 완료를 기다리도록 구분한 값이 `dependency_is_ref`였다. 관계없는 긴 트랜잭션 때문에 frontier가 멈춰 있어도, 필요한 선행 작업이 끝났다면 후속 task를 먼저 실행하려는 목적이었다.
+
+그러나 dependency LSA 하나가 여러 키의 선행 작업을 대표하는 경우, 해당 트랜잭션이 끝나도 나머지 선행 작업은 미완료일 수 있었다. 초기 시험에서는 선행 관계 1,369개 중 18개가 보장되지 않았고, 8개가 역전돼 4행의 데이터가 달랐다. 이 결과에는 개별 완료 판정 문제와 SYSOP fragment의 라벨을 낮추던 문제가 함께 포함돼 있었다. SYSOP를 제외한 별도 시험에서도 개별 완료 판정으로 일반 UPDATE의 순서 역전과 교착이 발생했다.
+
+다음은 SYSOP를 제외한 시험에서 확인한 실제 사례다. 원본 SQL의 관련 UPDATE만 발췌했으며, 긴 테이블 이름은 `item_0`으로 줄였다. 전체 부하에는 아래에 생략한 INSERT·DELETE와 선행 트랜잭션의 대기가 포함돼 있다.
+
+```sql
+-- T1: trid=1806, 000275.sql, COMMIT LSA=352|8608
+UPDATE item_0
+SET version_no = version_no + 1
+WHERE logical_key = 100031;
+COMMIT;
+
+-- T2: trid=1824, 000282.sql, COMMIT LSA=355|2696
+UPDATE item_0
+SET version_no = version_no + 1
+WHERE logical_key = 100009;
+COMMIT;
+
+-- T3: trid=1861, 000289.sql, COMMIT LSA=359|1216
+UPDATE item_0
+SET version_no = version_no + 1
+WHERE logical_key = 100009;
+
+UPDATE item_0
+SET version_no = version_no + 1
+WHERE logical_key = 100031;
+COMMIT;
+```
+
+*예제 3-1. 두 행의 선행 트랜잭션을 기다려야 하지만 dependency에는 한 LSA만 남는 실제 SQL 발췌*
+
+마스터의 COMMIT 순서는 T1 → T2 → T3다. T3는 행 100031 때문에 T1을, 행 100009 때문에 T2를 모두 기다려야 한다. 그러나 dependency에는 더 늦은 T2의 COMMIT LSA 하나만 남는다. 이 값은 WRITE 슬롯에서 선택됐으므로 당시 `dependency_is_ref`는 false였다.
+
+| 단계 | 슬레이브에서 관측한 동작 | 당시 완료 집합을 사용하는 판정 |
+|---|---|---|
+| 1 | T1은 자신의 선행 트랜잭션을 기다려 pending에 남는다. | T1은 미완료다. |
+| 2 | T2가 먼저 적용·COMMIT된다. | 완료 집합에 T2가 들어가지만, T1이 미완료이므로 frontier는 T1 앞에 머문다. |
+| 3 | T3의 dependency를 확인한다. | `dependency_is_ref=false`이므로 frontier 대신 완료 집합에서 T2를 찾는다. |
+| 4 | T3를 worker에 배정한다. | T2가 완료됐다는 이유로 통과시키며, T1의 완료는 확인하지 않는다. |
+| 5 | T3가 두 행을 적용하고 COMMIT한다. | 행 100031에서 먼저 적용돼야 할 T1보다 앞선다. |
+| 6 | T1의 선행 트랜잭션이 끝나 T1이 실행을 시작한다. | 마스터의 T1 → T3 순서가 슬레이브에서 역전된다. |
+
+*표 3-1. 예제 3-1의 SQL과 완료 집합을 이용한 배정 판정을 실제 실행 순서로 대응한 결과*
+
+T2가 끝났다는 사실은 다른 행의 선행자인 T1의 완료를 보장하지 않는다. 이 시험에서는 T3가 커밋한 뒤 T1이 시작됐고, 이후 T1과 다른 트랜잭션 사이의 교착으로 적용이 멈췄다. T1이 나중에 완료돼 데이터를 덮어썼다고까지 확인한 사례는 아니다.
+
+원본은 `ha_bench-sysop-random/sysop_runs/20261008T011634-20261006-78024/tx/`에 남아 있다. 같은 실행의 `stdout/`에서 `LOCAL_TRANSACTION_ID` 결과를 대조해 SQL 파일과 trid의 대응도 확인했다. 실행 순서는 `_notes/no-sysop-test-20261008.md`에 기록돼 있다.
+
+이에 개별 완료로 조기 배정하는 판정을 제거하고 모든 dependency를 frontier로 확인하도록 바꿨다. 별도 완료 집합과 대기 방식을 구분하던 `dependency_is_ref`는 제거하고, 완료 여부는 commit-order ring에 표시한다. 마스터 history의 WRITE·REF 두 슬롯은 유지한다.
+
+frontier를 기다리는 task 때문에 coordinator의 로그 읽기까지 멈추면 뒤의 독립 task도 실행하지 못한다. 따라서 판정 방식 변경과 함께 대기 task를 보관하는 구조도 분리했다.
 
 gate는 dependency 판정과 commit-order ring을 맡고, 아직 실행할 수 없는 task는 별도 pending list에 보관하도록 나눴다. dependency가 충족되지 않았거나 task queue에 공간이 없으면 pending에 두고, coordinator는 뒤의 로그를 계속 읽는다. 대기 조건이 풀리면 pending task를 다시 확인한다.
 
 마스터 재시작의 복구 위치처럼 현재 task보다 앞서 읽은 마지막 적용 경계보다 높은 dependency는 그 경계로 낮춘 뒤 ring에 넣는다. frontier가 도달할 수 없는 위치를 기다리지 않게 하는 보정이며, 배경은 2.8절에서 설명했다.
 
-A1 동일 seed 시험에서는 독립 task가 계속 배정됐고, 역전·미해제 pending은 0이었다. 재시작 하한 보정은 gate 단위 테스트로 확인했다. pending 앞의 장기 트랜잭션이 뒤의 독립 task까지 막지 않도록 한 구조다.
+현재 판정에서는 T3의 dependency가 T2를 가리켜도 frontier가 그 위치에 도달할 때까지 기다린다. T1이 미완료이면 frontier가 T2까지 전진하지 못하므로 T3도 통과하지 않는다.
+
+수정 후에는 SYSOP를 제외한 이전 시험과 같은 seed로 다시 실행했다. `_notes/a1-test-20261008.md`에 남은 비교 결과는 다음과 같다. 앞서 설명한 초기 시험의 1,369개 선행 관계와는 별도의 실행 결과다.
+
+| 항목 | 수정 전 | frontier만 사용하는 수정 후 |
+|---|---|---|
+| frontier보다 높은 dependency로 통과한 배정 | 32건 | 0건 |
+| 관측된 선행 관계의 순서 역전 | 1건 | 0건 |
+| 해제되지 않은 pending | 33건 | 0건 |
+| 최종 적용 상태 | 교착으로 멈춤 | 네 테이블의 데이터 일치, 적용 오류 0 |
+
+*표 3-2. 같은 seed의 SYSOP 제외 부하에서 개별 완료 통과 판정을 제거하기 전후의 결과*
+
+수정 후에도 독립 task는 계속 배정됐다. 다만 dependency 대상이 이미 끝났어도 frontier를 기다리느라 pending 대기가 늘어나는 비용은 남는다. 재시작 하한 보정은 이 부하와 별도로 gate 단위 테스트에서 확인했다.
 
 ### 3.5 worker별 queue 대신 공유 task/result queue를 사용한다
 
@@ -198,7 +317,7 @@ worker 수는 `ha_apply_worker_count`로 기동 시 정한다. 기본값은 1이
 
 ### 3.6 라벨이 붙은 SYSOP_END를 fragment task로 적용한다
 
-마스터가 독립 SYSOP에 라벨을 남기더라도, 슬레이브가 그 항목을 바깥 COMMIT까지 쌓아 두면 중간 적용의 의미가 사라진다. 바깥 트랜잭션이 ABORT해도 남아야 하는 serial 변경 등이 함께 버려질 수 있기 때문이다. coordinator가 그 자리에서 직접 적용하는 것도 worker의 적용·커밋 경로와 나뉘므로 피했다.
+마스터가 독립 SYSOP에 라벨을 남기더라도, 슬레이브가 그 항목을 바깥 COMMIT까지 쌓아 두면 중간 적용의 의미가 사라진다. 바깥 트랜잭션이 ABORT해도 남아야 하는 serial 변경 등이 함께 버려질 수 있기 때문이다. SYSOP도 worker가 적용·커밋하도록 해, coordinator는 로그 읽기와 task 배정·완료 처리만 맡게 했다.
 
 coordinator는 해당 SYSOP_END까지의 복제 항목을 바깥 `LA_APPLY`에서 떼어 별도 fragment 슬롯과 task를 만든다. fragment도 일반 task처럼 gate·queue·result 경로를 거치며 SYSOP_END LSA를 완료 처리한다. 바깥 COMMIT은 마지막 fragment LSA를 dependency에 포함해 그 뒤에 실행되게 한다.
 
@@ -216,7 +335,7 @@ worker는 `db_restart_sub()`로 자기 sub-client를 열고, 오류 context, unz
 
 worker별 session 정리와 시작 실패 처리는 코드 및 실패 훅으로 확인했다. 실패한 worker를 개별 재생성하는 시험은 없다. `MULTI_CONN_TO_A_SERVER`가 없는 빌드는 worker를 1개로 제한하고 coordinator와 client를 번갈아 사용한다.
 
-여기에는 CS의 다중 연결 기반이 필요하다. 인증·trigger·session parameter·network state·error context 등을 sub-client별 또는 thread-local로 분리한 기반 위에, 현재 브랜치가 worker 수명주기와 API 호출을 연결했다. develop 병합 커밋은 `53fe1a6d13`이며, 진입 API는 `db_restart_sub()`·`db_shutdown_sub()`다.
+여기에는 CS의 다중 연결 기반이 필요하다. 인증·trigger·session parameter·network state·error context 등을 sub-client별 또는 thread-local로 분리한 기반 위에, 현재 브랜치가 worker 수명주기와 API 호출을 연결했다. develop 병합 커밋은 `b652ca5261`이며, 진입 API는 `db_restart_sub()`·`db_shutdown_sub()`다.
 
 ### 3.8 worker 1개는 commit order로만 적용한다
 
@@ -245,7 +364,7 @@ worker는 자기 connection에서 데이터를 COMMIT하고, coordinator는 `com
 1. **재적용 가능 구간을 구분했다.** `max_committed_lsa`를 worker에게 task를 넘기기 전에 저장해, 재시작 시 이미 적용됐을 가능성이 있는 구간의 상한으로 사용했다. 이 구간에서 INSERT의 중복 키와 UPDATE·DELETE의 대상 행 없음 오류를 허용했다. 이 값은 연속 완료 위치나 실제 완료 최댓값을 뜻하지 않았다.
 2. **복구 구간을 직렬로 실행했다.** 이미 후속 변경까지 적용된 행에 과거 행 이미지를 다시 적용하면, master에서 독립적이었던 트랜잭션도 slave에서 새롭게 잠금 충돌을 일으킬 수 있었다. 교착 후 재시작해도 같은 구간에서 교착을 반복해, 복구 구간에서는 task 하나가 retire될 때까지 기다린 뒤 다음을 넘겼다(`edd32308ac`).
 3. **statement 재실행을 먼저 막았다.** DDL의 재실행 오류와 `UPDATE t SET n = n + 1`의 이중 반영은 행 오류 skip으로 해결할 수 없었다. statement가 포함된 트랜잭션에 데이터와 함께 단일 마커를 기록하도록 했다(`74acb3ea8a`).
-4. **행 DML까지 task별 마커로 확장했다.** 아래 키 변경 예제처럼, COMMIT 순서대로 다시 적용해도 데이터가 달라질 수 있었다. statement 전용 마커를 모든 적용 task의 마커로 확장해 재실행 자체를 막았다(`72650ce0d0`). 이에 따라 복구 구간의 직렬 실행·오류 skip·`max_committed_lsa` 저장을 제거했다(`fe230a932f`).
+4. **행 DML까지 task별 마커로 확장했다.** 아래 키 변경 예제처럼, COMMIT 순서대로 다시 적용해도 데이터가 달라질 수 있었다. statement 전용 마커를 모든 적용 task의 마커로 확장해 재실행 자체를 막았다(`230a1ff35e`). 이에 따라 복구 구간의 직렬 실행·오류 skip·`max_committed_lsa` 저장을 제거했다(`ac69cd5f0d`).
 
 키를 바꾸는 UPDATE에서는 최초 적용 순서를 지켜도 문제가 발생한다. 다음은 T1과 T2의 데이터 COMMIT은 끝났지만 apply info가 그 위치까지 저장되지 않은 상태에서 중단된 경우다.
 
@@ -261,7 +380,7 @@ T2 재적용: 옛 PK=1로 찾아 PK=2로 변경하려 하지만 기존 PK=2와 �
 결과: master에 없는 PK=1 행이 slave에 남음
 ```
 
-*예제 3-1. 마커 없이 INSERT와 키 변경 UPDATE를 다시 적용하면, COMMIT 순서를 지켜도 이전 키가 되살아나는 경우*
+*예제 3-2. 마커 없이 INSERT와 키 변경 UPDATE를 다시 적용하면, COMMIT 순서를 지켜도 이전 키가 되살아나는 경우*
 
 T1의 INSERT는 중복 오류가 나지 않아 skip할 수 없다. T2의 UPDATE 유일 키 충돌은 당시 허용 오류에도 포함되지 않아 오류로 드러난다. 이 오류까지 무시하더라도 T1이 되살린 행은 남는다. 따라서 dependency나 gate의 순서를 바꾸는 것으로는 해결되지 않으며, 이미 적용한 T1·T2를 식별해 건너뛰어야 한다.
 
@@ -295,13 +414,13 @@ replica·3노드 시험에서 잠금 소유자가 없는 쓰기 경로를 확인
 
 ### 3.14 항목 오류와 flush 오류를 트랜잭션 경계에서 처리한다
 
-컨셉 설계는 worker가 오류를 result로 반환한다고만 설명했다. 실제 적용에서는 develop이 이미 구분하던 항목 오류와 task를 중단해야 하는 오류를 유지해야 했다. 마지막 항목의 비치명 오류가 함수 반환값으로 남으면, 같은 오류를 앞에서 만났을 때와 달리 task 전체가 중단되는 문제가 있었다.
+컨셉 설계는 worker가 오류를 result로 반환한다고만 설명했다. 실제 적용에서는 develop이 이미 구분하던 항목 오류와 task를 중단해야 하는 오류를 유지해야 했다. 적용을 계속해야 하는 항목 오류가 마지막 항목에서 함수 반환값으로 남으면, 같은 오류를 앞에서 만났을 때와 달리 task 전체가 중단되는 문제가 있었다.
 
 서버 연결·flush 오류는 task 실패로 반환해 applier를 멈춘다. retry 목록의 항목 오류는 같은 항목을 다시 시도하고, 나머지 항목 오류는 develop처럼 fail 통계와 로그를 남긴 뒤 다음 항목으로 진행한다. 마지막 항목에서도 같은 정책을 적용하도록 반환값을 정리했다.
 
 서버의 복제 force가 교착 희생 오류를 만났을 때도 호출 전체를 실패시켜야 했다. 잠금을 쥔 채 같은 호출의 다음 항목에서 다시 기다리면 교착을 끊지 못하기 때문이다.
 
-중복 CREATE INDEX 오류 뒤에도 applier가 후속 INSERT를 적용하는 것을 확인했다. 교착 오류 전파 보완 뒤 400,000건 부하는 deadlock·worker 오류·fail이 모두 0이었다. 다만 비치명 항목 오류를 허용하는 기존 정책은 해당 행이 빠진 부분 COMMIT이 될 수 있으며, 이는 `fail_counter`와 error log에 남는다.
+중복 CREATE INDEX 오류 뒤에도 applier가 후속 INSERT를 적용하는 것을 확인했다. 교착 오류 전파 보완 뒤 400,000건 부하는 deadlock·worker 오류·fail이 모두 0이었다. 다만 항목 오류를 기록하고 적용을 계속하는 기존 정책은 해당 행이 빠진 부분 COMMIT이 될 수 있으며, 이는 `fail_counter`와 error log에 남는다.
 
 ### 3.15 단일 스레드에서 공유하던 자원을 병렬 적용에 맞췄다
 
@@ -316,11 +435,11 @@ replica·3노드 시험에서 잠금 소유자가 없는 쓰기 경로를 확인
 | COMMIT 뒤 MOP 정리 | 정리 중 새로 얻은 클래스 잠금을 다음 task 대기 중에도 유지하면 다른 worker의 DDL이 막힌다. 정리를 했다면 다시 COMMIT해 잠금을 푼다. |
 | VSZ 제한 | worker 시작에 따른 메모리 증가를 누수로 판단하지 않도록 기준 크기를 worker 시작 뒤에 측정한다. |
 
-*표 3-1. 병렬 worker 적용을 위해 보완한 공유 자원과 메모리 처리*
+*표 3-3. 병렬 worker 적용을 위해 보완한 공유 자원과 메모리 처리*
 
 수정 전에는 page cache 경합으로 `ER_LOG_PAGE_CORRUPTED` 재시작 루프가 발생했다. 보완 후 400,000건 부하는 page 오류·deadlock 없이 통과했고, SQL log 9,475항목과 worker 10개 VSZ 시험도 통과했다.
 
-공유 자원 경쟁과 별개로, 복사 중인 큰 레코드를 손상으로 오판하는 검사도 수정했다. 5.4MB 행 20건을 적용하는 시험에서 이 검사 때문에 7회 재시작했다. coordinator가 헤더를 읽었을 때 본문은 아직 복사 중일 수 있으므로, 다음 레코드 위치가 현재 copied log 끝보다 뒤라는 이유만으로 손상으로 판단하지 않도록 고쳤다. 필요한 페이지가 복사될 때까지 기존 경로에서 기다린다(`20442b73b`).
+공유 자원 경쟁과 별개로, 복사 중인 큰 레코드를 손상으로 오판하는 검사도 수정했다. 5.4MB 행 20건을 적용하는 시험에서 이 검사 때문에 7회 재시작했다. coordinator가 헤더를 읽었을 때 본문은 아직 복사 중일 수 있으므로, 다음 레코드 위치가 현재 copied log 끝보다 뒤라는 이유만으로 손상으로 판단하지 않도록 고쳤다. 필요한 페이지가 복사될 때까지 기존 경로에서 기다린다(`e7557bef0`).
 
 ### 3.16 통계는 apply info와 함께 별도 시스템 테이블에 저장한다
 
@@ -328,7 +447,7 @@ trace는 개별 task의 dependency와 적용 순서를 추적하는 데 유용�
 
 `CLOCK_MONOTONIC` 시각을 task/result에 이어 전달해 dependency 대기·실행 자원 대기·queue 체류·적용·result 수거 시간을 나눈다. `_db_ha_apply_stat`과 `_db_ha_apply_worker_stat`에는 queue·pending 최대 깊이, 순서가 바뀐 완료 건수, worker busy와 동시 실행 시간 분포(`concurrency_usec`)를 저장한다. `applyinfo`는 이를 바탕으로 평균 병렬도와 worker 활용률을 보여준다. busy·동시 실행·worker별 건수는 `has_items=true`인 task만 세어 빈 COMMIT이 병렬도를 부풀리지 않게 한다.
 
-통계는 apply info를 저장하는 트랜잭션에서 함께 갱신한다. 통계 문장만 실패하면 savepoint로 돌아가 apply info 저장을 계속한다. 그러나 전체 트랜잭션이 취소됐을 때까지 저장을 계속하면, apply info UPDATE는 사라졌는데 마커만 삭제되는 문제가 생긴다. 시험에서도 이 상태로 재시작해 29개 COMMIT이 재적용됐다. `b984637bb`에서 savepoint 복귀 실패를 오류로 전달하고, coordinator가 마커를 남긴 채 ABORT하도록 수정했다.
+통계는 apply info를 저장하는 트랜잭션에서 함께 갱신한다. 통계 문장만 실패하면 savepoint로 돌아가 apply info 저장을 계속한다. 그러나 전체 트랜잭션이 취소됐을 때까지 저장을 계속하면, apply info UPDATE는 사라졌는데 마커만 삭제되는 문제가 생긴다. 시험에서도 이 상태로 재시작해 29개 COMMIT이 재적용됐다. `e80e73903`에서 savepoint 복귀 실패를 오류로 전달하고, coordinator가 마커를 남긴 채 ABORT하도록 수정했다.
 
 시각 수집, 집계식, 카탈로그 저장과 `applyinfo` 출력은 코드로 확인했다. 지표 선정 효과를 비교한 별도 성능 시험은 없다. 마스터의 고빈도 카운터는 이 테이블에 저장하지 않고 메모리와 `SHOW WRITESET STATUS`로 조회한다.
 

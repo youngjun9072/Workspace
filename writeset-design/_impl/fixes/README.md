@@ -4,8 +4,8 @@ tags: [CBRD-27508, applier, fixes]
 # applier 수정 항목 문서 (작업 목록 ① 순)
 
 > [!NOTE]
-> **현재 상태 (2026-11-02, PR 브랜치 HEAD 9b2dd61b5 기준)**
-> - 10번(상속 공유 인덱스)은 닫혔다: 0ab0a6173(10-29), 6c6fe71a8(10-30). 아래 표의 "사용자 결정 대기"는 옛 상태다.
+> **현재 상태 (2026-11-02, PR 브랜치 HEAD 8e3029e56 기준)**
+> - 10번(상속 공유 인덱스)은 닫혔다: 5ff77d416(10-29), a3c71290a(10-30). 아래 표의 "사용자 결정 대기"는 옛 상태다.
 > - 6번(2PC)의 master 커밋 d449c8968은 10-28 이력 정리로 fb82b7db6에 접혔다. 함수 이름은 `log_complete_for_2pc`다.
 > - 이 표의 커밋 해시는 대부분 10-28 이력 정리 전 해시다. 현재 해시는 각 문서 머리의 상태 줄을 본다.
 
@@ -39,7 +39,7 @@ tags: [CBRD-27508, applier, fixes]
 | develop 직렬 applier의 커밋 리스트(`LA_COMMIT`) 제거 | a69690eda | slave |
 | unit test: 제거된 필드·reason 인자 반영 | 528d4de7c | master |
 
-2차 접기(10-16 오후, 새 체인 master aa951bdbb / slave 2bda6f864 / cs d2fe5f634, 백업 `backup/pre-fold2-20261016`)로 아래 별도 커밋도 접힘: c8fc5d4d9 dispatch order 장부 → in-flight list 이름 변경(slave), ed851b00d replica 범위 주석(slave), 5a8808a86 apply info 실패 처리 develop 동일(slave), 5606d1a21 리뷰 C6·C8·C9(master), fed6c0301 워커 기본 1(slave). 문서 용어도 `_impl` 전체에서 in-flight list로 바꿈(09 문서 이름 `09-applier-in-flight-design.md`).
+2차 접기(10-16 오후, 새 체인 master aa951bdbb / slave 2bda6f864 / cs d2fe5f634, 백업 `backup/pre-fold2-20261016`)로 아래 별도 커밋도 접힘: c8fc5d4d9 dispatch order 장부 → in-flight list 이름 변경(slave), ed851b00d replica 범위 주석(slave), 5a8808a86 apply info 실패 처리 develop 동일(slave), 5606d1a21 리뷰 C6·C8·C9(master), fed6c0301 워커 기본 1(slave). 문서 용어도 `_impl` 전체에서 in-flight list로 바꿈.
 
 ## 2026-10-16 unit test에서 발견
 

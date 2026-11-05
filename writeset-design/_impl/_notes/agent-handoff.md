@@ -60,16 +60,15 @@ e16f4177d  큐 ops → .cpp      ┘  (HEAD)
 - 복구점 태그 `wip/pre-base`(= 65f5e898e). 베이스 되돌리려면 `git reset --soft wip/pre-base`.
 - drain 파라미터는 제거, 로직은 always-on(la_drain_enabled→true)으로 둠(별도 결정분).
 
-## 원문 위치
+## 설계·조사 문서 위치
 
-- `00-overview-raw.md`: 브랜치와 전체 구현 작업 계획
-- `01-commit-plan.md`: 논리 커밋 분할
+- [마스터 구현 설계](../01-master-implementation-design.md): 키 수집과 history·커밋 경로
+- [슬레이브 구현 설계](../02-slave-implementation-design.md): coordinator·worker와 queue 생명주기
+- [개발자 테스트](../04-developer-test.md): 검증 방법과 테스트 시나리오
 - `02-develop-adaptation.md`: develop 포팅과 TBB 조사
-- `03-c1-code-design-raw.md`: 마스터 초기 코드 설계와 조사 기록
 - `04-cs-worker-pool-analysis.md`: CS 워커풀 재사용 조사
-- `05-modularization-analysis.md`: 모듈 분리와 빌드 영향 조사
-- `06-c2-code-design-raw.md`: 키 수집·커밋 경로·SBR 분석 원문
-- `07-c8-test-design.md`: 테스트 이식과 벤치마크 계획
+
+이전 초안과 작업 계획은 Git 이력에서 확인한다.
 
 ## 작업 원칙
 
@@ -140,7 +139,7 @@ e16f4177d  큐 ops → .cpp      ┘  (HEAD)
    - 부분 초기화 실패의 역순 정리
    - CMake의 신규 `.cpp` 등록
    - `_impl`의 모듈 책임·생명주기 설계 갱신
-   - 상세 설계: [[08-applier-worker-design|worker와 queue 생명주기]]
+   - 상세 설계: [슬레이브 구현 설계](../02-slave-implementation-design.md)의 worker와 queue 생명주기
 
 2. **task dispatch·worker 적용·완료 순서 관리**
    - coordinator의 transaction task 조립과 worker 전달

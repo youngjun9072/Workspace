@@ -4,9 +4,16 @@ tags: [CBRD-27508, writeset, fixes, test-result]
 # 인덱스가 같은 키로 보는 값의 writeset 해시 전수조사
 
 > [!NOTE]
-> **현재 상태 (2026-11-02, PR 브랜치 HEAD 9b2dd61b5 기준)**
-> - MONETARY 수정 c5fdd4c59는 cf8955a91(10-31)에 접혔다. e89158de1(11-01)은 해시 코드를 `writeset_key_hash.cpp`로 옮기기만 했다(동작 같음).
+> **현재 상태 (2026-11-04, PR 브랜치 HEAD 80c15bf46 + 미커밋 1건 기준)**
+> - MONETARY 수정 c5fdd4c59는 567b58927(10-31)에 접혔다. 0c89d7033(11-01)은 해시 코드를 `writeset_key_hash.cpp`로 옮기기만 했다(동작 같음).
 > - 01 문서 3.2~3.5절에 반영.
+> - **11-03 Greptile 지적 2건이 이 조사의 빈틈을 채웠다.** 둘 다 HA pair 시험(T1 DELETE / T2 INSERT, slave gate)으로 결함을 확인하고 고쳤다. 케이스 파일 `ha_bench_tool/bin/cases/pair_greptile_20261103.sh`, 로그 `log/pair_order_20261103_2350_greptile`(수정 전), `log/pair_order_20261104_0110_greptile`(수정 후).
+>   - **NUMERIC (1c6e7cfa5)**: 아래 "문제없음" 목록의 NUMERIC은 `NUMERIC(10,2)` 컬럼에서만 맞았다. 정밀도를 지정하지 않은 `NUMERIC` 컬럼은 develop의 새 표현(float numeric)대로 값이 가진 정밀도·자릿수를 그대로 저장하고 `or_pack_mem_value()`가 둘을 함께 묶으므로, `cast(1 as numeric(10,2))`를 지우고 `cast(1 as numeric(12,3))`을 넣는 n01이 DIFFERENT(slave -1032, 행 유실)였다. `wset_canonical_numeric()`이 값을 10진 문자열(앞의 0, 소수점 아래 끝 0, 0의 부호 제거)로 바꿔 해시한다. 자릿수는 `db_get_numeric_scale()`로 읽는다(`DB_VALUE_SCALE`은 float numeric에서 0). 수정 후 n01·n02 SAME. 단위 테스트 "a NUMERIC key hashes the number it stands for" 76 단정 통과.
+>   - **UCA 확장 콜레이션 (22871e366)**: 아래 "실측하지 못한 것"의 확장 콜레이션 항목. 양 노드에 `de_DE` 로케일을 만들어(`cubrid genlocale de_DE` + `make_locale.sh`, DB 재생성) `utf8_de_exp_ai_ci`로 실측했다. e02 `'ae'`→`'æ'` DIFFERENT(행 유실), e01 `'cafe'`→`'café'`는 이 콜레이션에서 다른 키라 SAME. 원인은 비교(`lang_strmatch_utf8_uca_w_level()`)가 가중치 0을 건너뛰는데 pseudo key(`lang_mht2str_utf8_exp()`)는 0까지 섞는 것. `lang_uca_weight_key()`가 비교와 같은 보조 함수로 레벨별 가중치 열을 만들고 `wset_pack_string_key()`가 `uca_exp_num > 1`인 콜레이션에서 그 열을 해시한다. 수정 후 e01·e02 SAME.
+>   - 단위 테스트 가드(365e4b362), astyle(80c15bf46).
+> - **11-04 전용 단위 테스트 "a string key under an expansion collation hashes like its compare"** (미커밋): `CUBRID`가 `de_DE` 로케일 설치를 가리켜야 돌고 없으면 WARN. 17개 문자열 전 쌍에서 "비교가 0 ⇔ 가중치 열이 같다"를 `ignore_trailing_space` 양쪽으로 확인(1,808 단정). 이 테스트가 빈틈 하나를 더 잡았다. 비교는 문자열 **끝에 남은** 가중치 0(악센트, 끝 공백)을 `ignore_trailing_space`일 때만 건너뛰고 아니면 긴 쪽을 크다고 보는데, 처음 넣은 함수는 끝의 0도 모두 건너뛰어 `'cafe'`와 `'café'`를 같은 키로 만들었다(과직렬화 방향, 데이터 결함은 아님). `lang_uca_weight_key()`에 `ignore_trailing_space`를 넘겨 끝의 0은 그 값에 따라 남기거나 버리게 고쳤다(미커밋, 빌드·배포 전).
+> - 11-04 4시간 무작위 회귀(병렬성 narrow/wide/random depmix 포함) 34/34 PASS, fail_counter 0 (`log/random_campaign_20261104_100830`).
+> - 남은 일: 끝 가중치 0 수정 커밋·빌드·배포 후 e01·e02 재실측, 01 문서 3.2절(콜레이션)·3.3절(NUMERIC)에 반영, 9장 한계에서 확장 콜레이션 항목 제거.
 
 
 작성: 2026-10-31. 인덱스를 만들 수 있는 타입마다, 인덱스 비교는 같다고 보지만 writeset 해시는 다를 수 있는 값을 찾아 HA에서 실측했다. 해시가 갈리면 T2가 T1에 dependency를 받지 못하고, slave가 T2를 먼저 적용해 unique 위반(-670)으로 행을 잃는다.
@@ -15,7 +22,7 @@ tags: [CBRD-27508, writeset, fixes, test-result]
 
 ## 시험 방법
 
-- 빌드 2985-772a6a0(develop 병합 a7efa9a50 + MONETARY 수정 c5fdd4c59 포함), conf 기준값, slave trace 2.
+- 빌드 2985-772a6a0(develop 병합 9796ccc9d + MONETARY 수정 c5fdd4c59 포함), conf 기준값, slave trace 2.
 - 타입마다 먼저 master 한 대에서 두 값을 같은 unique 키에 넣어 인덱스가 같은 키로 보는지 확인했다(unique 위반이면 같은 키).
 - 그 뒤 짝 시험: T1이 첫 값을 지우고 T2가 두 번째 값을 넣는다. slave에서 관문 행을 25초 잡아 T1을 붙잡아 둔다. 결과가 master와 같으면 SAME, slave에 행이 없으면 DIFFERENT.
 - 스크립트 `ha_bench_tool/bin/cases/pair_types_20261031.sh`, 기록 `ha_bench_tool/log/pair_order_20261031_0055_types`.
@@ -54,14 +61,14 @@ tags: [CBRD-27508, writeset, fixes, test-result]
 
 ## 수정
 
-커밋 `cf8955a91` "hash a key the way its index compares it"에서 VARBIT, 문자열 3건, NaN을 고쳤다. 커밋 메시지 요지는 다음과 같다.
+커밋 `567b58927` "hash a key the way its index compares it"에서 VARBIT, 문자열 3건, NaN을 고쳤다. 커밋 메시지 요지는 다음과 같다.
 
 - MONETARY는 한 통화의 금액으로, VARBIT는 비트 길이를 바이트 단위로 올려 해시한다.
 - 문자열은 NUL을 공백으로 바꿔 해시한다. binary 콜레이션은 끝 NUL만 자른다.
 - NaN 키는 해시로 나타낼 수 없으므로 그 트랜잭션을 commit-order로 보낸다.
 - 단일 키, 복합 키 원소, FK REF 세 곳에 같은 규칙을 적용한다.
 
-`e89158de1`은 이 규칙을 `writeset_key_hash.cpp`로 옮긴 것이며 동작은 같다.
+`0c89d7033`은 이 규칙을 `writeset_key_hash.cpp`로 옮긴 것이며 동작은 같다.
 
 ## 수정 뒤 HA 재시험
 
@@ -79,4 +86,4 @@ tags: [CBRD-27508, writeset, fixes, test-result]
 ## 진행 상태
 
 - 2026-10-31: 실측 완료. 수정은 아직(VARBIT, 문자열 3건, NaN). NaN commit-order 폴백 시안은 되돌려 두었다(scratchpad `nan_fallback_wip.patch`).
-- 2026-11-01: `cf8955a91`로 수정, 빌드 2990-e89158d에서 HA 짝 시험 17건 모두 SAME. 근거 원자료를 `12-evidence/`에 모았다.
+- 2026-11-01: `567b58927`로 수정, 빌드 2990-e89158d에서 HA 짝 시험 17건 모두 SAME. 근거 원자료를 `12-evidence/`에 모았다.

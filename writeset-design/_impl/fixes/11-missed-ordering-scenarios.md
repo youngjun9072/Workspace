@@ -55,6 +55,6 @@ tags: [CBRD-27508, writeset, fixes, test-plan]
 - 2026-10-30 02:3x: 12 함수 기반 unique 인덱스는 CUBRID 문법에서 허용되지 않음(`create unique index … (lower(name))` → `invalid create index`, 복합 `(lower(name), id)`도 같음). 일반 함수 인덱스는 만들어지나 writeset 수집 대상(PK·UNIQUE)이 아님 → 해당 없음. 06 AUTO_INCREMENT는 serial이 `db_serial` 뷰에 보이지 않고 `_db_serial`에 `pc_ai_ai_id`로 있어 검사 SQL을 고쳐 재시험(`ha_bench_tool/bin/cases/pair_retest_20261030_06.sh`).
 - 2026-10-29 18:29·18:31 (`log/pair_order_20261029_1824_gate`): 03 SHARED, 04 CLASS ATTRIBUTE 모두 DIFFERENT. 순서 역전이 아니라 slave 값이 아예 바뀌지 않음(03 master `1 7 / 2 7`, slave `1 0 / 2 0`, 04 master `7`, slave `NULL`).
 - 2026-11-02: develop 대조로 03·04 결론 확정. 스크립트 `~/ha_bench_tool/bin/cases/pair_shared_classattr_20261102.sh`(10-29 03·04와 같은 케이스, 끝나고 표 삭제).
-  - 우리 빌드 `9b2dd61`(12:07, `log/pair_order_20261102_1207_sharedca`): 03 master `1 7 / 2 7`, slave `1 0 / 2 0`, 04 master `7`, slave `NULL`. 둘 다 DIFFERENT, slave 오류 0, fail_counter 0→0. (같은 날 10:01 빌드 `787defb`에서도 같은 값, `log/pair_order_20261102_1001_sharedca`)
+  - 우리 빌드 `8e3029e`(12:07, `log/pair_order_20261102_1207_sharedca`): 03 master `1 7 / 2 7`, slave `1 0 / 2 0`, 04 master `7`, slave `NULL`. 둘 다 DIFFERENT, slave 오류 0, fail_counter 0→0. (같은 날 10:01 빌드 `f2677bd`에서도 같은 값, `log/pair_order_20261102_1001_sharedca`)
   - develop `c63a3b993`(09-23 develop, 12:59, `log/pair_order_20261102_1259_sharedca`, cubrid_ha.conf `ae7be248`): 같은 값으로 DIFFERENT, slave 오류 0, fail_counter 0→0.
   - 결론: develop HA도 SHARED·CLASS ATTRIBUTE 값을 복제하지 않는다. writeset과 무관한 HA 제약이며, 설계 문서 01 9장에 현재 동작으로 기록했다.

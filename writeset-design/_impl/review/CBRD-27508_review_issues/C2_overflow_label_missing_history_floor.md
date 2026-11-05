@@ -1,8 +1,8 @@
 # C2. commit-order 대체 경로의 라벨에 history_start 하한이 빠짐
 
 > [!NOTE]
-> **현재 상태 (2026-11-02, PR 브랜치 HEAD 9b2dd61b5 기준)**
-> - 수정 커밋 ae19759c4는 10-28 이력 정리로 028a2bd0a(10-21)가 됐다. 코드는 `writeset/writeset.cpp`의 `wset_find_dependency_from_history` 폴백 갈래(`max(prev_commit_lsa, history_start)`)다.
+> **현재 상태 (2026-11-02, PR 브랜치 HEAD 8e3029e56 기준)**
+> - 수정 커밋 ae19759c4는 10-28 이력 정리로 fa9eedeaa(10-21)가 됐다. 코드는 `writeset/writeset.cpp`의 `wset_find_dependency_from_history` 폴백 갈래(`max(prev_commit_lsa, history_start)`)다.
 > - 01 문서 5.1절에 이유와 함께 반영.
 
 
@@ -12,7 +12,7 @@
 | 등급 | High |
 | 상태 | **수정 완료, HA 검증 통과(10-23).** 수정 `ae19759c4`(단위 테스트 포함). 단위 테스트 통과(10-21). HA에서 재시작 직후 DDL의 라벨이 R인 것을 확인(9.3절). 재현 커밋 `8eff9645f`은 수정 커밋에 접음(접기 전 기록: 브랜치 `backup/c1c2-before-fold-20261021`) |
 | 판정 | 코드로 확정. 단위 테스트로 두 경우를 재현함(수정 전 실패) |
-| 신규/기존 | 신규. fb82b7db6(Master-side writeset generation) |
+| 신규/기존 | 신규. a7577f913(Master-side writeset generation) |
 | 관련 이슈 | [C1](C1_master_restart_floor_gate_stall.md)(재시작 하한 R. C1 수정 뒤에는 이 수정만 따로 넣어도 정지하지 않음) |
 | 지적한 리뷰어 | 5명(종합 문서 2절) |
 

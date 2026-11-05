@@ -3,7 +3,7 @@ tags: [CBRD-27508, writeset, master, fixes]
 ---
 # 상속 계층이 함께 쓰는 unique 인덱스에서 writeset 키가 클래스마다 갈리는 문제
 
-작성: 2026-10-29. HA 시험 중 발견. 코드 기준: `~/Workspace/cubrid`, 브랜치 `feature/CBRD-27508-parallel-applylogdb-writeset`, `3fd9a07fb`(develop 병합 뒤). 아직 코드 변경 없음. **최우선 처리 항목.**
+작성: 2026-10-29. HA 시험 중 발견. 코드 기준: `~/Workspace/cubrid`, 브랜치 `feature/CBRD-27508-parallel-applylogdb-writeset`, `a9649d235`(develop 병합 뒤). 아직 코드 변경 없음. **최우선 처리 항목.**
 
 ## 한 줄 요약
 
@@ -88,9 +88,9 @@ A를 추천한다. 충돌의 정체(B-tree + 키)를 그대로 쓰고, 검토한
 
 ## 진행 상태
 
-- 2026-10-29: 방안 A 채택. 코드 커밋 `0ab0a6173`(`wset_fnv1a`·`wset_string_hash`·`wset_midxkey_hash`에서 class OID 제거, 주석에 이유와 예시). 단위 테스트 추가(같은 VFID에 class OID만 다른 같은 키 → 같은 해시, REF 일치, 다른 VFID는 다름, sup 삭제 뒤 sub 삽입 의존) 및 stress·bench의 자식 키를 `WS_CHILD_VFID`로 분리 — 미커밋. 설계 문서 01 3.1 갱신. 남은 것: 빌드 후 단위 테스트, HA 재시험(11번 문서의 01 대조군, 조합 C3).
+- 2026-10-29: 방안 A 채택. 코드 커밋 `5ff77d416`(`wset_fnv1a`·`wset_string_hash`·`wset_midxkey_hash`에서 class OID 제거, 주석에 이유와 예시). 단위 테스트 추가(같은 VFID에 class OID만 다른 같은 키 → 같은 해시, REF 일치, 다른 VFID는 다름, sup 삭제 뒤 sub 삽입 의존) 및 stress·bench의 자식 키를 `WS_CHILD_VFID`로 분리 — 미커밋. 설계 문서 01 3.1 갱신. 남은 것: 빌드 후 단위 테스트, HA 재시험(11번 문서의 01 대조군, 조합 C3).
 - HA 근거: 11번 문서 01 대조군(관문 행 잠금으로 순서를 뒤집자 slave가 하위 클래스 삽입을 먼저 반영해 -670, 행 유실, fail_counter 0→1).
-- 2026-10-30: 시험 세 가지를 모두 통과해 이 문제를 닫는다. 코드 `0ab0a6173`, 단위 테스트 `6c6fe71a8` 푸시.
+- 2026-10-30: 시험 세 가지를 모두 통과해 이 문제를 닫는다. 코드 `5ff77d416`, 단위 테스트 `a3c71290a` 푸시.
   - HA 01 대조군 재시험(10-29 23:45, 빌드 2956): 관문 행 잠금으로 T1 반영을 막아도 T2의 dependency가 T1의 커밋 LSA여서 T2가 기다렸다. slave 오류 0, 데이터 일치.
   - 단위 테스트(10-30, 빌드 2969): `test_writeset` 47개 케이스, assertion 4728개 통과. 위에 적은 상속 테스트가 들어 있다.
   - 조합 C3(10-30 17:15, 빌드 2969): 상위 클래스 PK를 참조하는 FK에서 부모 행이 하위 클래스에 있는 경우다. T1이 자식 행을 지우고(`delete from pc_c3_ch where c=1`), T2가 하위 클래스의 부모 행을 지운다(`delete from pc_c3_sub where p=1`). slave에서 관문 행을 25초 잡아 T1 반영을 막았다. master trace에서 T2는 `source=REF_SLOT dependency=225|4240`으로, T1이 자식 삭제 때 남긴 부모 키 참조를 찾아 T1의 커밋(`commit_lsa=225|4240`)을 기다렸다. slave 오류 0, fail_counter 0→0, 결과는 master와 slave 모두 상위 클래스 0행·자식 0행으로 같다. 클래스 OID를 해시에서 뺀 것이 WRITE뿐 아니라 FK의 REF 키에도 적용된다는 확인이다. 스크립트 `ha_bench_tool/bin/cases/pair_c3_20261030.sh`, 기록 `ha_bench_tool/log/pair_order_20261030_1715_c3`.

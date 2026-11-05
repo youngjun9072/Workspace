@@ -5,7 +5,7 @@ tags: [CBRD-27508, applier, restart, fixes]
 
 작성: 2026-10-28. PR #8052 Greptile 리뷰(2차, 리뷰 대상 커밋 `8d8d87c16`)의 P1 지적 `log_applier.c:7344` "재적용하면 이전 키가 남습니다"에서 출발했다. 같은 리뷰의 P1 2건(statement marker가 출처를 구분하지 않음, 기존 DB에 `max_committed_lsa` 열이 없음)도 이 문서의 해결 방향에 묶인다.
 
-코드 기준: `~/Workspace/cubrid`, 브랜치 `feature/CBRD-27508-parallel-applylogdb-writeset`, `b2781cd09`. 아직 코드 변경 없음.
+코드 기준: `~/Workspace/cubrid`, 브랜치 `feature/CBRD-27508-parallel-applylogdb-writeset`, `592ea7e54`. 아직 코드 변경 없음.
 
 ## 한 줄 요약
 

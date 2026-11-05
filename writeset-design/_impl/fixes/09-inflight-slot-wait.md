@@ -3,9 +3,9 @@ tags: [CBRD-27508, applier, fixes]
 ---
 # in-flight 목록이 끝난 태스크로 꽉 찼을 때 coordinator가 오지 않을 결과를 기다리는 문제
 
-작성: 2026-10-29. PR #8052 Greptile 리뷰(3차, 리뷰 대상 커밋 `bf560620e`)의 P1 지적 `log_applier.c:1084`에서 출발했다. 코드 순서로 확인했고, 시험에서 실제로 난 적은 없다.
+작성: 2026-10-29. PR #8052 Greptile 리뷰(3차, 리뷰 대상 커밋 `ccae929b5`)의 P1 지적 `log_applier.c:1084`에서 출발했다. 코드 순서로 확인했고, 시험에서 실제로 난 적은 없다.
 
-코드 기준: `~/Workspace/cubrid`, 브랜치 `feature/CBRD-27508-parallel-applylogdb-writeset`, `bf560620e`. 아직 코드 변경 없음.
+코드 기준: `~/Workspace/cubrid`, 브랜치 `feature/CBRD-27508-parallel-applylogdb-writeset`, `ccae929b5`. 아직 코드 변경 없음.
 
 ## 한 줄 요약
 

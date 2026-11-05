@@ -9,8 +9,8 @@ tools: ~/Workspace/ha_bench-sysop-random/tools/depcheck.py, par.py
 # 슬레이브 데이터 불일치 원인 분석 (end-to-end)
 
 > [!NOTE]
-> **현재 상태 (2026-11-02, PR 브랜치 HEAD 9b2dd61b5 기준)**
-> - 결론: 원인 A(라벨에 가장 늦은 선행자 하나만 싣는데 slave가 WRITE 라벨을 한 건 완료로 통과시킴)는 slave gate를 모든 라벨에서 frontier까지 기다리게 바꿔(A1, a1-test-20261008.md) 해결했다. 그 뒤 `dependency_is_ref`를 없앴다(지금 fb82b7db6, 66fe3ac5e에 포함).
+> **현재 상태 (2026-11-02, PR 브랜치 HEAD 8e3029e56 기준)**
+> - 결론: 원인 A(라벨에 가장 늦은 선행자 하나만 싣는데 slave가 WRITE 라벨을 한 건 완료로 통과시킴)는 slave gate를 모든 라벨에서 frontier까지 기다리게 바꿔(A1, a1-test-20261008.md) 해결했다. 그 뒤 `dependency_is_ref`를 없앴다(지금 a7577f913, 66fe3ac5e에 포함).
 > - 01 문서 2.4절에 이유로 반영.
 
 

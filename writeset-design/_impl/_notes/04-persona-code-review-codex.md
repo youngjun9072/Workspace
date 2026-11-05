@@ -6,7 +6,7 @@
 - 대상 커밋: `74f9e0a1c650d23442cd51b12e7df5d8403dd2bb`
 - 코드 기준: `develop...HEAD`의 변경 파일과 변경 함수의 caller·callee
 - 문서 기준: `_impl`의 공유 설계문서와 `_notes`의 분석문서
-- 제외 문서: `agent-handoff.md`, `00-overview-raw.md`, `01-commit-plan.md`
+- 제외 문서: `agent-handoff.md` 등 작업 지시·구현 계획 문서
 - 검토 방식: 주석만으로 판단하지 않고 함수 본문, 하위 호출, 커밋·복구·복제 적용 경로를 함께 확인했다.
 - 범위: writeset 키 수집, history, dependency label, 로그·복구 배선, 관련 테스트만 검토했다. 주변 코드의 기존 문제는 이번 변경에 영향을 주는 경우만 포함했다.
 
@@ -68,7 +68,7 @@
 ### R03. Critical — dependency 값과 대기 방식의 집계가 불완전하다
 
 - 코드: `writeset.cpp:763-907`, `log_record.hpp:257-264`
-- 설계: `01-master-implementation-design.md` §5·§7, `02-slave-implementation-design.md` §4, `_notes/07-poc-productization-followups.md`
+- 설계: `01-master-implementation-design.md` §5·§7, `02-slave-implementation-design.md` §4, 당시 PoC 정식 구현 보완 계획(Git 이력에 보존)
 - 현재 동작:
   - 최종 최대 후보가 `ref_seq`일 때만 `wset_dependency_is_ref=true`다.
   - overflow의 `prev_commit_lsa`와 `history_start`는 false다.
@@ -81,7 +81,7 @@
 ### R04. High — 서버 재시작 전후의 history epoch를 연결하는 장벽이 없다
 
 - 코드: `writeset.cpp:285-332`, `log_tran_table.c:505-510`, `boot_sr.c:3889-3897`
-- 설계: `01-master-implementation-design.md` §4, `02-slave-implementation-design.md` §7, `03-verification-plan.md` §4
+- 설계: `01-master-implementation-design.md` §4, `02-slave-implementation-design.md` §7, 당시 복구 검증 계획 §4(Git 이력에 보존)
 - 근거: 프로세스 재시작 시 map, `history_start`, `prev_commit_lsa`가 모두 빈 상태로 시작하며, 복구 로그에서 다시 구성하거나 마지막 EOT LSA로 seed하는 경로가 없다.
 - 영향: standby에 재시작 전 backlog가 남아 있는데 재시작 후 동일 키 트랜잭션이 NULL dependency를 받으면 과거 task를 추월할 수 있다.
 - 권고: recovery 완료 LSA를 frontier-required floor로 seed하거나, 로그 epoch 변경 레코드를 slave의 drain barrier로 사용한다. 어떤 방식을 쓰는지 마스터·슬레이브 설계에 함께 명시한다.
@@ -120,7 +120,7 @@
 ### R08. High — 2PC 완료와 descriptor 이동에 writeset 상태가 연결되지 않았다
 
 - 코드: `log_manager.c:5309-5342`, `6080-6110`; `log_tran_table.c:6511-6579`, `log_tdes::copy_to()`
-- 설계: `_notes/06-c2-code-design-raw.md` §7.1
+- 설계: 당시 마스터 키 수집·커밋 경로 설계 §7.1(Git 이력에 보존)
 - 근거:
   - local COMMIT만 probe·publish한다.
   - 2PC 완료는 공통 append 함수로 NULL 또는 stale label을 기록하지만 history에 게시하지 않는다.
@@ -193,7 +193,7 @@
 ### R16. Medium — unit test가 실제 DML·COMMIT·로그 경계를 검증하지 않는다
 
 - 코드: `unit_tests/writeset/test_writeset_common.hpp`, `test_writeset*.cpp`
-- 설계: `03-verification-plan.md` §1~§4
+- 설계: 당시 검증 계획 §1~§4(Git 이력에 보존)
 - 근거: 테스트는 수동 `LOG_TDES`와 `wset_add_*`, probe, publish를 직접 호출한다. locator의 old/new 수집, sysop·2PC, label serialization과 OOM, clear/probe interleaving, 재시작 epoch는 통과하지 않는다.
 - 잘못된 oracle:
   - overflow 테스트는 현재 `wset_dependency_is_ref == false`를 정답으로 고정하여 R03의 잘못된 대기 의미를 보호한다.
