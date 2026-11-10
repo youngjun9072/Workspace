@@ -6,7 +6,8 @@ EXTENDS Integers, Sequences, TLC
 \* PK is before UNIQUE in the OR_CLASSREP property installation order.
 \* Among UNIQUE keys, UKA is assumed to be before UKB.
 CONSTANTS Scenario, Guarded
-Cases == {"UKtoPK", "PKtoUK", "PKtoPK", "UKtoUK", "UKBFirst", "NonSelectedUK",
+Cases == {"UKtoPK", "PKtoUK", "PKtoPK", "PKValueChange", "UKKeyChange",
+          "UKtoUK", "UKBFirst", "NonSelectedUK",
           "LastUKReject", "LastPKReject", "NullableFallback", "NullableReject"}
 ASSUME Scenario \in Cases /\ Guarded \in BOOLEAN
 
@@ -20,23 +21,25 @@ InitialRows ==
 
 InitialSchema ==
   CASE Scenario \in {"UKtoPK", "UKtoUK", "UKBFirst", "NullableFallback"} -> {"UKA", "UKB"}
-    [] Scenario \in {"PKtoUK", "PKtoPK", "NonSelectedUK"} -> {"PKA", "UKB"}
-    [] Scenario \in {"LastUKReject", "NullableReject"} -> {"UKA"}
+    [] Scenario \in {"PKtoUK", "PKtoPK", "PKValueChange", "NonSelectedUK"} -> {"PKA", "UKB"}
+    [] Scenario \in {"LastUKReject", "NullableReject", "UKKeyChange"} -> {"UKA"}
     [] OTHER -> {"PKA"}
 
 Steps ==
-  CASE Scenario = "UKtoPK" -> <<"UpdateB", "AddPKB", "UpdateA", "UpdateValue", "Delete">>
-    [] Scenario = "PKtoUK" -> <<"UpdateB", "DropPKA", "UpdateValue", "Delete">>
-    [] Scenario = "PKtoPK" -> <<"UpdateB", "ReplacePK", "UpdateA", "Delete">>
-    [] Scenario = "UKtoUK" -> <<"UpdateB", "DropUKA", "UpdateValue", "Delete">>
-    [] Scenario = "UKBFirst" -> <<"UpdateB", "DropUKB", "UpdateValue", "Delete">>
-    [] Scenario = "NonSelectedUK" -> <<"UpdateB", "AddUKA", "UpdateValue", "DropUKB", "Delete">>
-    [] Scenario = "LastUKReject" -> <<"UpdateB", "DropUKA", "UpdateValue", "Delete">>
-    [] Scenario = "LastPKReject" -> <<"UpdateB", "DropPKA", "UpdateValue", "Delete">>
-    [] Scenario = "NullableFallback" -> <<"UpdateB", "MakeUKANullable", "UpdateValue", "Delete">>
-    [] OTHER -> <<"UpdateB", "MakeUKANullable", "UpdateValue", "Delete">>
+  CASE Scenario = "UKtoPK" -> <<"UpdateB", "AddPKB", "UpdateB5", "UpdateValue", "Delete">>
+    [] Scenario = "PKtoUK" -> <<"UpdateB", "DropPKA", "UpdateB5", "Delete">>
+    [] Scenario = "PKtoPK" -> <<"UpdateB", "ReplacePK", "UpdateB5", "Delete">>
+    [] Scenario = "PKValueChange" -> <<"UpdateA", "UpdateValue", "Delete">>
+    [] Scenario = "UKKeyChange" -> <<"UpdateA", "UpdateValue", "Delete">>
+    [] Scenario = "UKtoUK" -> <<"UpdateB", "DropUKA", "UpdateB5", "Delete">>
+    [] Scenario = "UKBFirst" -> <<"UpdateB", "DropUKB", "UpdateA", "Delete">>
+    [] Scenario = "NonSelectedUK" -> <<"UpdateB", "AddUKA", "UpdateA", "DropUKB", "Delete">>
+    [] Scenario = "LastUKReject" -> <<"UpdateB", "DropUKA", "UpdateA", "Delete">>
+    [] Scenario = "LastPKReject" -> <<"UpdateB", "DropPKA", "UpdateA", "Delete">>
+    [] Scenario = "NullableFallback" -> <<"UpdateB", "MakeUKANullable", "UpdateB5", "Delete">>
+    [] OTHER -> <<"UpdateB", "MakeUKANullable", "UpdateA", "Delete">>
 
-IsDML(op) == op \in {"UpdateA", "UpdateB", "UpdateValue", "Delete"}
+IsDML(op) == op \in {"UpdateA", "UpdateB", "UpdateB5", "UpdateValue", "Delete"}
 RK(schema) ==
   IF "PKA" \in schema THEN "PKA"
   ELSE IF "PKB" \in schema THEN "PKB"
@@ -57,6 +60,7 @@ SchemaAfter(schema, op) ==
 RowsAfter(rows, op) ==
   CASE op = "UpdateB" -> [rows EXCEPT !["r1"].b = 3, !["r1"].value = 1]
     [] op = "UpdateA" -> [rows EXCEPT !["r1"].a = 4, !["r1"].value = 2]
+    [] op = "UpdateB5" -> [rows EXCEPT !["r1"].b = 5, !["r1"].value = 2]
     [] op = "UpdateValue" -> [rows EXCEPT !["r1"].value = @ + 1]
     [] op = "Delete" -> [rows EXCEPT !["r1"].alive = FALSE]
     [] OTHER -> rows

@@ -1,0 +1,3 @@
+initial schema + four statement attempts: 23238
+including both DDL and DML: 20384
+including rejected DDL: 7119
