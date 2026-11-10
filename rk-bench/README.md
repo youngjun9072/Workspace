@@ -1,6 +1,6 @@
 # RK 복제 성능 측정
 
-전체 측정 범위와 writeset 자료의 차이는 [HA 복제 성능 통합 보고서](../HA_BENCHMARK_REPORT.md)에 정리했다.
+perf·pstack 결과와 후속 조사 항목은 [RK 성능 보고서](BENCHMARK_REPORT.md)에 정리했다.
 
 CBRD-26246 브랜치의 단일 applylogdb HA 측정이다. pstack, perf, 처리량을 A(키 범위 분리)와 B(키 경합) 부하에서 측정했다.
 
