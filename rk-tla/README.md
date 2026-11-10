@@ -1,8 +1,8 @@
 # RK 불일치 TLA+ 검증
 
-[검증 보고서](REPORT.md)에 실행 방법과 발견한 문제를 먼저 정리했다.
+[검증 보고서](REPORT.md)에 정상 RK 선택·변경 결과를 먼저 정리했다.
 
-[검증 기록](RESULTS.md)에 기존 복제 경로와 PR #8366의 RK 검사 모델을 비교한 결과가 있다. `RKReplication.tla`는 모델, `*.cfg`는 실행 조건, `*.out`은 TLC 실행 결과다.
+[정상 변경 모델](RKNormalChange.tla)과 `NormalLegacy.cfg`·`NormalGuarded.cfg`는 양쪽 DDL이 성공하는 경우를 검사한다. [기존 검증 기록](RESULTS.md)은 슬레이브 DDL 실패 조건에서 기존 경로와 PR #8366을 비교한다.
 
 예: `java -Xmx512m -jar tools/tla2tools.jar -deadlock -config LegacyConflictDelete.cfg RKReplication.tla`
 

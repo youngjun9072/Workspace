@@ -1,38 +1,47 @@
-# RK 불일치 TLA+ 검증 보고서
+# RK 선택·변경과 복제 적용 검증
 
-검토일: 2026-11-09~10. 대상은 RK 기능 브랜치 `f0bc3158d`와 검토 당시 [PR #8366](https://github.com/CUBRID/cubrid/pull/8366) HEAD `9054d2416`이다. 이 보고서는 **성능 측정이 아니라 모델 검사·격리 CSQL 실험**을 요약한다. 이미 논의된 DDL 실패 시나리오를 검증한 기록이며 새 이슈 확정이나 PR 완료 판정이 아니다. 상세 코드 경로와 SQL은 [RESULTS.md](RESULTS.md)에 있다.
-
-## 검증 방법
-
-1. [RKReplication.tla](RKReplication.tla)에 두 행, 마스터·슬레이브의 RK 선택, 마스터 DDL 성공·슬레이브 DDL 실패, 다음 UPDATE/DELETE 적용을 작은 상태 모델로 표현했다.
-2. `Guarded=FALSE`는 기존 행 로그의 **키값만 전달**하는 경로, `Guarded=TRUE`는 PR #8366의 **행 검색 전 RK 식별정보 비교**를 추상화했다. `Op`는 UPDATE 또는 DELETE, `SlaveIndexNameConflict`는 슬레이브에서만 발생한 인덱스 이름 충돌을 뜻한다.
-3. TLC 2.19로 `*.cfg` **11개 구성**을 실행했다. 예: `java -Xmx512m -jar tools/tla2tools.jar -deadlock -metadir /tmp/rk-tla-run -config LegacyConflictDelete.cfg RKReplication.tla`. 실행 출력은 같은 이름의 `*.out`에 보관했다.
-4. 별도로 `f0bc315` 빌드의 격리된 단일 DB에서 마스터·슬레이브 대용 테이블 두 개를 만들었다. 두 테이블에 같은 행을 넣고 한쪽에만 이름이 겹치는 일반 인덱스를 만든 뒤, `ADD PRIMARY KEY(id)`의 성공·실패와 키값 `1`의 서로 다른 행 선택을 CSQL로 확인했다.
-
-CSQL 실험은 **DDL 이름 충돌과 키값 해석**을 확인한 것이다. 실제 2노드 HA에서 잘못된 행의 UPDATE/DELETE나 PR 바이너리의 차단 동작까지 실행한 결과는 아니다.
+검토일: 2026-11-10. 기준 코드는 RK 기능 브랜치 `f0bc3158d`와 [PR #8366](https://github.com/CUBRID/cubrid/pull/8366) 검토 시 HEAD `9054d2416`이다. **정상 변경을 먼저** TLA+로 검사했다. 기존에 논의한 슬레이브 DDL 실패는 별도 비교 사례로만 둔다. 실제 2노드 HA 통합 시험 결과는 아니다.
 
 ## 결과 한눈에 보기
 
-| 조건 | 기존 경로 모델 | PR #8366 검사 모델 |
+| 상황 | 마스터 RK와 결과 | 기존 적용 경로 | PR #8366 적용 경로 | 판단 |
+|---|---|---|---|---|
+| 양쪽 DDL이 성공하고 같은 순서로 적용됨 | 인덱스 배열의 첫 RK 후보가 변경될 수 있음 | 모델에서 올바른 행 적용·최종 수렴 | 모델에서 같은 결과. RK 비교가 정상 로그를 거부하지 않음 | **정상 변경에서 문제 발견 안 됨** |
+| 마스터 DDL 성공, 슬레이브 DDL 실패 | 양쪽 첫 RK 후보가 달라질 수 있음 | 모델에서 다른 행 UPDATE/DELETE 반례 | RK 해시 불일치 시 행 검색 전에 오류로 중단, 적용 실패를 로깅하고 fail counter 증가 | **기존 경로 문제, PR의 차단 대상** |
+| 양쪽 RK는 같지만 데이터가 이미 다름 | 같은 RK 설명자 사용 | 이 검증의 RK 불일치 범위 밖 | RK 해시가 같으므로 이 검사만으로 데이터 차이 검출 불가 | **PR의 검출 대상 아님** |
+
+여기서 “문제 발견 안 됨”은 아래 **작은 모델의 조건부 결과**다. CUBRID 전체 DDL·인덱스 구성과 실제 HA 실행의 무결성을 증명한 뜻은 아니다. “PR의 차단”은 소스 경로와 TLA+ 추상 모델에서 확인했으며, PR 바이너리로 2노드에서 실측하지 않았다.
+
+## 마스터가 RK를 선택하는 방식
+
+마스터는 RK를 클래스 메타데이터에 고정 저장하지 않는다. INSERT/DELETE는 `locator_add_or_remove_index_internal()`의 인덱스 루프에서, UPDATE는 `locator_update_force()`에서 **클래스 representation 인덱스 배열을 순서대로 보며 첫 RK 후보**를 로그 키로 쓴다. 슬레이브도 `btree_get_rkey_btid()`에서 로컬 배열의 첫 후보를 고른다. 후보 판정은 `or_is_replication_candidate_key()`다.
+
+따라서 “PK가 항상 우선”이라는 별도 우선순위 규칙으로 설명하면 부정확하다. PK 또는 유효한 UNIQUE를 추가·삭제해 **첫 후보의 배열 순서가 바뀌는 경우** RK가 자동으로 바뀔 수 있다. 어떤 제약이 실제로 첫 후보인지는 그 시점의 representation을 봐야 한다. `RKNormalChange.tla`는 이 순서가 `PK(id) → UNIQUE(code) → UNIQUE(alt)`인 구체적 한 경우를 모델링한다. 이 순서를 모든 CREATE/ALTER에서 보장한다는 검증은 아니다.
+
+## 정상 RK 변경 검사
+
+두 노드의 초기 스키마·행이 같고, DDL이 양쪽에서 성공하며, 로그가 순서대로 적용되는 조건을 만들었다. 모델의 대표 순서는 다음과 같다.
+
+| 순서 | 작업 | 모델에서 선택되는 RK |
 |---|---|---|
-| 초기 행이 같고 슬레이브에서만 PK 추가 DDL 실패 | `LegacyConflictUpdate/Delete`: `NoWrongRow` 위반 | `GuardedConflictUpdate/Delete`: 불변식 위반 없음, 각각 7개 상태 탐색 |
-| DDL 실패가 기록된 뒤 다음 DML의 오류 없는 오적용 | `LegacyConflictSilent`: `NoSilentDMLMismatch` 위반 | RK 불일치 시 행 검색 전에 오류로 중단 |
-| OFF 소스 SBR로 이미 데이터가 달라진 조건 | `LegacyUpdate/Delete/Silent`: 반례 | `GuardedUpdate/Delete`: RK 불일치에 따른 오적용 차단 |
-| 양쪽 RK가 같은 조건 | `LegacySameSchema`: 검사 통과 | 이 구성은 별도 PR 모델 실행 대상이 아님 |
+| 1 | `UNIQUE(code)`, `UNIQUE(alt)`가 있는 상태에서 UPDATE | `UNIQUE(code)` |
+| 2 | `ADD PRIMARY KEY(id)` 후 UPDATE | `PRIMARY KEY(id)` |
+| 3 | `DROP PRIMARY KEY` 후 UPDATE | `UNIQUE(code)` |
+| 4 | `DROP UNIQUE(code)` 후 DELETE | `UNIQUE(alt)` |
 
-## 확인된 문제와 의미
+[RKNormalChange.tla](RKNormalChange.tla)를 TLC 2.19로 검사했다. [기존 경로](NormalLegacy.cfg)와 [PR 검사 경로](NormalGuarded.cfg) 모두 **57개 생성 상태, 36개 서로 다른 상태, 깊이 15**에서 `NoWrongRow`, `NoRKMismatch`, `NoApplyFailure`, `ConvergesWhenCaughtUp` 위반이 없었다. 출력: [기존](NormalLegacy.out), [PR](NormalGuarded.out). 즉 모델 안에서는 RK가 여러 번 바뀌어도 양쪽이 같은 변경을 순서대로 적용하면 키 해석이 같고, PR의 비교도 정상 DML을 막지 않았다.
 
-**1. 키값만으로는 어느 RK의 값인지 구별할 수 없다.** 처음에는 양쪽 모두 `UNIQUE(code)`를 쓰다가 마스터만 `PRIMARY KEY(id)` 추가에 성공하면, 마스터의 `id=1` 로그 키값을 슬레이브가 `code=1`로 찾을 수 있다. 초기 두 행이 `(id=1, code=2)`, `(id=2, code=1)`이면 서로 다른 행을 가리킨다. TLC의 기존 경로에서 UPDATE·DELETE 모두 오적용 반례가 나왔다.
+실행 명령: `java -Xmx512m -jar tools/tla2tools.jar -deadlock -metadir /tmp/rk-normal-legacy -config NormalLegacy.cfg RKNormalChange.tla` (`NormalGuarded.cfg`도 동일).
 
-**2. DDL 실패 기록만으로 뒤따르는 DML을 막지는 못한다.** 모델의 슬레이브 DDL 실패는 fail counter를 늘린다. 기존 경로의 다음 DML은 RK 불일치 정보를 받지 못하므로, 다른 행에 적용하면서 그 DML 자체의 오류는 남기지 않을 수 있다. `LegacyConflictSilent`가 이를 보여준다.
+## 슬레이브 DDL 실패와 PR #8366의 차단 위치
 
-**3. PR #8366의 RK 비교는 이 반례의 행 오적용을 막는다.** 모델에서 마스터 RK와 슬레이브 RK가 다르면 행을 찾기 전에 실패한다. 코드 조사에서도 PR은 마스터가 사용한 RK 설명자의 해시를 행 로그에 넣고, applylogdb를 거쳐 슬레이브 서버에서 로컬 RK 해시와 비교한다. 다만 실패한 DDL과 누락된 행을 자동 복구하지는 않는다.
+이 사례는 **의도적으로 스키마를 다르게 만드는 기존 논의**다. 마스터만 `ADD PRIMARY KEY(id)`에 성공하면 같은 숫자 키를 슬레이브가 `UNIQUE(code)`로 해석해 다른 행을 찾을 수 있다. 기존 모델은 UPDATE·DELETE 반례를 냈다. [상세 기록](RESULTS.md)에 11개 구성을 남겼다.
 
-## 적용 범위와 남은 검증
+PR #8366은 마스터가 **실제로 로그 키를 만든 인덱스**의 설명자를 해시해 행 로그에 싣는다(`replication.c:304–353,450–525`). applylogdb가 해시를 읽어 슬레이브 서버 요청에 전달한다(`log_applier.c:3151–3186,4920–4965`). 슬레이브 서버가 로컬 첫 RK의 해시와 비교하고, 다르면 `ER_HA_GENERIC_ERROR`를 설정해 **행 검색 `locator_repl_prepare_force()` 전에 중단**한다(`locator_sr.c:6928–6998,7090–7120`). 적용 실패는 applylogdb의 오류 경로에서 기록되고 `fail_counter`가 증가한다(`log_applier.c:4771–4885`). **DDL 실패 자체를 고치거나 누락된 행을 자동 재적용하지는 않는다.**
 
-- 모델의 RK 일치 판정은 추상화다. 실제 PR의 **64비트 FNV-1a 해시**는 이론적으로 충돌할 수 있다.
-- 검사는 INSERT/UPDATE/DELETE의 **행 기반 복제 로그** 경로를 대상으로 한다. SQL 원문을 다시 실행하는 `USE_SBR`은 같은 RK 비교를 거치지 않는다.
-- 이름 충돌 실험은 HA 시작 전 슬레이브에만 일반 인덱스를 둔 **의도적으로 다른 스키마**를 사용했다. 정상 HA 초기화 절차에서 항상 발생한다는 뜻이 아니다.
-- PR #8366 바이너리의 2노드 HA 통합 시험은 하지 않았다. 모델 검사 결과는 실제 복제 적용의 성공·실패를 대체하지 않는다.
+## 해석의 한계
 
-재현 SQL, 함수 호출 순서, 11개 구성별 결과, 실패 후 LSA 진행과 복구 한계는 [상세 검증 기록](RESULTS.md)에 남겼다.
+- 정상 모델은 인덱스 순서를 한 경우로 고정한 상태 모델이다. 실제 인덱스 배열의 모든 재배치, 동시 DDL, 실패·재시도, 파티션 및 다중 테이블 동작을 포괄하지 않는다.
+- PR은 RK 설명자 전체 대신 64비트 해시를 기록하므로 이론적 충돌 가능성이 있다. 양쪽 RK가 같아도 행 데이터가 이미 다르면 RK 검사는 이를 검출하지 못한다.
+- 이 검사는 **행 기반 복제 로그** 경로에 적용된다. `USE_SBR`의 SQL 재실행은 같은 RK 해시 검사를 거치지 않는다.
+- PR #8366 바이너리의 정상 RK 연속 변경 및 불일치 경로는 실제 2노드 HA에서 별도 확인이 필요하다.
