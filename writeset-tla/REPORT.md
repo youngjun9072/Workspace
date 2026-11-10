@@ -7,7 +7,7 @@
 | 검사 | 무엇을 봤나 | 결과 | 판단 |
 |---|---|---|---|
 | 기본 병렬 적용과 라벨 SYSOP_END 키 유실 | 같은 키를 바꾼 트랜잭션의 적용 순서, 리뷰에서 지적된 키 유실 경로와 수정안 | 기본 병렬 적용은 반례 없음. 키 유실 경로는 지금 코드 규칙에서 반례가 나오고, 수정안을 넣으면 반례 없음 | **문제점 1건(리뷰 지적 재현): 라벨 SYSOP_END에서 사용자 행 키 유실** |
-| 영역별 전수 탐색 | master 의존 값 계산, serial·INCR SYSOP, slave 배분·적용, 재시작·failover를 영역별로 | 이 PR의 설계에서 순서가 틀리는 반례는 없음. 순서 외 문제 1건과, PR과 무관하게 develop applier에도 있는 재시도 문제 1건이 나옴 | **문제점 2건(처음 찾음): 조각 메모리 누수(적용 결과 영향 없음), 재시도 오류 뒤 항목 유실 가능성(develop과 같은 동작, HA 확인 필요)** |
+| 영역별 전수 탐색 | master 의존 값 계산, serial·INCR SYSOP, slave 배분·적용, 재시작·failover를 영역별로 | 이 PR의 설계에서 순서가 틀리는 반례는 없음. 대신 메모리 문제 1건과, PR과 무관하게 develop applier에도 있는 재시도 문제 1건이 나옴 | **문제점 2건(처음 찾음): 조각 메모리 누수(slave 데이터는 맞지만 applier가 같은 프로세스 안에서 재시작할 때마다 조각 하나만큼 메모리가 남음), 재시도 오류 뒤 항목 유실 가능성(develop과 같은 동작, HA 확인 필요)** |
 | master→slave 통합 검사 | master가 실제로 만드는 로그를 slave가 그대로 읽을 때의 조각 시작 위치와 저장 위치 | 조각 시작 위치를 정하는 코드 두 곳(일반 분기 7307, 긴 트랜잭션 분기 7283)에서 각각 재시작 뒤 serial·INCR이 사라지는 반례가 나옴. 두 곳을 모두 고친 모델은 반례 없음 | **문제점 2건(원인은 같고 위치가 2곳): 7307 분기(리뷰 지적 재현), 7283 분기(처음 찾음). 두 곳 모두 `bdd1fd0a1`로 수정** |
 | serial·INCR 키 방식 설계 | 전체 장벽 대신 같은 키끼리만 순서를 지키는 설계와 각 구성 요소의 필요성 | 설계안 그대로는 반례 없음. 구성 요소를 일부러 하나씩 뺀 모델은 반례가 나옴(각 요소가 필요하다는 확인용이며 결함이 아님) | **문제점 0건** |
 
@@ -25,6 +25,12 @@
 - **충돌 순서**: 같은 키를 바꾼 트랜잭션은 slave에서도 master 커밋 순서대로 적용된다. 관계없는 트랜잭션끼리는 순서가 바뀌어도 된다.
 - **정확히 한 번**: 재시작·크래시가 있어도 master에서 커밋된 변경은 slave에 빠짐없이, 두 번 없이 적용된다.
 - **저장 위치**: slave가 저장하는 `committed_lsa`, `required_lsa`는 실제로 적용이 끝난 곳을 앞지르지 않는다. 앞지르면 재시작 때 그 사이 변경이 빠진다.
+
+이 문서에서 쓰는 말
+- **SYSOP_END**: master 로그에서 시스템 연산(SYSOP) 하나가 끝났음을 나타내는 레코드. serial 값 증가와 INCR/DECR은 바깥 트랜잭션과 따로 SYSOP으로 확정되고, 그 변경은 SYSOP_END 시점에 로그에 나간다.
+- **라벨**: master가 COMMIT이나 SYSOP_END 바로 앞에 쓰는 레코드(`LOG_DUMMY_WSET_LABEL`). "이것은 어느 커밋 다음에 적용해야 하는지"(의존 값)를 담는다.
+- **조각(fragment)**: slave가 라벨이 붙은 SYSOP_END를 만나면, 그 SYSOP의 변경(serial·INCR)을 바깥 트랜잭션과 떼어 따로 적용하는 작업 단위. 바깥 트랜잭션이 나중에 롤백해도 master에서 이미 확정된 변경이므로 slave도 따로 적용해야 한다.
+- **slot**: slave가 트랜잭션마다 만드는 자리. 그 트랜잭션의 복제 항목을 커밋이나 롤백을 만날 때까지 모아 둔다.
 
 ## 모델이 하는 일
 
@@ -67,7 +73,7 @@
 네 모델은 큰 크기를 무작위 실행으로 다시 확인했다([sim-SIM_slave](results/sim-SIM_slave.txt) 트랜잭션 3·크래시 3, 약 4억 2천만 상태 등). 모두 위반이 없었다.
 
 **문제점 2건(처음 찾음)**
-- **조각 누수**: `la_coordinator_drain_ready`(log_applier_coordinator.cpp 146–153)가 pending에서 task를 꺼낸 뒤 enqueue가 종료 요청으로 실패하거나, `la_coordinator_process_sysop_end`(log_applier.c 7334–7369)가 떼어 낸 조각을 submit하다 실패하면 조각이 in-flight·pending 어느 목록에도 없어 `la_free_unretired_fragments`(8478)가 해제하지 못한다. 다음 실행이 `required_lsa`부터 다시 읽어 조각을 새로 만들므로 **적용 결과에는 영향이 없다**.
+- **조각 누수**: `la_coordinator_drain_ready`(log_applier_coordinator.cpp 146–153)가 pending에서 task를 꺼낸 뒤 enqueue가 종료 요청으로 실패하거나, `la_coordinator_process_sysop_end`(log_applier.c 7334–7369)가 떼어 낸 조각을 submit하다 실패하면 조각이 in-flight·pending 어느 목록에도 없어 `la_free_unretired_fragments`(8478)가 해제하지 못한다. 다음 실행이 `required_lsa`부터 다시 읽어 조각을 새로 만들므로 **slave 데이터는 맞게 적용된다**. 다만 해제되지 못한 조각의 메모리는 남는다. applier는 서버가 내려가면 같은 프로세스 안에서 다시 시작하므로, 이 겹침이 생길 때마다 조각 하나(그 SYSOP의 복제 항목들)만큼 메모리가 쌓인다. 크기는 재지 않았다.
 - **재시도 오류 뒤 앞 항목 유실 가능성**(HA 재현 필요): `la_apply_repl_log`의 재시도는 같은 항목만 다시 적용한다. 재시도 대상에 `ER_LK_UNILATERALLY_ABORTED`처럼 서버가 트랜잭션 전체를 롤백하는 오류가 있어, 그 경우 앞서 적용한 항목이 롤백으로 사라진 채 나머지가 커밋될 수 있다. **develop applier와 같은 루프**라 이 PR이 만든 문제는 아니다.
 
 PR 리뷰에서 HA로 찾은 결함 3건은 이 탐색에서 나오지 않았다. 이유는 다음 절과 "해석의 한계"에 적었다.
