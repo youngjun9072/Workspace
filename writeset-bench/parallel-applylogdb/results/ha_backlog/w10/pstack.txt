@@ -1,0 +1,53 @@
+대상 : 560730  (13 threads)
+       cub_admin applylogdb -L /home/youngjun/CUBRID_optdebug/databases/testdb_youngjun1 --max-mem-size=4096 testdb@localhost 
+도구 : pstack
+수집 : 0회 x 1초 간격  ->  /tmp/ha_bl10
+
+집계 전용 모드 — 기존 샘플 20개
+
+스레드-샘플 총계: 260
+
+[1] 최상위 프레임 — 무엇에 막혀 있나
+     65.77%     171  poll
+     15.38%      40  pthread_cond_wait
+      7.69%      20  read
+      3.85%      10  ?
+      3.46%       9  pthread_cond_timedwait
+      1.92%       5  __lll_lock_wait
+      0.38%       1  writev
+      0.38%       1  recv
+      0.38%       1  la_pending_foreach
+      0.38%       1  __pthread_mutex_unlock_usercnt
+      0.38%       1  pread64
+
+[2] 최초 작업 프레임 — 무슨 일로 막혀 있나
+     58.46%     152  css_readn
+     15.38%      40  la_task_queue_pop
+      7.69%      20  css_platform_independent_poll
+      7.69%      20  sigusr1_monitor_thread
+      3.85%      10  ?
+      3.46%       9  la_result_queue_wait_for_result
+      1.54%       4  la_insert_applied_tx_marker
+      0.38%       1  css_vector_send
+      0.38%       1  la_pending_foreach
+      0.38%       1  __pthread_mutex_unlock_usercnt
+      0.38%       1  la_release_page_buffer
+      0.38%       1  pread64
+
+[3] 스택 시그니처 (상위 3 프레임)
+     58.08%     151  poll <- css_readn <- css_net_recv
+     15.38%      40  pthread_cond_wait <- la_task_queue_pop <- la_worker_run
+      7.69%      20  poll <- css_platform_independent_poll <- hb_process_master_request
+      7.69%      20  read <- sigusr1_monitor_thread <- start_thread
+      3.46%       9  ? <- ? <- ?
+      3.08%       8  pthread_cond_timedwait <- la_result_queue_wait_for_result <- la_apply_log_file
+      1.54%       4  __lll_lock_wait <- pthread_mutex_lock <- la_insert_applied_tx_marker
+      0.38%       1  writev <- css_vector_send <- ?
+      0.38%       1  la_pending_foreach <- la_stat_update_rows <- la_stat_store
+      0.38%       1  recv <- css_readn <- css_net_recv
+      0.38%       1  __lll_lock_wait <- pthread_mutex_lock <- la_release_page_buffer
+      0.38%       1  __pthread_mutex_unlock_usercnt <- la_apply_update_log <- ?
+
+원본 샘플: /tmp/ha_bl10/sample_*.txt
+특정 샘플 보기:  less /tmp/ha_bl10/sample_001.txt
+두 시점 비교  :  diff /tmp/ha_bl10/sample_001.txt /tmp/ha_bl10/sample_020.txt

@@ -1,0 +1,57 @@
+대상 : 714438  (23 threads)
+       cub_admin applylogdb -L /home/youngjun/CUBRID_optdebug/databases/testdb_youngjun1 --max-mem-size=4096 testdb@localhost 
+도구 : pstack
+수집 : 0회 x 1초 간격  ->  /tmp/ha_bl20
+
+집계 전용 모드 — 기존 샘플 33개
+
+스레드-샘플 총계: 759
+
+[1] 최상위 프레임 — 무엇에 막혀 있나
+     67.06%     509  poll
+     17.13%     130  __lll_lock_wait
+      5.67%      43  pthread_cond_wait
+      4.35%      33  read
+      2.37%      18  ?
+      0.66%       5  recv
+      0.66%       5  pread64
+      0.40%       3  writev
+      0.26%       2  malloc
+      0.26%       2  write
+      0.13%       1  la_log_record_process
+      0.13%       1  __strcasecmp_l_evex
+
+[2] 최초 작업 프레임 — 무슨 일로 막혀 있나
+     63.37%     481  css_readn
+     10.80%      82  la_insert_applied_tx_marker
+      5.67%      43  la_task_queue_pop
+      4.35%      33  css_platform_independent_poll
+      4.35%      33  sigusr1_monitor_thread
+      2.37%      18  la_release_page_buffer
+      2.37%      18  ?
+      2.11%      16  __gthread_mutex_lock
+      1.58%      12  la_get_page_buffer
+      0.66%       5  pread64
+      0.53%       4  la_release_pinned_page_buffers
+      0.40%       3  css_vector_send
+      0.26%       2  _IO_file_write
+      0.26%       2  malloc
+      0.13%       1  la_log_record_process
+
+[3] 스택 시그니처 (상위 3 프레임)
+     62.71%     476  poll <- css_readn <- css_net_recv
+     10.80%      82  __lll_lock_wait <- pthread_mutex_lock <- la_insert_applied_tx_marker
+      5.67%      43  pthread_cond_wait <- la_task_queue_pop <- la_worker_run
+      4.35%      33  poll <- css_platform_independent_poll <- hb_process_master_request
+      4.35%      33  read <- sigusr1_monitor_thread <- start_thread
+      2.37%      18  __lll_lock_wait <- pthread_mutex_lock <- la_release_page_buffer
+      2.37%      18  ? <- ? <- ?
+      2.11%      16  __lll_lock_wait <- pthread_mutex_lock <- __gthread_mutex_lock
+      1.58%      12  __lll_lock_wait <- pthread_mutex_lock <- la_get_page_buffer
+      0.66%       5  recv <- css_readn <- css_net_recv
+      0.53%       4  pread64 <- la_log_io_read_with_max_retries <- la_log_fetch_from_archive
+      0.40%       3  writev <- css_vector_send <- ?
+
+원본 샘플: /tmp/ha_bl20/sample_*.txt
+특정 샘플 보기:  less /tmp/ha_bl20/sample_001.txt
+두 시점 비교  :  diff /tmp/ha_bl20/sample_001.txt /tmp/ha_bl20/sample_033.txt

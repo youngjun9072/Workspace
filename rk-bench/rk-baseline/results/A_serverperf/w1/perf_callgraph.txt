@@ -1,0 +1,200 @@
+Warning:
+Kernel address maps (/proc/{kallsyms,modules}) were restricted.
+
+Check /proc/sys/kernel/kptr_restrict before running 'perf record'.
+
+As no suitable kallsyms nor vmlinux was found, kernel samples
+can't be resolved.
+
+Samples in kernel modules can't be resolved as well.
+
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 40K of event 'cycles'
+# Event count (approx.): 79385549174
+#
+# Overhead  Symbol                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   
+# ........  .........................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+#
+     5.20%  [.] vfprintf
+            |          
+             --4.89%--vfprintf
+
+     4.69%  [.] pgbuf_fix_debug
+            |          
+             --4.48%--pgbuf_fix_debug
+                       |          
+                       |--1.99%--disk_get_volheader_internal
+                       |          disk_is_page_sector_reserved_with_debug_crash
+                       |          |          
+                       |           --1.83%--pgbuf_is_valid_page
+                       |                     |          
+                       |                      --1.80%--pgbuf_fix_debug
+                       |                                |          
+                       |                                 --0.70%--disk_is_page_sector_reserved_with_debug_crash
+                       |                                           |          
+                       |                                            --0.59%--pgbuf_is_valid_page
+                       |                                                      |          
+                       |                                                       --0.58%--pgbuf_fix_debug
+                       |          
+                        --0.98%--disk_is_page_sector_reserved_with_debug_crash
+                                  |          
+                                   --0.91%--pgbuf_is_valid_page
+                                             |          
+                                              --0.88%--pgbuf_fix_debug
+
+     3.45%  [.] btree_check_valid_record
+            |          
+             --3.28%--btree_check_valid_record
+                       |          
+                        --1.18%--btree_key_remove_insert_mvccid
+                                  btree_search_key_and_apply_functions
+                                  btree_delete_internal
+                                  btree_vacuum_insert_mvccid
+                                  vacuum_process_log_block
+                                  cubthread::worker_pool_impl<(cubthread::stats_t)1>::core_impl::worker_impl::execute_current_task
+                                  cubthread::worker_pool_impl<(cubthread::stats_t)1>::core_impl::worker_impl::run
+                                  cubthread::worker_pool_impl<(cubthread::stats_t)1>::core_impl::worker_impl::run_in_thread
+                                  execute_native_thread_routine
+
+     2.61%  [.] _IO_default_xsputn
+            |          
+             --2.55%--_IO_default_xsputn
+
+     2.06%  [.] spage_find_slot
+            |          
+             --2.04%--spage_find_slot
+                       |          
+                        --1.79%--spage_get_record
+                                  |          
+                                   --0.62%--btree_search_leaf_page
+                                             |          
+                                              --0.53%--btree_advance_and_find_key
+                                                        btree_search_key_and_apply_functions
+                                                        xbtree_find_unique
+                                                        xlocator_repl_force
+                                                        slocator_repl_force
+                                                        net_server_request
+                                                        css_server_task::execute
+                                                        cubthread::worker_pool_impl<(cubthread::stats_t)1>::core_impl::worker_impl::execute_current_task
+                                                        cubthread::worker_pool_impl<(cubthread::stats_t)1>::core_impl::worker_impl::run
+                                                        cubthread::worker_pool_impl<(cubthread::stats_t)1>::core_impl::worker_impl::run_in_thread
+                                                        execute_native_thread_routine
+
+     1.84%  [.] __memset_evex_unaligned_erms
+            |          
+             --1.62%--__memset_evex_unaligned_erms
+                       |          
+                        --0.51%--btree_key_remove_insert_mvccid
+                                  btree_search_key_and_apply_functions
+                                  btree_delete_internal
+                                  btree_vacuum_insert_mvccid
+                                  vacuum_process_log_block
+                                  cubthread::worker_pool_impl<(cubthread::stats_t)1>::core_impl::worker_impl::execute_current_task
+                                  cubthread::worker_pool_impl<(cubthread::stats_t)1>::core_impl::worker_impl::run
+                                  cubthread::worker_pool_impl<(cubthread::stats_t)1>::core_impl::worker_impl::run_in_thread
+                                  execute_native_thread_routine
+
+     1.56%  [.] malloc
+            |          
+             --1.55%--malloc
+
+     1.44%  [.] __strlen_evex
+            |          
+             --0.62%--pgbuf_fix_debug
+
+     1.43%  [.] pgbuf_unlatch_bcb_upon_unfix
+            |          
+             --1.39%--pgbuf_unlatch_bcb_upon_unfix
+                       |          
+                        --1.35%--pgbuf_unfix_debug
+                                  |          
+                                   --0.92%--disk_is_page_sector_reserved_with_debug_crash
+                                             |          
+                                              --0.77%--pgbuf_is_valid_page
+                                                        |          
+                                                         --0.76%--pgbuf_fix_debug
+
+     1.41%  [.] __memmove_evex_unaligned_erms
+            |          
+             --1.41%--__memmove_evex_unaligned_erms
+
+     1.38%  [.] __pthread_mutex_lock
+            |          
+             --1.38%--__pthread_mutex_lock
+
+     1.34%  [.] __pthread_mutex_unlock_usercnt
+     1.20%  [.] pgbuf_add_fixed_at
+            |          
+             --1.14%--pgbuf_add_fixed_at
+                       |          
+                        --1.13%--pgbuf_fix_debug
+                                  |          
+                                   --0.63%--disk_get_volheader_internal
+                                             disk_is_page_sector_reserved_with_debug_crash
+                                             |          
+                                              --0.59%--pgbuf_is_valid_page
+                                                        |          
+                                                         --0.58%--pgbuf_fix_debug
+
+     1.20%  [.] btree_search_leaf_page
+            |          
+             --1.17%--btree_search_leaf_page
+                       |          
+                        --0.87%--btree_advance_and_find_key
+                                  btree_search_key_and_apply_functions
+                                  xbtree_find_unique
+                                  xlocator_repl_force
+                                  slocator_repl_force
+                                  net_server_request
+                                  css_server_task::execute
+                                  cubthread::worker_pool_impl<(cubthread::stats_t)1>::core_impl::worker_impl::execute_current_task
+                                  cubthread::worker_pool_impl<(cubthread::stats_t)1>::core_impl::worker_impl::run
+                                  cubthread::worker_pool_impl<(cubthread::stats_t)1>::core_impl::worker_impl::run_in_thread
+                                  execute_native_thread_routine
+
+     1.20%  [.] __strchrnul_evex
+            |          
+             --1.18%--__strchrnul_evex
+
+     1.13%  [.] pgbuf_unfix_debug
+            |          
+             --1.04%--pgbuf_unfix_debug
+                       |          
+                        --0.74%--disk_is_page_sector_reserved_with_debug_crash
+                                  |          
+                                   --0.66%--pgbuf_is_valid_page
+                                             |          
+                                              --0.64%--pgbuf_fix_debug
+
+     1.02%  [k] 0xffffffffbb5697ac
+            |          
+             --0.85%--0xffffffffbb56c48f
+                       0xffffffffbb56c7e3
+                       0xffffffffbb56caf2
+                       0xffffffffbb56d207
+                       0xffffffffbb56d501
+                       0xffffffffbb5555b6
+                       0xffffffffbc130744
+                       0xffffffffbc130b2e
+                       |          
+                        --0.67%--0xffffffffbb605670
+                                  0xffffffffbb605d33
+                                  0xffffffffbb605e17
+                                  0xffffffffbb601fc8
+                                  0xffffffffbb602683
+                                  0xffffffffbc1208dc
+                                  0xffffffffbc200130
+                                  |          
+                                   --0.64%--pthread_cond_timedwait@@GLIBC_2.3.2
+                                             |          
+                                              --0.63%--0x100000000
+
+
+
+#
+# (Tip: To record every process run by a user: perf record -u <user>)
+#

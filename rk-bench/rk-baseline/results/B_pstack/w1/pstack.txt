@@ -1,0 +1,31 @@
+대상 : 3798381  (3 threads)
+       cub_admin applylogdb -L /home/youngjun/CUBRID_26246/databases/testdb_youngjun1 --max-mem-size=4096 testdb@localhost 
+도구 : pstack
+수집 : 0회 x 1초 간격  ->  /tmp/ha_bl_rk1
+
+집계 전용 모드 — 기존 샘플 32개
+
+스레드-샘플 총계: 96
+
+[1] 최상위 프레임 — 무엇에 막혀 있나
+     64.58%      62  poll
+     34.38%      33  read
+      1.04%       1  ?
+
+[2] 최초 작업 프레임 — 무슨 일로 막혀 있나
+     33.33%      32  css_platform_independent_poll
+     33.33%      32  sigusr1_monitor_thread
+     31.25%      30  css_readn
+      1.04%       1  ?
+      1.04%       1  la_log_io_read_with_max_retries
+
+[3] 스택 시그니처 (상위 3 프레임)
+     33.33%      32  poll <- css_platform_independent_poll <- hb_process_master_request
+     33.33%      32  read <- sigusr1_monitor_thread <- start_thread
+     31.25%      30  poll <- css_readn <- css_net_recv
+      1.04%       1  read <- la_log_io_read_with_max_retries <- ?
+      1.04%       1  ? <- ? <- yyprocessOneStack
+
+원본 샘플: /tmp/ha_bl_rk1/sample_*.txt
+특정 샘플 보기:  less /tmp/ha_bl_rk1/sample_001.txt
+두 시점 비교  :  diff /tmp/ha_bl_rk1/sample_001.txt /tmp/ha_bl_rk1/sample_032.txt

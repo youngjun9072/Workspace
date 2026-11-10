@@ -1,0 +1,4 @@
+    54.95%  [.] la_gate_is_satisfied
+    24.05%  [.] la_log_record_process
+     1.97%  [.] la_pending_pop_ready
+     0.63%  [.] la_gate_is_satisfied@plt

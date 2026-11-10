@@ -1,0 +1,4 @@
+workers	backlog_tx	catchup_s	tx_per_s	busy_pct	marker_pct	marker_of_busy	RSS_MB	VSZ_MB
+4	46313	107	382.7	0.0	0.0	0.0	38-38	451-451
+10	70972	144	451.8	0.0	0.0	0.0	75-79	938-938
+20	82814	222	343.7	0.0	0.0	0.0	94-152	1703-1750

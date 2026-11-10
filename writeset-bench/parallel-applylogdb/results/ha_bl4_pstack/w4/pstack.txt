@@ -1,0 +1,57 @@
+대상 : 3334343  (7 threads)
+       cub_admin applylogdb -L /home/youngjun/CUBRID_optdebug/databases/testdb_youngjun1 --max-mem-size=4096 testdb@localhost 
+도구 : pstack
+수집 : 0회 x 1초 간격  ->  /tmp/ha_bl4p_4
+
+집계 전용 모드 — 기존 샘플 42개
+
+스레드-샘플 총계: 294
+
+[1] 최상위 프레임 — 무엇에 막혀 있나
+     66.33%     195  poll
+     14.29%      42  read
+      8.50%      25  pthread_cond_timedwait
+      4.76%      14  ?
+      2.38%       7  __lll_lock_wait
+      0.68%       2  __memmove_evex_unaligned_erms
+      0.68%       2  pread64
+      0.34%       1  __strcasecmp_evex
+      0.34%       1  writev
+      0.34%       1  recv
+      0.34%       1  sm_free_resident_classes_virtual_query_cache
+      0.34%       1  log_lsa::operator<
+
+[2] 최초 작업 프레임 — 무슨 일로 막혀 있나
+     52.38%     154  css_readn
+     14.29%      42  css_platform_independent_poll
+     14.29%      42  sigusr1_monitor_thread
+      8.50%      25  la_result_queue_wait_for_result
+      4.76%      14  ?
+      2.04%       6  la_insert_applied_tx_marker
+      0.68%       2  __memmove_evex_unaligned_erms
+      0.68%       2  pread64
+      0.34%       1  __strcasecmp_evex
+      0.34%       1  _IO_file_write
+      0.34%       1  sm_free_resident_classes_virtual_query_cache
+      0.34%       1  log_lsa::operator<
+      0.34%       1  css_vector_send
+      0.34%       1  la_release_page_buffer
+      0.34%       1  tran_get_query_timeout
+
+[3] 스택 시그니처 (상위 3 프레임)
+     52.04%     153  poll <- css_readn <- css_net_recv
+     14.29%      42  poll <- css_platform_independent_poll <- hb_process_master_request
+     14.29%      42  read <- sigusr1_monitor_thread <- start_thread
+      8.16%      24  pthread_cond_timedwait <- la_result_queue_wait_for_result <- la_coordinator_wait_for_commit_order_slot
+      4.42%      13  ? <- ? <- ?
+      2.04%       6  __lll_lock_wait <- pthread_mutex_lock <- la_insert_applied_tx_marker
+      0.68%       2  pread64 <- la_log_io_read_with_max_retries <- la_log_fetch_from_archive
+      0.34%       1  sm_free_resident_classes_virtual_query_cache <- ? <- tran_commit
+      0.34%       1  ? <- ? <- la_pending_pop_ready
+      0.34%       1  __memmove_evex_unaligned_erms <- ws_repl::ws_add_to_repl_obj_list <- la_repl_add_object
+      0.34%       1  writev <- css_vector_send <- ?
+      0.34%       1  tran_get_query_timeout <- execute_query <- do_execute_insert
+
+원본 샘플: /tmp/ha_bl4p_4/sample_*.txt
+특정 샘플 보기:  less /tmp/ha_bl4p_4/sample_001.txt
+두 시점 비교  :  diff /tmp/ha_bl4p_4/sample_001.txt /tmp/ha_bl4p_4/sample_042.txt

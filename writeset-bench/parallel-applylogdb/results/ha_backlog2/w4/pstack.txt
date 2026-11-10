@@ -1,0 +1,50 @@
+대상 : 642115  (7 threads)
+       cub_admin applylogdb -L /home/youngjun/CUBRID_optdebug/databases/testdb_youngjun1 --max-mem-size=4096 testdb@localhost 
+도구 : pstack
+수집 : 0회 x 1초 간격  ->  /tmp/ha_bl4
+
+집계 전용 모드 — 기존 샘플 40개
+
+스레드-샘플 총계: 280
+
+[1] 최상위 프레임 — 무엇에 막혀 있나
+     67.14%     188  poll
+     14.29%      40  read
+      9.29%      26  pthread_cond_timedwait
+      4.64%      13  ?
+      1.79%       5  recv
+      1.79%       5  __lll_lock_wait
+      0.36%       1  writev
+      0.36%       1  cubmethod::callback_handler::free_query_handle
+      0.36%       1  pread64
+
+[2] 최초 작업 프레임 — 무슨 일로 막혀 있나
+     54.64%     153  css_readn
+     14.29%      40  css_platform_independent_poll
+     14.29%      40  sigusr1_monitor_thread
+      9.29%      26  la_result_queue_wait_for_result
+      4.64%      13  ?
+      1.07%       3  la_insert_applied_tx_marker
+      0.36%       1  la_get_page_buffer
+      0.36%       1  cubmethod::callback_handler::free_query_handle
+      0.36%       1  la_release_pinned_page_buffers
+      0.36%       1  css_vector_send
+      0.36%       1  pread64
+
+[3] 스택 시그니처 (상위 3 프레임)
+     52.86%     148  poll <- css_readn <- css_net_recv
+     14.29%      40  poll <- css_platform_independent_poll <- hb_process_master_request
+     14.29%      40  read <- sigusr1_monitor_thread <- start_thread
+      8.93%      25  pthread_cond_timedwait <- la_result_queue_wait_for_result <- la_coordinator_wait_for_commit_order_slot
+      3.21%       9  ? <- ? <- ?
+      1.79%       5  recv <- css_readn <- css_net_recv
+      1.07%       3  __lll_lock_wait <- pthread_mutex_lock <- la_insert_applied_tx_marker
+      0.71%       2  ? <- ? <- la_pending_pop_ready
+      0.36%       1  ? <- db_execute_and_keep_statement <- la_insert_applied_tx_marker
+      0.36%       1  writev <- css_vector_send <- ?
+      0.36%       1  __lll_lock_wait <- pthread_mutex_lock <- la_release_pinned_page_buffers
+      0.36%       1  ? <- la_pending_pop_ready <- la_coordinator_drain_ready
+
+원본 샘플: /tmp/ha_bl4/sample_*.txt
+특정 샘플 보기:  less /tmp/ha_bl4/sample_001.txt
+두 시점 비교  :  diff /tmp/ha_bl4/sample_001.txt /tmp/ha_bl4/sample_040.txt
