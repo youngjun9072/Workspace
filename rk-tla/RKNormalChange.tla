@@ -3,8 +3,8 @@ EXTENDS Integers, Sequences, TLC
 
 \* Both nodes begin with identical rows and UNIQUE(code), UNIQUE(alt).
 \* The master emits ordered DDL/RBR logs. The slave applies each log in order.
-\* Assumed representation order in this model: PK(id), UNIQUE(code), UNIQUE(alt).
-\* The implementation selects the first candidate; it does not impose PK priority.
+\* Representation order in this model: PK(id), UNIQUE(code), UNIQUE(alt).
+\* The class property installer puts PRIMARY_KEY before UNIQUE.
 \* This models successful DDL on both nodes; no error injection is present.
 CONSTANT Guarded
 ASSUME Guarded \in BOOLEAN
