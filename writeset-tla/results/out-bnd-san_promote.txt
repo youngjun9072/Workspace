@@ -1,0 +1,167 @@
+START 2026-11-08 14:07:12 san_promote mode=exh   
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 62 and seed -8838357253243177072 with 16 workers on 80 cores with 14564MB heap and 64MB offheap memory [pid: 1362365] (Linux 5.14.0-570.30.1.el9_6.x86_64 amd64, Eclipse Adoptium 17.0.21 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/youngjun/Workspace/Obsidian/Github/writeset-tla/WritesetBoundary.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/TLC.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module WritesetBoundary
+Starting... (2026-11-08 14:07:13)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-08 14:07:13.
+Error: Invariant NeverPromote is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ storedC = 0
+/\ storedR = 1
+/\ frontier = 1000
+/\ mst = (t1 :> "idle" @@ t2 :> "idle")
+/\ nerr = 0
+/\ nd = (t1 :> 0 @@ t2 :> 0)
+/\ ns = (t1 :> 0 @@ t2 :> 0)
+/\ wign = {}
+/\ pend = (t1 :> FALSE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ slot = ( t1 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] @@
+  t2 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] )
+/\ markers = {}
+/\ promoted = FALSE
+/\ pending = <<>>
+/\ rd = 1
+/\ lastC = 0
+/\ mlog = <<>>
+/\ halted = FALSE
+/\ tq = <<>>
+/\ committed = 0
+/\ wrem = <<{}, {}>>
+/\ crashes = 0
+/\ mdone = FALSE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<>>
+/\ wapp = <<{}, {}>>
+
+State 2: <Next line 531, col 6 to line 531, col 34 of module WritesetBoundary>
+/\ storedC = 0
+/\ storedR = 1
+/\ frontier = 1000
+/\ mst = (t1 :> "end" @@ t2 :> "end")
+/\ nerr = 0
+/\ nd = (t1 :> 0 @@ t2 :> 0)
+/\ ns = (t1 :> 0 @@ t2 :> 0)
+/\ wign = {}
+/\ pend = (t1 :> FALSE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ slot = ( t1 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] @@
+  t2 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] )
+/\ markers = {}
+/\ promoted = FALSE
+/\ pending = <<>>
+/\ rd = 1
+/\ lastC = 0
+/\ mlog = <<>>
+/\ halted = FALSE
+/\ tq = <<>>
+/\ committed = 0
+/\ wrem = <<{}, {}>>
+/\ crashes = 0
+/\ mdone = TRUE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<>>
+/\ wapp = <<{}, {}>>
+
+State 3: <Promote line 497, col 3 to line 501, col 90 of module WritesetBoundary>
+/\ storedC = 0
+/\ storedR = 1
+/\ frontier = 1000
+/\ mst = (t1 :> "end" @@ t2 :> "end")
+/\ nerr = 0
+/\ nd = (t1 :> 0 @@ t2 :> 0)
+/\ ns = (t1 :> 0 @@ t2 :> 0)
+/\ wign = {}
+/\ pend = (t1 :> FALSE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ slot = ( t1 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] @@
+  t2 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] )
+/\ markers = {}
+/\ promoted = TRUE
+/\ pending = <<>>
+/\ rd = 1
+/\ lastC = 0
+/\ mlog = <<>>
+/\ halted = FALSE
+/\ tq = <<>>
+/\ committed = 0
+/\ wrem = <<{}, {}>>
+/\ crashes = 0
+/\ mdone = TRUE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<>>
+/\ wapp = <<{}, {}>>
+
+339 states generated, 311 distinct states found, 219 states left on queue.
+The depth of the complete state graph search is 8.
+The average outdegree of the complete state graph is 4 (minimum is 1, the maximum 9 and the 95th percentile is 8).
+Finished in 00s at (2026-11-08 14:07:13)
+END 2026-11-08 14:07:17 stop=none maxmeta_kb=0

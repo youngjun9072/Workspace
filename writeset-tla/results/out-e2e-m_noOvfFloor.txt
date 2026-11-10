@@ -1,0 +1,381 @@
+START 2026-11-07 11:58:41 m_noOvfFloor 
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 115 and seed -6719927108521175390 with 16 workers on 80 cores with 14564MB heap and 64MB offheap memory [pid: 1134551] (Linux 5.14.0-570.30.1.el9_6.x86_64 amd64, Eclipse Adoptium 17.0.21 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/youngjun/Workspace/Obsidian/Github/writeset-tla/WritesetE2E.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/TLC.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module WritesetE2E
+Starting... (2026-11-07 11:58:41)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-07 11:58:41.
+Error: Invariant DepCover is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ storedC = 0
+/\ nops = (t1 :> 0 @@ t2 :> 0)
+/\ storedR = 1
+/\ pubRem = (t1 :> {} @@ t2 :> {})
+/\ frontier = 1000
+/\ wseq = (1 :> <<>> @@ 2 :> <<>> @@ 9 :> <<>>)
+/\ stmt = (t1 :> FALSE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ ovf = (t1 :> FALSE @@ t2 :> FALSE)
+/\ slot = ( t1 :> [act |-> FALSE, start |-> 0, frag |-> 0, fd |-> 0] @@
+  t2 :> [act |-> FALSE, start |-> 0, frag |-> 0, fd |-> 0] )
+/\ markers = {}
+/\ pending = <<>>
+/\ rd = 1
+/\ mrestarted = FALSE
+/\ lastC = 0
+/\ sh = <<{}, {}>>
+/\ sp = ( t1 :> [st |-> "none", touched |-> {}, wl |-> {}, stmt |-> FALSE] @@
+  t2 :> [st |-> "none", touched |-> {}, wl |-> {}, stmt |-> FALSE] )
+/\ reserved = 0
+/\ mlog = <<>>
+/\ tq = <<>>
+/\ committed = 0
+/\ hr = <<0, 0>>
+/\ crashes = 0
+/\ hs = 0
+/\ prevCommit = 0
+/\ mvcc = (t1 :> FALSE @@ t2 :> FALSE)
+/\ hw = <<0, 0>>
+/\ mdone = FALSE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ started = (t1 :> FALSE @@ t2 :> FALSE)
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ mphase = (t1 :> "active" @@ t2 :> "active")
+/\ wl = (t1 :> {} @@ t2 :> {})
+/\ ring = <<>>
+/\ touched = (t1 :> {} @@ t2 :> {})
+/\ xh = <<None, None>>
+
+State 2: <Next line 636, col 6 to line 636, col 34 of module WritesetE2E>
+/\ storedC = 0
+/\ nops = (t1 :> 1 @@ t2 :> 0)
+/\ storedR = 1
+/\ pubRem = (t1 :> {} @@ t2 :> {})
+/\ frontier = 1000
+/\ wseq = (1 :> <<>> @@ 2 :> <<>> @@ 9 :> <<>>)
+/\ stmt = (t1 :> FALSE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ ovf = (t1 :> FALSE @@ t2 :> FALSE)
+/\ slot = ( t1 :> [act |-> FALSE, start |-> 0, frag |-> 0, fd |-> 0] @@
+  t2 :> [act |-> FALSE, start |-> 0, frag |-> 0, fd |-> 0] )
+/\ markers = {}
+/\ pending = <<>>
+/\ rd = 1
+/\ mrestarted = FALSE
+/\ lastC = 0
+/\ sh = <<{t1}, {}>>
+/\ sp = ( t1 :> [st |-> "none", touched |-> {}, wl |-> {}, stmt |-> FALSE] @@
+  t2 :> [st |-> "none", touched |-> {}, wl |-> {}, stmt |-> FALSE] )
+/\ reserved = 0
+/\ mlog = <<[k |-> "X", stmt |-> FALSE, t |-> t1, dep |-> 0, keys |-> {}]>>
+/\ tq = <<>>
+/\ committed = 0
+/\ hr = <<0, 0>>
+/\ crashes = 0
+/\ hs = 0
+/\ prevCommit = 0
+/\ mvcc = (t1 :> FALSE @@ t2 :> FALSE)
+/\ hw = <<0, 0>>
+/\ mdone = FALSE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ started = (t1 :> TRUE @@ t2 :> FALSE)
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ mphase = (t1 :> "active" @@ t2 :> "active")
+/\ wl = (t1 :> {<<1, 1, "R">>} @@ t2 :> {})
+/\ ring = <<>>
+/\ touched = (t1 :> {<<1, "R">>} @@ t2 :> {})
+/\ xh = <<None, None>>
+
+State 3: <Next line 636, col 6 to line 636, col 34 of module WritesetE2E>
+/\ storedC = 0
+/\ nops = (t1 :> 1 @@ t2 :> 1)
+/\ storedR = 1
+/\ pubRem = (t1 :> {} @@ t2 :> {})
+/\ frontier = 1000
+/\ wseq = (1 :> <<>> @@ 2 :> <<>> @@ 9 :> <<>>)
+/\ stmt = (t1 :> FALSE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ ovf = (t1 :> FALSE @@ t2 :> FALSE)
+/\ slot = ( t1 :> [act |-> FALSE, start |-> 0, frag |-> 0, fd |-> 0] @@
+  t2 :> [act |-> FALSE, start |-> 0, frag |-> 0, fd |-> 0] )
+/\ markers = {}
+/\ pending = <<>>
+/\ rd = 1
+/\ mrestarted = FALSE
+/\ lastC = 0
+/\ sh = <<{t1, t2}, {}>>
+/\ sp = ( t1 :> [st |-> "none", touched |-> {}, wl |-> {}, stmt |-> FALSE] @@
+  t2 :> [st |-> "none", touched |-> {}, wl |-> {}, stmt |-> FALSE] )
+/\ reserved = 0
+/\ mlog = << [k |-> "X", stmt |-> FALSE, t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "X", stmt |-> FALSE, t |-> t2, dep |-> 0, keys |-> {}] >>
+/\ tq = <<>>
+/\ committed = 0
+/\ hr = <<0, 0>>
+/\ crashes = 0
+/\ hs = 0
+/\ prevCommit = 0
+/\ mvcc = (t1 :> FALSE @@ t2 :> FALSE)
+/\ hw = <<0, 0>>
+/\ mdone = FALSE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ started = (t1 :> TRUE @@ t2 :> TRUE)
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ mphase = (t1 :> "active" @@ t2 :> "active")
+/\ wl = (t1 :> {<<1, 1, "R">>} @@ t2 :> {<<1, 1, "R">>})
+/\ ring = <<>>
+/\ touched = (t1 :> {<<1, "R">>} @@ t2 :> {<<1, "R">>})
+/\ xh = <<None, None>>
+
+State 4: <Next line 636, col 6 to line 636, col 34 of module WritesetE2E>
+/\ storedC = 0
+/\ nops = (t1 :> 2 @@ t2 :> 1)
+/\ storedR = 1
+/\ pubRem = (t1 :> {} @@ t2 :> {})
+/\ frontier = 1000
+/\ wseq = (1 :> <<>> @@ 2 :> <<<<t1, 0>>>> @@ 9 :> <<>>)
+/\ stmt = (t1 :> TRUE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ ovf = (t1 :> TRUE @@ t2 :> FALSE)
+/\ slot = ( t1 :> [act |-> FALSE, start |-> 0, frag |-> 0, fd |-> 0] @@
+  t2 :> [act |-> FALSE, start |-> 0, frag |-> 0, fd |-> 0] )
+/\ markers = {}
+/\ pending = <<>>
+/\ rd = 1
+/\ mrestarted = FALSE
+/\ lastC = 0
+/\ sh = <<{t1, t2}, {}>>
+/\ sp = ( t1 :> [st |-> "none", touched |-> {}, wl |-> {}, stmt |-> FALSE] @@
+  t2 :> [st |-> "none", touched |-> {}, wl |-> {}, stmt |-> FALSE] )
+/\ reserved = 0
+/\ mlog = << [k |-> "X", stmt |-> FALSE, t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "X", stmt |-> FALSE, t |-> t2, dep |-> 0, keys |-> {}] >>
+/\ tq = <<>>
+/\ committed = 0
+/\ hr = <<0, 0>>
+/\ crashes = 0
+/\ hs = 0
+/\ prevCommit = 0
+/\ mvcc = (t1 :> FALSE @@ t2 :> FALSE)
+/\ hw = <<0, 0>>
+/\ mdone = FALSE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ started = (t1 :> TRUE @@ t2 :> TRUE)
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ mphase = (t1 :> "active" @@ t2 :> "active")
+/\ wl = (t1 :> {} @@ t2 :> {<<1, 1, "R">>})
+/\ ring = <<>>
+/\ touched = (t1 :> {<<1, "R">>, <<2, "W">>} @@ t2 :> {<<1, "R">>})
+/\ xh = <<None, t1>>
+
+State 5: <Next line 636, col 6 to line 636, col 34 of module WritesetE2E>
+/\ storedC = 0
+/\ nops = (t1 :> 2 @@ t2 :> 1)
+/\ storedR = 1
+/\ pubRem = (t1 :> {} @@ t2 :> {})
+/\ frontier = 1000
+/\ wseq = (1 :> <<>> @@ 2 :> <<<<t1, 0>>>> @@ 9 :> <<>>)
+/\ stmt = (t1 :> TRUE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ ovf = (t1 :> TRUE @@ t2 :> FALSE)
+/\ slot = ( t1 :> [act |-> FALSE, start |-> 0, frag |-> 0, fd |-> 0] @@
+  t2 :> [act |-> FALSE, start |-> 0, frag |-> 0, fd |-> 0] )
+/\ markers = {}
+/\ pending = <<>>
+/\ rd = 1
+/\ mrestarted = FALSE
+/\ lastC = 0
+/\ sh = <<{t1, t2}, {}>>
+/\ sp = ( t1 :> [st |-> "none", touched |-> {}, wl |-> {}, stmt |-> FALSE] @@
+  t2 :> [st |-> "none", touched |-> {}, wl |-> {}, stmt |-> FALSE] )
+/\ reserved = 0
+/\ mlog = << [k |-> "X", stmt |-> FALSE, t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "X", stmt |-> FALSE, t |-> t2, dep |-> 0, keys |-> {}] >>
+/\ tq = <<>>
+/\ committed = 0
+/\ hr = <<0, 0>>
+/\ crashes = 0
+/\ hs = 0
+/\ prevCommit = 0
+/\ mvcc = (t1 :> TRUE @@ t2 :> FALSE)
+/\ hw = <<0, 0>>
+/\ mdone = FALSE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ started = (t1 :> TRUE @@ t2 :> TRUE)
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ mphase = (t1 :> "active" @@ t2 :> "active")
+/\ wl = (t1 :> {} @@ t2 :> {<<1, 1, "R">>})
+/\ ring = <<>>
+/\ touched = (t1 :> {<<1, "R">>, <<2, "W">>} @@ t2 :> {<<1, "R">>})
+/\ xh = <<None, t1>>
+
+State 6: <Next line 636, col 6 to line 636, col 34 of module WritesetE2E>
+/\ storedC = 0
+/\ nops = (t1 :> 2 @@ t2 :> 1)
+/\ storedR = 1
+/\ pubRem = (t1 :> {} @@ t2 :> {})
+/\ frontier = 1000
+/\ wseq = (1 :> <<>> @@ 2 :> <<<<t1, 0>>>> @@ 9 :> <<>>)
+/\ stmt = (t1 :> TRUE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ ovf = (t1 :> TRUE @@ t2 :> FALSE)
+/\ slot = ( t1 :> [act |-> FALSE, start |-> 0, frag |-> 0, fd |-> 0] @@
+  t2 :> [act |-> FALSE, start |-> 0, frag |-> 0, fd |-> 0] )
+/\ markers = {}
+/\ pending = <<>>
+/\ rd = 1
+/\ mrestarted = FALSE
+/\ lastC = 0
+/\ sh = <<{t1, t2}, {}>>
+/\ sp = ( t1 :> [st |-> "none", touched |-> {}, wl |-> {}, stmt |-> FALSE] @@
+  t2 :> [st |-> "none", touched |-> {}, wl |-> {}, stmt |-> FALSE] )
+/\ reserved = 0
+/\ mlog = << [k |-> "X", stmt |-> FALSE, t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "X", stmt |-> FALSE, t |-> t2, dep |-> 0, keys |-> {}],
+   [ k |-> "C",
+     stmt |-> TRUE,
+     t |-> t1,
+     dep |-> 0,
+     keys |-> {<<1, "R">>, <<2, "W">>} ] >>
+/\ tq = <<>>
+/\ committed = 0
+/\ hr = <<0, 0>>
+/\ crashes = 0
+/\ hs = 0
+/\ prevCommit = 3
+/\ mvcc = (t1 :> TRUE @@ t2 :> FALSE)
+/\ hw = <<0, 0>>
+/\ mdone = FALSE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ started = (t1 :> TRUE @@ t2 :> TRUE)
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ mphase = (t1 :> "logged" @@ t2 :> "active")
+/\ wl = (t1 :> {} @@ t2 :> {<<1, 1, "R">>})
+/\ ring = <<>>
+/\ touched = (t1 :> {<<1, "R">>, <<2, "W">>} @@ t2 :> {<<1, "R">>})
+/\ xh = <<None, t1>>
+
+State 7: <Next line 636, col 6 to line 636, col 34 of module WritesetE2E>
+/\ storedC = 0
+/\ nops = (t1 :> 2 @@ t2 :> 1)
+/\ storedR = 1
+/\ pubRem = (t1 :> {} @@ t2 :> {})
+/\ frontier = 1000
+/\ wseq = (1 :> <<>> @@ 2 :> <<<<t1, 0>>>> @@ 9 :> <<>>)
+/\ stmt = (t1 :> TRUE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ ovf = (t1 :> TRUE @@ t2 :> FALSE)
+/\ slot = ( t1 :> [act |-> FALSE, start |-> 0, frag |-> 0, fd |-> 0] @@
+  t2 :> [act |-> FALSE, start |-> 0, frag |-> 0, fd |-> 0] )
+/\ markers = {}
+/\ pending = <<>>
+/\ rd = 1
+/\ mrestarted = FALSE
+/\ lastC = 0
+/\ sh = <<{t1, t2}, {}>>
+/\ sp = ( t1 :> [st |-> "none", touched |-> {}, wl |-> {}, stmt |-> FALSE] @@
+  t2 :> [st |-> "none", touched |-> {}, wl |-> {}, stmt |-> FALSE] )
+/\ reserved = 0
+/\ mlog = << [k |-> "X", stmt |-> FALSE, t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "X", stmt |-> FALSE, t |-> t2, dep |-> 0, keys |-> {}],
+   [ k |-> "C",
+     stmt |-> TRUE,
+     t |-> t1,
+     dep |-> 0,
+     keys |-> {<<1, "R">>, <<2, "W">>} ] >>
+/\ tq = <<>>
+/\ committed = 0
+/\ hr = <<0, 0>>
+/\ crashes = 0
+/\ hs = 0
+/\ prevCommit = 3
+/\ mvcc = (t1 :> TRUE @@ t2 :> TRUE)
+/\ hw = <<0, 0>>
+/\ mdone = FALSE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ started = (t1 :> TRUE @@ t2 :> TRUE)
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ mphase = (t1 :> "logged" @@ t2 :> "active")
+/\ wl = (t1 :> {} @@ t2 :> {<<1, 1, "R">>})
+/\ ring = <<>>
+/\ touched = (t1 :> {<<1, "R">>, <<2, "W">>} @@ t2 :> {<<1, "R">>})
+/\ xh = <<None, t1>>
+
+State 8: <Next line 636, col 6 to line 636, col 34 of module WritesetE2E>
+/\ storedC = 0
+/\ nops = (t1 :> 2 @@ t2 :> 1)
+/\ storedR = 1
+/\ pubRem = (t1 :> {} @@ t2 :> {})
+/\ frontier = 1000
+/\ wseq = (1 :> <<>> @@ 2 :> <<<<t1, 0>>>> @@ 9 :> <<>>)
+/\ stmt = (t1 :> TRUE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ ovf = (t1 :> TRUE @@ t2 :> FALSE)
+/\ slot = ( t1 :> [act |-> FALSE, start |-> 0, frag |-> 0, fd |-> 0] @@
+  t2 :> [act |-> FALSE, start |-> 0, frag |-> 0, fd |-> 0] )
+/\ markers = {}
+/\ pending = <<>>
+/\ rd = 1
+/\ mrestarted = FALSE
+/\ lastC = 0
+/\ sh = <<{t1, t2}, {}>>
+/\ sp = ( t1 :> [st |-> "none", touched |-> {}, wl |-> {}, stmt |-> FALSE] @@
+  t2 :> [st |-> "none", touched |-> {}, wl |-> {}, stmt |-> FALSE] )
+/\ reserved = 0
+/\ mlog = << [k |-> "X", stmt |-> FALSE, t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "X", stmt |-> FALSE, t |-> t2, dep |-> 0, keys |-> {}],
+   [ k |-> "C",
+     stmt |-> TRUE,
+     t |-> t1,
+     dep |-> 0,
+     keys |-> {<<1, "R">>, <<2, "W">>} ],
+   [k |-> "C", stmt |-> FALSE, t |-> t2, dep |-> 0, keys |-> {<<1, "R">>}] >>
+/\ tq = <<>>
+/\ committed = 0
+/\ hr = <<0, 0>>
+/\ crashes = 0
+/\ hs = 0
+/\ prevCommit = 4
+/\ mvcc = (t1 :> TRUE @@ t2 :> TRUE)
+/\ hw = <<0, 0>>
+/\ mdone = FALSE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ started = (t1 :> TRUE @@ t2 :> TRUE)
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ mphase = (t1 :> "logged" @@ t2 :> "logged")
+/\ wl = (t1 :> {} @@ t2 :> {<<1, 1, "R">>})
+/\ ring = <<>>
+/\ touched = (t1 :> {<<1, "R">>, <<2, "W">>} @@ t2 :> {<<1, "R">>})
+/\ xh = <<None, t1>>
+
+36702 states generated, 24161 distinct states found, 16472 states left on queue.
+The depth of the complete state graph search is 9.
+The average outdegree of the complete state graph is 3 (minimum is 0, the maximum 17 and the 95th percentile is 8).
+Finished in 02s at (2026-11-07 11:58:43)
+END 2026-11-07 11:58:44 exit=0

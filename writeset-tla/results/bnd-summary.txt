@@ -1,0 +1,29 @@
+2026-11-08 13:26:53 s1_bug | FixFragStart="none" MaxCD=0 MaxItems=5 | exh | distinct=8,326 depth=12 | 1s | meta 0MB | VIOLATION RequiredStored
+2026-11-08 13:29:43 s1_fix |  | exh | distinct=4194892 depth=62 | 150s | meta 352MB | OK
+2026-11-08 13:29:59 s1_none | 'FixFragStart="none"' INV=NoDuplicate,OnlyUnits,UnitAtomic,MarkerWithData,ConflictOrder,PrefixStored,QuietAllApplied | exh | distinct=77555 depth=17 | 5s | meta 0MB | VIOLATION QuietAllApplied
+2026-11-08 13:29:59 s1_short | 'FixFragStart="short"' INV=NoDuplicate,OnlyUnits,UnitAtomic,MarkerWithData,ConflictOrder,PrefixStored,QuietAllApplied | exh | distinct=128466 depth=19 | 5s | meta 0MB | VIOLATION QuietAllApplied
+2026-11-08 13:30:04 s1_short_req | 'FixFragStart="short"' INV=RequiredStored | exh | distinct=24887 depth=14 | 5s | meta 0MB | VIOLATION RequiredStored
+2026-11-08 13:30:04 m_reqNoTasks | 'Mut="reqNoTasks"' INV=NoDuplicate,OnlyUnits,UnitAtomic,MarkerWithData,ConflictOrder,PrefixStored,QuietAllApplied | exh | distinct=22973 depth=15 | 5s | meta 0MB | VIOLATION QuietAllApplied
+2026-11-08 13:30:09 san_long | INV=NoLongFragment | exh | distinct=4064 depth=11 | 5s | meta 0MB | VIOLATION NoLongFragment
+2026-11-08 13:37:44 s1_inter | Interleave=TRUE | exh | distinct=9554350 depth=62 | 411s | meta 491MB | OK
+2026-11-08 13:52:23 s1_crash2_inter | Interleave=TRUE MaxCrash=2 | exh  | distinct=20720740 queue=0 depth=63 | 840s | meta 674MB | OK
+2026-11-08 13:59:44 s1_w1_inter | Interleave=TRUE NumWorkers=1 | exh  | distinct=9014566 queue=0 depth=56 | 420s | meta 440MB | OK
+2026-11-08 14:06:57 s2_base | FailModel=TRUE AllowIgnoreFail=TRUE AllowFlushRestart=TRUE AllowCommitFail=TRUE MaxErr=2 | exh | distinct=68,436,997 depth= | 1702s | meta 2801MB | TIME_STOP
+2026-11-08 14:07:07 m_noAbortOnError | FailModel=TRUE AllowIgnoreFail=TRUE AllowFlushRestart=TRUE AllowCommitFail=TRUE MaxErr=2 MaxD=1 MaxCD=1 'Mut="noAbortOnError"' | exh | distinct=31852 depth=18 | 5s | meta 0MB | VIOLATION OnlyUnits
+2026-11-08 14:07:12 s2_sar | FailModel=TRUE AllowServerAbortRetry=TRUE MaxErr=1 MaxD=1 MaxCD=2 | exh | distinct=16807 depth=16 | 5s | meta 0MB | VIOLATION UnitAtomic
+2026-11-08 14:07:17 san_promote | Failover=TRUE INV=NeverPromote | exh | distinct=311 depth=8 | 5s | meta 0MB | VIOLATION NeverPromote
+2026-11-08 14:07:22 m_doneNoInflight | Failover=TRUE 'Mut="doneNoInflight"' INV=PromoteComplete | exh | distinct=3306 depth=10 | 5s | meta 0MB | VIOLATION PromoteComplete
+2026-11-08 14:07:27 s3_none | Failover=TRUE 'FixFragStart="none"' INV=PromoteComplete | exh | distinct=148261 depth=18 | 5s | meta 0MB | VIOLATION PromoteComplete
+2026-11-08 14:21:55 s1_k2cd2 | K=2 MaxCD=2 | exh  | distinct=22404440 queue=0 depth=66 | 841s | meta 878MB | OK
+2026-11-08 14:27:15 sim1_t4_none | T=4 K=2 MaxD=3 MaxS=2 MaxCD=2 MaxItems=2 Interleave=TRUE NumWorkers=3 QCap=2 MaxCrash=3 'FixFragStart="none"' SYM=0 INV=NoDuplicate,OnlyUnits,UnitAtomic,MarkerWithData,ConflictOrder,PrefixStored,QuietAllApplied | sim 600 7 300 | checked=33637727 seed=7 depth=300 | 300s | meta 0MB | VIOLATION PrefixStored
+2026-11-08 15:27:36 sim1_t4 | T=4 K=2 MaxD=3 MaxS=2 MaxCD=2 MaxItems=2 Interleave=TRUE NumWorkers=3 QCap=2 MaxCrash=3 SYM=0 | sim 3600 11 300 | checked=323949881 seed=11 depth=300 | 3600s | meta 0MB | OK_SIM
+2026-11-08 16:05:01 s1_s2_inter_c2 | MaxD=3 MaxS=2 MaxCD=2 Interleave=TRUE MaxCrash=2 | exh  | distinct=120,509,370 queue=30,332,967 depth= | 2221s | meta 13824MB | MANUAL_STOP_FOR_SHORT_RUNS
+2026-11-08 16:08:22 s3_base | Failover=TRUE | exh  | distinct=5565521 queue=0 depth=63 | 180s | meta 329MB | OK
+2026-11-08 16:11:43 s3_doneNoPending | Failover=TRUE 'Mut="doneNoPending"' | exh  | distinct=5565521 queue=0 depth=63 | 180s | meta 354MB | OK
+2026-11-08 16:17:03 s2_small | FailModel=TRUE AllowIgnoreFail=TRUE AllowFlushRestart=TRUE AllowCommitFail=TRUE MaxErr=2 MaxD=1 MaxCD=1 | exh  | distinct=9188931 queue=0 depth=84 | 300s | meta 425MB | OK
+2026-11-08 16:19:23 s3_fail | Failover=TRUE FailModel=TRUE AllowIgnoreFail=TRUE AllowFlushRestart=TRUE AllowCommitFail=TRUE MaxErr=1 MaxD=1 MaxCD=1 | exh  | distinct=3345503 queue=0 depth=70 | 120s | meta 328MB | OK
+2026-11-08 16:34:44 s3_inter | Failover=TRUE Interleave=TRUE MaxCrash=2 | exh  | distinct=23672103 queue=0 depth=64 | 901s | meta 861MB | OK
+2026-11-08 17:35:05 sim2_t4 | T=4 K=2 MaxD=2 MaxS=2 MaxCD=2 MaxItems=2 Interleave=TRUE NumWorkers=3 MaxCrash=3 FailModel=TRUE AllowIgnoreFail=TRUE AllowFlushRestart=TRUE AllowCommitFail=TRUE MaxErr=3 Failover=TRUE SYM=0 | sim 3600 17 400 | checked=753587761 seed=17 depth=400 | 3600s | meta 0MB | OK_SIM
+2026-11-08 18:35:30 sim1_t6 | T=6 K=3 MaxD=3 MaxS=2 MaxCD=3 MaxItems=2 Interleave=TRUE NumWorkers=4 QCap=2 MaxCrash=4 SYM=0 | sim 3600 13 500 | checked=167105559 seed=13 depth=500 | 3601s | meta 0MB | OK_SIM
+2026-11-08 18:51:53 s2_mid | FailModel=TRUE AllowIgnoreFail=TRUE AllowFlushRestart=TRUE AllowCommitFail=TRUE MaxErr=1 | exh  | distinct=34444676 queue=0 depth=79 | 960s | meta 1080MB | OK
+2026-11-08 19:56:15 s2_base | FailModel=TRUE AllowIgnoreFail=TRUE AllowFlushRestart=TRUE AllowCommitFail=TRUE MaxErr=2 | exh  | distinct=134257018 queue=0 depth=94 | 3841s | meta 20188MB | OK

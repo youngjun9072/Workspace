@@ -1,0 +1,77 @@
+START 2026-11-08 17:35:29 sim1_t6 mode=sim 3600 13 500
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running Random Simulation with seed 13 with 16 workers on 80 cores with 14564MB heap and 64MB offheap memory [pid: 1399295] (Linux 5.14.0-570.30.1.el9_6.x86_64 amd64, Eclipse Adoptium 17.0.21 x86_64).
+Parsing file /home/youngjun/Workspace/Obsidian/Github/writeset-tla/WritesetBoundary.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/TLC.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module WritesetBoundary
+Starting... (2026-11-08 17:35:29)
+Computed 1 initial states...
+Progress: 2676008 states checked.
+Progress: 5494582 states checked.
+Progress: 8196308 states checked.
+Progress: 10938965 states checked.
+Progress: 13698589 states checked.
+Progress: 16481442 states checked.
+Progress: 19293898 states checked.
+Progress: 22121790 states checked.
+Progress: 24946917 states checked.
+Progress: 27801505 states checked.
+Progress: 30591428 states checked.
+Progress: 33394329 states checked.
+Progress: 36147061 states checked.
+Progress: 38856173 states checked.
+Progress: 41616440 states checked.
+Progress: 44403327 states checked.
+Progress: 47149510 states checked.
+Progress: 49960796 states checked.
+Progress: 52741744 states checked.
+Progress: 55494226 states checked.
+Progress: 58276587 states checked.
+Progress: 61130863 states checked.
+Progress: 63918491 states checked.
+Progress: 66647790 states checked.
+Progress: 69482275 states checked.
+Progress: 72272839 states checked.
+Progress: 75082974 states checked.
+Progress: 77806082 states checked.
+Progress: 80584186 states checked.
+Progress: 83405536 states checked.
+Progress: 86220506 states checked.
+Progress: 88994491 states checked.
+Progress: 91777881 states checked.
+Progress: 94591036 states checked.
+Progress: 97364980 states checked.
+Progress: 100215953 states checked.
+Progress: 103010955 states checked.
+Progress: 105794133 states checked.
+Progress: 108560907 states checked.
+Progress: 111372708 states checked.
+Progress: 114199743 states checked.
+Progress: 116972662 states checked.
+Progress: 119726669 states checked.
+Progress: 122505965 states checked.
+Progress: 125227437 states checked.
+Progress: 127977692 states checked.
+Progress: 130794500 states checked.
+Progress: 133565323 states checked.
+Progress: 136379570 states checked.
+Progress: 139178980 states checked.
+Progress: 142031229 states checked.
+Progress: 144777903 states checked.
+Progress: 147592275 states checked.
+Progress: 150352099 states checked.
+Progress: 153130503 states checked.
+Progress: 155948463 states checked.
+Progress: 158735403 states checked.
+Progress: 161500094 states checked.
+Progress: 164319387 states checked.
+Progress: 167105559 states checked.
+END 2026-11-08 18:35:30 stop=SIM_TIME_END maxmeta_kb=0
+LAST_PROGRESS Progress: 167105559 states checked.

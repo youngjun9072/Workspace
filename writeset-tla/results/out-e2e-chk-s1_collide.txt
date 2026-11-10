@@ -1,0 +1,28 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 93 and seed 1657335484802705547 with 16 workers on 80 cores with 14564MB heap and 64MB offheap memory [pid: 1237387] (Linux 5.14.0-570.30.1.el9_6.x86_64 amd64, Eclipse Adoptium 17.0.21 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/youngjun/Workspace/Obsidian/Github/writeset-tla/WritesetE2E.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/TLC.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module WritesetE2E
+Starting... (2026-11-07 22:57:53)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-07 22:57:53.
+Progress(13) at 2026-11-07 22:57:56: 323,108 states generated (323,108 s/min), 189,236 distinct states found (189,236 ds/min), 70,999 states left on queue.
+Progress(31) at 2026-11-07 22:58:56: 8,364,775 states generated (8,041,667 s/min), 2,808,997 distinct states found (2,619,761 ds/min), 234,928 states left on queue.
+Progress(39) at 2026-11-07 22:59:56: 15,284,905 states generated (6,920,130 s/min), 4,866,048 distinct states found (2,057,051 ds/min), 230,393 states left on queue.
+Progress(48) at 2026-11-07 23:00:56: 21,391,912 states generated (6,107,007 s/min), 6,513,709 distinct states found (1,647,661 ds/min), 90,851 states left on queue.
+Model checking completed. No error has been found.
+  Estimates of the probability that TLC did not check all reachable states
+  because two distinct states had the same fingerprint:
+  calculated (optimistic):  val = 6.1E-6
+  based on the actual fingerprints:  val = 1.1E-5
+23134104 states generated, 6933720 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 74.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 16 and the 95th percentile is 3).
+Finished in 03min 22s at (2026-11-07 23:01:14)

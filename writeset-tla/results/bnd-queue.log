@@ -1,0 +1,32 @@
+2026-11-08 13:38:23 driver start pid=1353681
+2026-11-08 13:38:23 started s1_crash2_inter exh (worker pid 1353695)
+2026-11-08 13:52:23 finished s1_crash2_inter: OK
+2026-11-08 13:52:44 started s1_w1_inter exh (worker pid 1358161)
+2026-11-08 13:59:44 finished s1_w1_inter: OK
+2026-11-08 14:00:04 started s1_s2 exh (worker pid 1360152)
+2026-11-08 14:07:54 started s1_k2cd2 exh (worker pid 1363047)
+2026-11-08 14:21:55 finished s1_k2cd2: OK
+2026-11-08 14:22:15 started sim1_t4_none sim 600 7 300 (worker pid 1366723)
+2026-11-08 14:27:15 finished sim1_t4_none: VIOLATION PrefixStored
+2026-11-08 14:27:36 started sim1_t4 sim 3600 11 300 (worker pid 1367598)
+2026-11-08 15:27:36 finished sim1_t4: OK_SIM
+2026-11-08 15:28:00 started s1_s2_inter_c2 exh (worker pid 1375598)
+2026-11-08 16:05:03 finished s1_s2_inter_c2: MANUAL_STOP_FOR_SHORT_RUNS
+2026-11-08 16:05:22 started s3_base exh (worker pid 1384696)
+2026-11-08 16:08:22 finished s3_base: OK
+2026-11-08 16:08:43 started s3_doneNoPending exh (worker pid 1385405)
+2026-11-08 16:11:43 finished s3_doneNoPending: OK
+2026-11-08 16:12:03 started s2_small exh (worker pid 1386036)
+2026-11-08 16:17:03 finished s2_small: OK
+2026-11-08 16:17:23 started s3_fail exh (worker pid 1387053)
+2026-11-08 16:19:23 finished s3_fail: OK
+2026-11-08 16:19:43 started s3_inter exh (worker pid 1387585)
+2026-11-08 16:34:44 finished s3_inter: OK
+2026-11-08 16:35:05 started sim2_t4 sim 3600 17 400 (worker pid 1390477)
+2026-11-08 17:35:05 finished sim2_t4: OK_SIM
+2026-11-08 17:35:29 started sim1_t6 sim 3600 13 500 (worker pid 1399285)
+2026-11-08 18:35:30 finished sim1_t6: OK_SIM
+2026-11-08 18:35:53 started s2_mid exh (worker pid 1408393)
+2026-11-08 18:51:53 finished s2_mid: OK
+2026-11-08 18:52:14 started s2_base exh (worker pid 1410926)
+2026-11-08 19:56:15 finished s2_base: OK

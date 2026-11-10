@@ -1,0 +1,32 @@
+START 2026-11-07 17:16:14 e1_t3k2w2 
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 74 and seed 510371937947929313 with 16 workers on 80 cores with 14564MB heap and 64MB offheap memory [pid: 1188044] (Linux 5.14.0-570.30.1.el9_6.x86_64 amd64, Eclipse Adoptium 17.0.21 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/youngjun/Workspace/Obsidian/Github/writeset-tla/WritesetE2E.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/TLC.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module WritesetE2E
+Starting... (2026-11-07 17:16:14)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-07 17:16:14.
+Progress(13) at 2026-11-07 17:16:18: 161,757 states generated (161,757 s/min), 100,339 distinct states found (100,339 ds/min), 35,502 states left on queue.
+Progress(34) at 2026-11-07 17:17:18: 8,260,604 states generated (8,098,847 s/min), 3,120,618 distinct states found (3,020,279 ds/min), 387,555 states left on queue.
+Progress(40) at 2026-11-07 17:18:18: 15,625,951 states generated (7,365,347 s/min), 5,546,500 distinct states found (2,425,882 ds/min), 491,657 states left on queue.
+Progress(44) at 2026-11-07 17:19:18: 22,555,764 states generated (6,929,813 s/min), 7,714,049 distinct states found (2,167,549 ds/min), 495,809 states left on queue.
+Progress(48) at 2026-11-07 17:20:18: 28,931,086 states generated (6,375,322 s/min), 9,523,066 distinct states found (1,809,017 ds/min), 352,891 states left on queue.
+Progress(54) at 2026-11-07 17:21:18: 35,018,822 states generated (6,087,736 s/min), 11,155,358 distinct states found (1,632,292 ds/min), 171,153 states left on queue.
+Model checking completed. No error has been found.
+  Estimates of the probability that TLC did not check all reachable states
+  because two distinct states had the same fingerprint:
+  calculated (optimistic):  val = 1.6E-5
+  based on the actual fingerprints:  val = 8.6E-6
+37614229 states generated, 11732168 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 78.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 10 and the 95th percentile is 3).
+Finished in 05min 32s at (2026-11-07 17:21:46)
+END 2026-11-07 17:21:47 exit=0

@@ -1,0 +1,225 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 99 and seed 6718604006425886186 with 8 workers on 80 cores with 14564MB heap and 64MB offheap memory [pid: 1004579] (Linux 5.14.0-570.30.1.el9_6.x86_64 amd64, Eclipse Adoptium 17.0.21 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/youngjun/Workspace/Obsidian/Github/writeset-tla/SlaveCoordinator.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/TLC.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module SlaveCoordinator
+Starting... (2026-11-06 19:36:56)
+Computing initial states...
+Computed 2 initial states...
+Computed 4 initial states...
+Computed 8 initial states...
+Computed 16 initial states...
+Computed 32 initial states...
+Computed 64 initial states...
+Computed 128 initial states...
+Computed 256 initial states...
+Finished computing initial states: 474 distinct states generated at 2026-11-06 19:36:56.
+Error: Invariant RequiredStored is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ storedC = 0
+/\ storedR = 1
+/\ frontier = 1000
+/\ alive = <<TRUE, TRUE>>
+/\ log = << [t |-> t1, k |-> "D", keys |-> {}, lab |-> "ok"],
+   [t |-> t1, k |-> "S", keys |-> {}, lab |-> "ok"],
+   [t |-> t1, k |-> "A", keys |-> {}, lab |-> "ok"],
+   [t |-> t2, k |-> "D", keys |-> {}, lab |-> "ok"],
+   [t |-> t2, k |-> "C", keys |-> {k1}, lab |-> "ok"] >>
+/\ resq = <<>>
+/\ ovf = FALSE
+/\ db = <<>>
+/\ slot = ( t1 :>
+      [frag |-> 0, act |-> FALSE, start |-> 0, items |-> FALSE, fstart |-> 0] @@
+  t2 :>
+      [frag |-> 0, act |-> FALSE, start |-> 0, items |-> FALSE, fstart |-> 0] )
+/\ markers = {}
+/\ stop = FALSE
+/\ pending = <<>>
+/\ rd = 1
+/\ lastC = 0
+/\ errUsed = FALSE
+/\ tq = <<>>
+/\ committed = 0
+/\ crashes = 0
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<>>
+
+State 2: <ReadRecord line 204, col 3 to line 241, col 35 of module SlaveCoordinator>
+/\ storedC = 0
+/\ storedR = 1
+/\ frontier = 1000
+/\ alive = <<TRUE, TRUE>>
+/\ log = << [t |-> t1, k |-> "D", keys |-> {}, lab |-> "ok"],
+   [t |-> t1, k |-> "S", keys |-> {}, lab |-> "ok"],
+   [t |-> t1, k |-> "A", keys |-> {}, lab |-> "ok"],
+   [t |-> t2, k |-> "D", keys |-> {}, lab |-> "ok"],
+   [t |-> t2, k |-> "C", keys |-> {k1}, lab |-> "ok"] >>
+/\ resq = <<>>
+/\ ovf = FALSE
+/\ db = <<>>
+/\ slot = ( t1 :> [frag |-> 0, act |-> TRUE, start |-> 1, items |-> TRUE, fstart |-> 1] @@
+  t2 :>
+      [frag |-> 0, act |-> FALSE, start |-> 0, items |-> FALSE, fstart |-> 0] )
+/\ markers = {}
+/\ stop = FALSE
+/\ pending = <<>>
+/\ rd = 2
+/\ lastC = 0
+/\ errUsed = FALSE
+/\ tq = <<>>
+/\ committed = 0
+/\ crashes = 0
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<>>
+
+State 3: <ReadRecord line 204, col 3 to line 241, col 35 of module SlaveCoordinator>
+/\ storedC = 0
+/\ storedR = 1
+/\ frontier = 0
+/\ alive = <<TRUE, TRUE>>
+/\ log = << [t |-> t1, k |-> "D", keys |-> {}, lab |-> "ok"],
+   [t |-> t1, k |-> "S", keys |-> {}, lab |-> "ok"],
+   [t |-> t1, k |-> "A", keys |-> {}, lab |-> "ok"],
+   [t |-> t2, k |-> "D", keys |-> {}, lab |-> "ok"],
+   [t |-> t2, k |-> "C", keys |-> {k1}, lab |-> "ok"] >>
+/\ resq = <<>>
+/\ ovf = FALSE
+/\ db = <<>>
+/\ slot = ( t1 :>
+      [frag |-> 2, act |-> TRUE, start |-> 1, items |-> FALSE, fstart |-> 0] @@
+  t2 :>
+      [frag |-> 0, act |-> FALSE, start |-> 0, items |-> FALSE, fstart |-> 0] )
+/\ markers = {}
+/\ stop = FALSE
+/\ pending = <<>>
+/\ rd = 3
+/\ lastC = 0
+/\ errUsed = FALSE
+/\ tq = << [ lsa |-> 2,
+     t |-> t1,
+     dep |-> 0,
+     start |-> 1,
+     items |-> TRUE,
+     kind |-> "S",
+     hasApply |-> TRUE ] >>
+/\ committed = 0
+/\ crashes = 0
+/\ infl = << [ task |->
+         [ lsa |-> 2,
+           t |-> t1,
+           dep |-> 0,
+           start |-> 1,
+           items |-> TRUE,
+           kind |-> "S",
+           hasApply |-> TRUE ],
+     res |-> "none" ] >>
+/\ reqLsa = 1
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<[lsa |-> 2, done |-> FALSE]>>
+
+State 4: <ReadRecord line 204, col 3 to line 241, col 35 of module SlaveCoordinator>
+/\ storedC = 0
+/\ storedR = 1
+/\ frontier = 0
+/\ alive = <<TRUE, TRUE>>
+/\ log = << [t |-> t1, k |-> "D", keys |-> {}, lab |-> "ok"],
+   [t |-> t1, k |-> "S", keys |-> {}, lab |-> "ok"],
+   [t |-> t1, k |-> "A", keys |-> {}, lab |-> "ok"],
+   [t |-> t2, k |-> "D", keys |-> {}, lab |-> "ok"],
+   [t |-> t2, k |-> "C", keys |-> {k1}, lab |-> "ok"] >>
+/\ resq = <<>>
+/\ ovf = FALSE
+/\ db = <<>>
+/\ slot = ( t1 :>
+      [frag |-> 2, act |-> FALSE, start |-> 0, items |-> FALSE, fstart |-> 0] @@
+  t2 :>
+      [frag |-> 0, act |-> FALSE, start |-> 0, items |-> FALSE, fstart |-> 0] )
+/\ markers = {}
+/\ stop = FALSE
+/\ pending = <<>>
+/\ rd = 4
+/\ lastC = 0
+/\ errUsed = FALSE
+/\ tq = << [ lsa |-> 2,
+     t |-> t1,
+     dep |-> 0,
+     start |-> 1,
+     items |-> TRUE,
+     kind |-> "S",
+     hasApply |-> TRUE ] >>
+/\ committed = 0
+/\ crashes = 0
+/\ infl = << [ task |->
+         [ lsa |-> 2,
+           t |-> t1,
+           dep |-> 0,
+           start |-> 1,
+           items |-> TRUE,
+           kind |-> "S",
+           hasApply |-> TRUE ],
+     res |-> "none" ] >>
+/\ reqLsa = 1
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<[lsa |-> 2, done |-> FALSE]>>
+
+State 5: <LogCommit line 304, col 3 to line 313, col 40 of module SlaveCoordinator>
+/\ storedC = 0
+/\ storedR = 4
+/\ frontier = 0
+/\ alive = <<TRUE, TRUE>>
+/\ log = << [t |-> t1, k |-> "D", keys |-> {}, lab |-> "ok"],
+   [t |-> t1, k |-> "S", keys |-> {}, lab |-> "ok"],
+   [t |-> t1, k |-> "A", keys |-> {}, lab |-> "ok"],
+   [t |-> t2, k |-> "D", keys |-> {}, lab |-> "ok"],
+   [t |-> t2, k |-> "C", keys |-> {k1}, lab |-> "ok"] >>
+/\ resq = <<>>
+/\ ovf = FALSE
+/\ db = <<>>
+/\ slot = ( t1 :>
+      [frag |-> 2, act |-> FALSE, start |-> 0, items |-> FALSE, fstart |-> 0] @@
+  t2 :>
+      [frag |-> 0, act |-> FALSE, start |-> 0, items |-> FALSE, fstart |-> 0] )
+/\ markers = {}
+/\ stop = FALSE
+/\ pending = <<>>
+/\ rd = 4
+/\ lastC = 0
+/\ errUsed = FALSE
+/\ tq = << [ lsa |-> 2,
+     t |-> t1,
+     dep |-> 0,
+     start |-> 1,
+     items |-> TRUE,
+     kind |-> "S",
+     hasApply |-> TRUE ] >>
+/\ committed = 0
+/\ crashes = 0
+/\ infl = << [ task |->
+         [ lsa |-> 2,
+           t |-> t1,
+           dep |-> 0,
+           start |-> 1,
+           items |-> TRUE,
+           kind |-> "S",
+           hasApply |-> TRUE ],
+     res |-> "none" ] >>
+/\ reqLsa = 4
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<[lsa |-> 2, done |-> FALSE]>>
+
+8245 states generated, 5942 distinct states found, 2174 states left on queue.
+The depth of the complete state graph search is 5.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 4 and the 95th percentile is 3).
+Finished in 02s at (2026-11-06 19:36:58)

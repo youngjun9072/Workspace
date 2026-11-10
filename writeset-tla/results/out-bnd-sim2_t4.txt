@@ -1,0 +1,77 @@
+START 2026-11-08 16:35:05 sim2_t4 mode=sim 3600 17 400
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running Random Simulation with seed 17 with 16 workers on 80 cores with 14564MB heap and 64MB offheap memory [pid: 1390487] (Linux 5.14.0-570.30.1.el9_6.x86_64 amd64, Eclipse Adoptium 17.0.21 x86_64).
+Parsing file /home/youngjun/Workspace/Obsidian/Github/writeset-tla/WritesetBoundary.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/TLC.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module WritesetBoundary
+Starting... (2026-11-08 16:35:05)
+Computed 1 initial states...
+Progress: 11706848 states checked.
+Progress: 24163601 states checked.
+Progress: 36478476 states checked.
+Progress: 49088375 states checked.
+Progress: 61752993 states checked.
+Progress: 74418298 states checked.
+Progress: 86456771 states checked.
+Progress: 99063528 states checked.
+Progress: 111472930 states checked.
+Progress: 123894924 states checked.
+Progress: 136487894 states checked.
+Progress: 149084808 states checked.
+Progress: 161751923 states checked.
+Progress: 174416651 states checked.
+Progress: 186805449 states checked.
+Progress: 199452284 states checked.
+Progress: 211916384 states checked.
+Progress: 224504835 states checked.
+Progress: 237160998 states checked.
+Progress: 249796775 states checked.
+Progress: 262375458 states checked.
+Progress: 275065705 states checked.
+Progress: 287891683 states checked.
+Progress: 300542065 states checked.
+Progress: 313233988 states checked.
+Progress: 325951512 states checked.
+Progress: 338691369 states checked.
+Progress: 351194227 states checked.
+Progress: 363697507 states checked.
+Progress: 376432671 states checked.
+Progress: 388664541 states checked.
+Progress: 401347933 states checked.
+Progress: 414074602 states checked.
+Progress: 426684067 states checked.
+Progress: 439276665 states checked.
+Progress: 451627421 states checked.
+Progress: 464364003 states checked.
+Progress: 476974221 states checked.
+Progress: 489385831 states checked.
+Progress: 501794845 states checked.
+Progress: 514629085 states checked.
+Progress: 527113089 states checked.
+Progress: 539693482 states checked.
+Progress: 552265408 states checked.
+Progress: 564887253 states checked.
+Progress: 577679047 states checked.
+Progress: 590253791 states checked.
+Progress: 602900511 states checked.
+Progress: 615233658 states checked.
+Progress: 627191527 states checked.
+Progress: 639822831 states checked.
+Progress: 652613362 states checked.
+Progress: 665196478 states checked.
+Progress: 677490840 states checked.
+Progress: 690235088 states checked.
+Progress: 703081972 states checked.
+Progress: 715554014 states checked.
+Progress: 728122556 states checked.
+Progress: 740831284 states checked.
+Progress: 753587761 states checked.
+END 2026-11-08 17:35:05 stop=SIM_TIME_END maxmeta_kb=0
+LAST_PROGRESS Progress: 753587761 states checked.

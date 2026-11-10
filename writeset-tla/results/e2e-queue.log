@@ -1,0 +1,6 @@
+2026-11-07 23:17:53 driver start pid=1241000
+2026-11-07 23:17:53 started moc_t4k3 moc_t4k3 exhaustive (worker pid 1241008)
+2026-11-07 23:18:13 started sim_t30k10-101 sim_t30k10 simulate 14400 101 1200 (worker pid 1241262)
+2026-11-07 23:19:04 driver start pid=1242296
+2026-11-08 03:18:16 finished sim_t30k10-101: OK
+2026-11-08 03:18:41 started moc1_t5k3 moc1_t5k3 exhaustive (worker pid 1274154)

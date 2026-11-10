@@ -1,0 +1,29 @@
+START 2026-11-08 16:05:22 s3_base mode=exh 
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 16 and seed 7769303502139575328 with 16 workers on 80 cores with 14564MB heap and 64MB offheap memory [pid: 1384708] (Linux 5.14.0-570.30.1.el9_6.x86_64 amd64, Eclipse Adoptium 17.0.21 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/youngjun/Workspace/Obsidian/Github/writeset-tla/WritesetBoundary.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/TLC.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module WritesetBoundary
+Starting... (2026-11-08 16:05:23)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-08 16:05:23.
+Progress(17) at 2026-11-08 16:05:26: 156,739 states generated (156,739 s/min), 107,106 distinct states found (107,106 ds/min), 30,525 states left on queue.
+Progress(35) at 2026-11-08 16:06:26: 7,890,356 states generated (7,733,617 s/min), 2,937,785 distinct states found (2,830,679 ds/min), 213,677 states left on queue.
+Progress(46) at 2026-11-08 16:07:26: 13,922,816 states generated (6,032,460 s/min), 4,995,836 distinct states found (2,058,051 ds/min), 119,413 states left on queue.
+Model checking completed. No error has been found.
+  Estimates of the probability that TLC did not check all reachable states
+  because two distinct states had the same fingerprint:
+  calculated (optimistic):  val = 3.1E-6
+  based on the actual fingerprints:  val = 4.5E-6
+15915626 states generated, 5565521 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 63.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 9 and the 95th percentile is 3).
+Finished in 02min 26s at (2026-11-08 16:07:49)
+END 2026-11-08 16:08:22 stop=none maxmeta_kb=337464

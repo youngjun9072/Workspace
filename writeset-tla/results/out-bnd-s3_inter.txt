@@ -1,0 +1,41 @@
+START 2026-11-08 16:19:43 s3_inter mode=exh 
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 44 and seed -8432160010335302405 with 16 workers on 80 cores with 14564MB heap and 64MB offheap memory [pid: 1387595] (Linux 5.14.0-570.30.1.el9_6.x86_64 amd64, Eclipse Adoptium 17.0.21 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/youngjun/Workspace/Obsidian/Github/writeset-tla/WritesetBoundary.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/TLC.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module WritesetBoundary
+Starting... (2026-11-08 16:19:44)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-08 16:19:44.
+Progress(13) at 2026-11-08 16:19:47: 268,122 states generated (268,122 s/min), 101,409 distinct states found (101,409 ds/min), 49,297 states left on queue.
+Progress(24) at 2026-11-08 16:20:47: 14,561,927 states generated (14,293,805 s/min), 3,200,979 distinct states found (3,099,570 ds/min), 631,194 states left on queue.
+Progress(27) at 2026-11-08 16:21:47: 25,597,249 states generated (11,035,322 s/min), 5,244,102 distinct states found (2,043,123 ds/min), 794,025 states left on queue.
+Progress(29) at 2026-11-08 16:22:47: 36,224,462 states generated (10,627,213 s/min), 7,166,719 distinct states found (1,922,617 ds/min), 866,853 states left on queue.
+Progress(31) at 2026-11-08 16:23:47: 46,884,157 states generated (10,659,695 s/min), 9,111,899 distinct states found (1,945,180 ds/min), 891,525 states left on queue.
+Progress(33) at 2026-11-08 16:24:47: 57,811,906 states generated (10,927,749 s/min), 11,150,368 distinct states found (2,038,469 ds/min), 917,856 states left on queue.
+Progress(35) at 2026-11-08 16:25:47: 68,180,354 states generated (10,368,448 s/min), 13,064,479 distinct states found (1,914,111 ds/min), 925,712 states left on queue.
+Progress(37) at 2026-11-08 16:26:47: 77,911,708 states generated (9,731,354 s/min), 14,807,133 distinct states found (1,742,654 ds/min), 912,341 states left on queue.
+Progress(39) at 2026-11-08 16:27:47: 87,162,683 states generated (9,250,975 s/min), 16,405,767 distinct states found (1,598,634 ds/min), 868,557 states left on queue.
+Progress(41) at 2026-11-08 16:28:47: 95,842,311 states generated (8,679,628 s/min), 17,866,744 distinct states found (1,460,977 ds/min), 789,234 states left on queue.
+Progress(43) at 2026-11-08 16:29:47: 104,191,240 states generated (8,348,929 s/min), 19,237,521 distinct states found (1,370,777 ds/min), 685,649 states left on queue.
+Progress(45) at 2026-11-08 16:30:47: 112,108,499 states generated (7,917,259 s/min), 20,510,352 distinct states found (1,272,831 ds/min), 573,842 states left on queue.
+Progress(47) at 2026-11-08 16:31:47: 118,898,235 states generated (6,789,736 s/min), 21,576,574 distinct states found (1,066,222 ds/min), 468,045 states left on queue.
+Progress(50) at 2026-11-08 16:32:47: 125,734,771 states generated (6,836,536 s/min), 22,604,201 distinct states found (1,027,627 ds/min), 306,864 states left on queue.
+Progress(59) at 2026-11-08 16:33:47: 133,174,614 states generated (7,439,843 s/min), 23,651,980 distinct states found (1,047,779 ds/min), 18,942 states left on queue.
+Model checking completed. No error has been found.
+  Estimates of the probability that TLC did not check all reachable states
+  because two distinct states had the same fingerprint:
+  calculated (optimistic):  val = 1.4E-4
+  based on the actual fingerprints:  val = 1.1E-5
+133343165 states generated, 23672103 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 64.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 12 and the 95th percentile is 3).
+Finished in 14min 07s at (2026-11-08 16:33:51)
+END 2026-11-08 16:34:44 stop=none maxmeta_kb=882132

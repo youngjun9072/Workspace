@@ -1,0 +1,30 @@
+START 2026-11-07 11:58:56 s1_collide 
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 84 and seed -3970461986170149114 with 16 workers on 80 cores with 14564MB heap and 64MB offheap memory [pid: 1135125] (Linux 5.14.0-570.30.1.el9_6.x86_64 amd64, Eclipse Adoptium 17.0.21 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/youngjun/Workspace/Obsidian/Github/writeset-tla/WritesetE2E.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/TLC.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module WritesetE2E
+Starting... (2026-11-07 11:58:56)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-07 11:58:56.
+Progress(12) at 2026-11-07 11:58:59: 238,342 states generated (238,342 s/min), 144,818 distinct states found (144,818 ds/min), 62,427 states left on queue.
+Progress(31) at 2026-11-07 11:59:59: 8,205,160 states generated (7,966,818 s/min), 2,761,726 distinct states found (2,616,908 ds/min), 231,701 states left on queue.
+Progress(38) at 2026-11-07 12:00:59: 15,033,904 states generated (6,828,744 s/min), 4,795,092 distinct states found (2,033,366 ds/min), 234,784 states left on queue.
+Progress(51) at 2026-11-07 12:01:59: 22,139,198 states generated (7,105,294 s/min), 6,697,801 distinct states found (1,902,709 ds/min), 61,746 states left on queue.
+Model checking completed. No error has been found.
+  Estimates of the probability that TLC did not check all reachable states
+  because two distinct states had the same fingerprint:
+  calculated (optimistic):  val = 6.1E-6
+  based on the actual fingerprints:  val = 4.6E-6
+23134101 states generated, 6933717 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 74.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 17 and the 95th percentile is 3).
+Finished in 03min 11s at (2026-11-07 12:02:08)
+END 2026-11-07 12:02:09 exit=0

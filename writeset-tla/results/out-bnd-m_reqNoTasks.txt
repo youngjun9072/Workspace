@@ -1,0 +1,793 @@
+START 2026-11-08 13:29:59 m_reqNoTasks mode=exh   
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 111 and seed 3705356688786392365 with 16 workers on 80 cores with 14564MB heap and 64MB offheap memory [pid: 1351491] (Linux 5.14.0-570.30.1.el9_6.x86_64 amd64, Eclipse Adoptium 17.0.21 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/youngjun/Workspace/Obsidian/Github/writeset-tla/WritesetBoundary.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/TLC.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module WritesetBoundary
+Starting... (2026-11-08 13:29:59)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-08 13:30:00.
+Error: Invariant QuietAllApplied is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ storedC = 0
+/\ storedR = 1
+/\ frontier = 1000
+/\ mst = (t1 :> "idle" @@ t2 :> "idle")
+/\ nerr = 0
+/\ nd = (t1 :> 0 @@ t2 :> 0)
+/\ ns = (t1 :> 0 @@ t2 :> 0)
+/\ wign = {}
+/\ pend = (t1 :> FALSE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ slot = ( t1 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] @@
+  t2 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] )
+/\ markers = {}
+/\ promoted = FALSE
+/\ pending = <<>>
+/\ rd = 1
+/\ lastC = 0
+/\ mlog = <<>>
+/\ halted = FALSE
+/\ tq = <<>>
+/\ committed = 0
+/\ wrem = <<{}, {}>>
+/\ crashes = 0
+/\ mdone = FALSE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<>>
+/\ wapp = <<{}, {}>>
+
+State 2: <Next line 530, col 6 to line 530, col 34 of module WritesetBoundary>
+/\ storedC = 0
+/\ storedR = 1
+/\ frontier = 1000
+/\ mst = (t1 :> "open" @@ t2 :> "idle")
+/\ nerr = 0
+/\ nd = (t1 :> 0 @@ t2 :> 0)
+/\ ns = (t1 :> 0 @@ t2 :> 0)
+/\ wign = {}
+/\ pend = (t1 :> FALSE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ slot = ( t1 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] @@
+  t2 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] )
+/\ markers = {}
+/\ promoted = FALSE
+/\ pending = <<>>
+/\ rd = 1
+/\ lastC = 0
+/\ mlog = <<[k |-> "X", t |-> t1, dep |-> 0, keys |-> {}]>>
+/\ halted = FALSE
+/\ tq = <<>>
+/\ committed = 0
+/\ wrem = <<{}, {}>>
+/\ crashes = 0
+/\ mdone = FALSE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<>>
+/\ wapp = <<{}, {}>>
+
+State 3: <Next line 530, col 6 to line 530, col 34 of module WritesetBoundary>
+/\ storedC = 0
+/\ storedR = 1
+/\ frontier = 1000
+/\ mst = (t1 :> "open" @@ t2 :> "idle")
+/\ nerr = 0
+/\ nd = (t1 :> 1 @@ t2 :> 0)
+/\ ns = (t1 :> 0 @@ t2 :> 0)
+/\ wign = {}
+/\ pend = (t1 :> TRUE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ slot = ( t1 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] @@
+  t2 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] )
+/\ markers = {}
+/\ promoted = FALSE
+/\ pending = <<>>
+/\ rd = 1
+/\ lastC = 0
+/\ mlog = << [k |-> "X", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}] >>
+/\ halted = FALSE
+/\ tq = <<>>
+/\ committed = 0
+/\ wrem = <<{}, {}>>
+/\ crashes = 0
+/\ mdone = FALSE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<>>
+/\ wapp = <<{}, {}>>
+
+State 4: <Next line 530, col 6 to line 530, col 34 of module WritesetBoundary>
+/\ storedC = 0
+/\ storedR = 1
+/\ frontier = 1000
+/\ mst = (t1 :> "open" @@ t2 :> "idle")
+/\ nerr = 0
+/\ nd = (t1 :> 1 @@ t2 :> 0)
+/\ ns = (t1 :> 1 @@ t2 :> 0)
+/\ wign = {}
+/\ pend = (t1 :> FALSE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ slot = ( t1 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] @@
+  t2 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] )
+/\ markers = {}
+/\ promoted = FALSE
+/\ pending = <<>>
+/\ rd = 1
+/\ lastC = 0
+/\ mlog = << [k |-> "X", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "S", t |-> t1, dep |-> 0, keys |-> {}] >>
+/\ halted = FALSE
+/\ tq = <<>>
+/\ committed = 0
+/\ wrem = <<{}, {}>>
+/\ crashes = 0
+/\ mdone = FALSE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<>>
+/\ wapp = <<{}, {}>>
+
+State 5: <Next line 530, col 6 to line 530, col 34 of module WritesetBoundary>
+/\ storedC = 0
+/\ storedR = 1
+/\ frontier = 1000
+/\ mst = (t1 :> "open" @@ t2 :> "idle")
+/\ nerr = 0
+/\ nd = (t1 :> 2 @@ t2 :> 0)
+/\ ns = (t1 :> 1 @@ t2 :> 0)
+/\ wign = {}
+/\ pend = (t1 :> TRUE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ slot = ( t1 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] @@
+  t2 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] )
+/\ markers = {}
+/\ promoted = FALSE
+/\ pending = <<>>
+/\ rd = 1
+/\ lastC = 0
+/\ mlog = << [k |-> "X", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "S", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}] >>
+/\ halted = FALSE
+/\ tq = <<>>
+/\ committed = 0
+/\ wrem = <<{}, {}>>
+/\ crashes = 0
+/\ mdone = FALSE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<>>
+/\ wapp = <<{}, {}>>
+
+State 6: <Next line 530, col 6 to line 530, col 34 of module WritesetBoundary>
+/\ storedC = 0
+/\ storedR = 1
+/\ frontier = 1000
+/\ mst = (t1 :> "end" @@ t2 :> "idle")
+/\ nerr = 0
+/\ nd = (t1 :> 2 @@ t2 :> 0)
+/\ ns = (t1 :> 1 @@ t2 :> 0)
+/\ wign = {}
+/\ pend = (t1 :> TRUE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ slot = ( t1 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] @@
+  t2 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] )
+/\ markers = {}
+/\ promoted = FALSE
+/\ pending = <<>>
+/\ rd = 1
+/\ lastC = 0
+/\ mlog = << [k |-> "X", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "S", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "A", t |-> t1, dep |-> 0, keys |-> {}] >>
+/\ halted = FALSE
+/\ tq = <<>>
+/\ committed = 0
+/\ wrem = <<{}, {}>>
+/\ crashes = 0
+/\ mdone = FALSE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<>>
+/\ wapp = <<{}, {}>>
+
+State 7: <Next line 530, col 6 to line 530, col 34 of module WritesetBoundary>
+/\ storedC = 0
+/\ storedR = 1
+/\ frontier = 1000
+/\ mst = (t1 :> "end" @@ t2 :> "end")
+/\ nerr = 0
+/\ nd = (t1 :> 0 @@ t2 :> 0)
+/\ ns = (t1 :> 0 @@ t2 :> 0)
+/\ wign = {}
+/\ pend = (t1 :> FALSE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ slot = ( t1 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] @@
+  t2 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] )
+/\ markers = {}
+/\ promoted = FALSE
+/\ pending = <<>>
+/\ rd = 1
+/\ lastC = 0
+/\ mlog = << [k |-> "X", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "S", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "A", t |-> t1, dep |-> 0, keys |-> {}] >>
+/\ halted = FALSE
+/\ tq = <<>>
+/\ committed = 0
+/\ wrem = <<{}, {}>>
+/\ crashes = 0
+/\ mdone = TRUE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<>>
+/\ wapp = <<{}, {}>>
+
+State 8: <ReadRecord line 280, col 3 to line 314, col 59 of module WritesetBoundary>
+/\ storedC = 0
+/\ storedR = 1
+/\ frontier = 1000
+/\ mst = (t1 :> "end" @@ t2 :> "end")
+/\ nerr = 0
+/\ nd = (t1 :> 0 @@ t2 :> 0)
+/\ ns = (t1 :> 0 @@ t2 :> 0)
+/\ wign = {}
+/\ pend = (t1 :> FALSE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ slot = ( t1 :>
+      [ n |-> 0,
+        act |-> TRUE,
+        start |-> 1,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] @@
+  t2 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] )
+/\ markers = {}
+/\ promoted = FALSE
+/\ pending = <<>>
+/\ rd = 2
+/\ lastC = 0
+/\ mlog = << [k |-> "X", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "S", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "A", t |-> t1, dep |-> 0, keys |-> {}] >>
+/\ halted = FALSE
+/\ tq = <<>>
+/\ committed = 0
+/\ wrem = <<{}, {}>>
+/\ crashes = 0
+/\ mdone = TRUE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<>>
+/\ wapp = <<{}, {}>>
+
+State 9: <ReadRecord line 280, col 3 to line 314, col 59 of module WritesetBoundary>
+/\ storedC = 0
+/\ storedR = 1
+/\ frontier = 1000
+/\ mst = (t1 :> "end" @@ t2 :> "end")
+/\ nerr = 0
+/\ nd = (t1 :> 0 @@ t2 :> 0)
+/\ ns = (t1 :> 0 @@ t2 :> 0)
+/\ wign = {}
+/\ pend = (t1 :> FALSE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ slot = ( t1 :>
+      [ n |-> 1,
+        act |-> TRUE,
+        start |-> 1,
+        its |-> {2},
+        lng |-> FALSE,
+        head |-> 2,
+        last |-> 0,
+        frag |-> 0 ] @@
+  t2 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] )
+/\ markers = {}
+/\ promoted = FALSE
+/\ pending = <<>>
+/\ rd = 3
+/\ lastC = 0
+/\ mlog = << [k |-> "X", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "S", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "A", t |-> t1, dep |-> 0, keys |-> {}] >>
+/\ halted = FALSE
+/\ tq = <<>>
+/\ committed = 0
+/\ wrem = <<{}, {}>>
+/\ crashes = 0
+/\ mdone = TRUE
+/\ infl = <<>>
+/\ reqLsa = 1
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<>>
+/\ wapp = <<{}, {}>>
+
+State 10: <ReadRecord line 280, col 3 to line 314, col 59 of module WritesetBoundary>
+/\ storedC = 0
+/\ storedR = 1
+/\ frontier = 0
+/\ mst = (t1 :> "end" @@ t2 :> "end")
+/\ nerr = 0
+/\ nd = (t1 :> 0 @@ t2 :> 0)
+/\ ns = (t1 :> 0 @@ t2 :> 0)
+/\ wign = {}
+/\ pend = (t1 :> FALSE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ slot = ( t1 :>
+      [ n |-> 0,
+        act |-> TRUE,
+        start |-> 1,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 3 ] @@
+  t2 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] )
+/\ markers = {}
+/\ promoted = FALSE
+/\ pending = <<>>
+/\ rd = 4
+/\ lastC = 0
+/\ mlog = << [k |-> "X", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "S", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "A", t |-> t1, dep |-> 0, keys |-> {}] >>
+/\ halted = FALSE
+/\ tq = << [ lsa |-> 3,
+     t |-> t1,
+     dep |-> 0,
+     start |-> 1,
+     kind |-> "S",
+     items |-> {2},
+     hasApply |-> TRUE ] >>
+/\ committed = 0
+/\ wrem = <<{}, {}>>
+/\ crashes = 0
+/\ mdone = TRUE
+/\ infl = << [ task |->
+         [ lsa |-> 3,
+           t |-> t1,
+           dep |-> 0,
+           start |-> 1,
+           kind |-> "S",
+           items |-> {2},
+           hasApply |-> TRUE ],
+     res |-> "none" ] >>
+/\ reqLsa = 1
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<[lsa |-> 3, done |-> FALSE]>>
+/\ wapp = <<{}, {}>>
+
+State 11: <ReadRecord line 280, col 3 to line 314, col 59 of module WritesetBoundary>
+/\ storedC = 0
+/\ storedR = 1
+/\ frontier = 0
+/\ mst = (t1 :> "end" @@ t2 :> "end")
+/\ nerr = 0
+/\ nd = (t1 :> 0 @@ t2 :> 0)
+/\ ns = (t1 :> 0 @@ t2 :> 0)
+/\ wign = {}
+/\ pend = (t1 :> FALSE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ slot = ( t1 :>
+      [ n |-> 1,
+        act |-> TRUE,
+        start |-> 1,
+        its |-> {4},
+        lng |-> FALSE,
+        head |-> 4,
+        last |-> 0,
+        frag |-> 3 ] @@
+  t2 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] )
+/\ markers = {}
+/\ promoted = FALSE
+/\ pending = <<>>
+/\ rd = 5
+/\ lastC = 0
+/\ mlog = << [k |-> "X", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "S", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "A", t |-> t1, dep |-> 0, keys |-> {}] >>
+/\ halted = FALSE
+/\ tq = << [ lsa |-> 3,
+     t |-> t1,
+     dep |-> 0,
+     start |-> 1,
+     kind |-> "S",
+     items |-> {2},
+     hasApply |-> TRUE ] >>
+/\ committed = 0
+/\ wrem = <<{}, {}>>
+/\ crashes = 0
+/\ mdone = TRUE
+/\ infl = << [ task |->
+         [ lsa |-> 3,
+           t |-> t1,
+           dep |-> 0,
+           start |-> 1,
+           kind |-> "S",
+           items |-> {2},
+           hasApply |-> TRUE ],
+     res |-> "none" ] >>
+/\ reqLsa = 1
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<[lsa |-> 3, done |-> FALSE]>>
+/\ wapp = <<{}, {}>>
+
+State 12: <ReadRecord line 280, col 3 to line 314, col 59 of module WritesetBoundary>
+/\ storedC = 0
+/\ storedR = 1
+/\ frontier = 0
+/\ mst = (t1 :> "end" @@ t2 :> "end")
+/\ nerr = 0
+/\ nd = (t1 :> 0 @@ t2 :> 0)
+/\ ns = (t1 :> 0 @@ t2 :> 0)
+/\ wign = {}
+/\ pend = (t1 :> FALSE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ slot = ( t1 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] @@
+  t2 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] )
+/\ markers = {}
+/\ promoted = FALSE
+/\ pending = <<>>
+/\ rd = 6
+/\ lastC = 0
+/\ mlog = << [k |-> "X", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "S", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "A", t |-> t1, dep |-> 0, keys |-> {}] >>
+/\ halted = FALSE
+/\ tq = << [ lsa |-> 3,
+     t |-> t1,
+     dep |-> 0,
+     start |-> 1,
+     kind |-> "S",
+     items |-> {2},
+     hasApply |-> TRUE ] >>
+/\ committed = 0
+/\ wrem = <<{}, {}>>
+/\ crashes = 0
+/\ mdone = TRUE
+/\ infl = << [ task |->
+         [ lsa |-> 3,
+           t |-> t1,
+           dep |-> 0,
+           start |-> 1,
+           kind |-> "S",
+           items |-> {2},
+           hasApply |-> TRUE ],
+     res |-> "none" ] >>
+/\ reqLsa = 1
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<[lsa |-> 3, done |-> FALSE]>>
+/\ wapp = <<{}, {}>>
+
+State 13: <LogCommit line 368, col 3 to line 375, col 59 of module WritesetBoundary>
+/\ storedC = 0
+/\ storedR = 6
+/\ frontier = 0
+/\ mst = (t1 :> "end" @@ t2 :> "end")
+/\ nerr = 0
+/\ nd = (t1 :> 0 @@ t2 :> 0)
+/\ ns = (t1 :> 0 @@ t2 :> 0)
+/\ wign = {}
+/\ pend = (t1 :> FALSE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ slot = ( t1 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] @@
+  t2 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] )
+/\ markers = {}
+/\ promoted = FALSE
+/\ pending = <<>>
+/\ rd = 6
+/\ lastC = 0
+/\ mlog = << [k |-> "X", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "S", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "A", t |-> t1, dep |-> 0, keys |-> {}] >>
+/\ halted = FALSE
+/\ tq = << [ lsa |-> 3,
+     t |-> t1,
+     dep |-> 0,
+     start |-> 1,
+     kind |-> "S",
+     items |-> {2},
+     hasApply |-> TRUE ] >>
+/\ committed = 0
+/\ wrem = <<{}, {}>>
+/\ crashes = 0
+/\ mdone = TRUE
+/\ infl = << [ task |->
+         [ lsa |-> 3,
+           t |-> t1,
+           dep |-> 0,
+           start |-> 1,
+           kind |-> "S",
+           items |-> {2},
+           hasApply |-> TRUE ],
+     res |-> "none" ] >>
+/\ reqLsa = 6
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<[lsa |-> 3, done |-> FALSE]>>
+/\ wapp = <<{}, {}>>
+
+State 14: <Restart line 479, col 3 to line 488, col 78 of module WritesetBoundary>
+/\ storedC = 0
+/\ storedR = 6
+/\ frontier = 1000
+/\ mst = (t1 :> "end" @@ t2 :> "end")
+/\ nerr = 0
+/\ nd = (t1 :> 0 @@ t2 :> 0)
+/\ ns = (t1 :> 0 @@ t2 :> 0)
+/\ wign = {}
+/\ pend = (t1 :> FALSE @@ t2 :> FALSE)
+/\ resq = <<>>
+/\ slot = ( t1 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] @@
+  t2 :>
+      [ n |-> 0,
+        act |-> FALSE,
+        start |-> 0,
+        its |-> {},
+        lng |-> FALSE,
+        head |-> 0,
+        last |-> 0,
+        frag |-> 0 ] )
+/\ markers = {}
+/\ promoted = FALSE
+/\ pending = <<>>
+/\ rd = 6
+/\ lastC = 0
+/\ mlog = << [k |-> "X", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "S", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "D", t |-> t1, dep |-> 0, keys |-> {}],
+   [k |-> "A", t |-> t1, dep |-> 0, keys |-> {}] >>
+/\ halted = FALSE
+/\ tq = <<>>
+/\ committed = 6
+/\ wrem = <<{}, {}>>
+/\ crashes = 1
+/\ mdone = TRUE
+/\ infl = <<>>
+/\ reqLsa = 6
+/\ sdb = <<>>
+/\ wk = <<[lsa |-> 0], [lsa |-> 0]>>
+/\ ring = <<>>
+/\ wapp = <<{}, {}>>
+
+26092 states generated, 22973 distinct states found, 9093 states left on queue.
+The depth of the complete state graph search is 15.
+The average outdegree of the complete state graph is 2 (minimum is 0, the maximum 8 and the 95th percentile is 4).
+Finished in 02s at (2026-11-08 13:30:01)
+END 2026-11-08 13:30:04 stop=none maxmeta_kb=0

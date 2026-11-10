@@ -1,0 +1,29 @@
+START 2026-11-07 17:02:11 moc_t3k2 
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 59 and seed -6363430054895802976 with 16 workers on 80 cores with 14564MB heap and 64MB offheap memory [pid: 1186131] (Linux 5.14.0-570.30.1.el9_6.x86_64 amd64, Eclipse Adoptium 17.0.21 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/youngjun/Workspace/Obsidian/Github/writeset-tla/WritesetE2E.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/TLC.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module WritesetE2E
+Starting... (2026-11-07 17:02:12)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-07 17:02:12.
+Progress(13) at 2026-11-07 17:02:15: 334,898 states generated (334,898 s/min), 160,790 distinct states found (160,790 ds/min), 94,501 states left on queue.
+Progress(20) at 2026-11-07 17:03:15: 15,149,645 states generated (14,814,747 s/min), 7,240,513 distinct states found (7,079,723 ds/min), 1,936,662 states left on queue.
+Progress(23) at 2026-11-07 17:04:15: 28,886,159 states generated (13,736,514 s/min), 13,452,831 distinct states found (6,212,318 ds/min), 657,711 states left on queue.
+Model checking completed. No error has been found.
+  Estimates of the probability that TLC did not check all reachable states
+  because two distinct states had the same fingerprint:
+  calculated (optimistic):  val = 1.2E-5
+  based on the actual fingerprints:  val = 7.1E-6
+30086600 states generated, 13874491 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 24.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 15 and the 95th percentile is 2).
+Finished in 02min 11s at (2026-11-07 17:04:23)
+END 2026-11-07 17:04:24 exit=0

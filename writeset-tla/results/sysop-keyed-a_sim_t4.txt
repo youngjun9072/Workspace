@@ -1,0 +1,45 @@
+START 2026-11-09 21:19:03 a_sim_t4 workers=16 -simulate -depth 300 -seed 7
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running Random Simulation with seed 7 with 16 workers on 80 cores with 14564MB heap and 64MB offheap memory [pid: 2065944] (Linux 5.14.0-570.30.1.el9_6.x86_64 amd64, Eclipse Adoptium 17.0.21 x86_64).
+Parsing file /home/youngjun/Workspace/Obsidian/Github/writeset-tla/WritesetSysopKeyed.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/TLC.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module WritesetSysopKeyed
+Starting... (2026-11-09 21:19:04)
+Computed 1 initial states...
+Progress: 5947695 states checked.
+Progress: 12096079 states checked.
+Progress: 18388844 states checked.
+Progress: 24376447 states checked.
+Progress: 30266621 states checked.
+Progress: 35932239 states checked.
+Progress: 41038587 states checked.
+Progress: 45683601 states checked.
+Progress: 50240847 states checked.
+Progress: 54713875 states checked.
+Progress: 59624806 states checked.
+Progress: 65687562 states checked.
+Progress: 71781421 states checked.
+Progress: 77764446 states checked.
+Progress: 83782747 states checked.
+Progress: 89767355 states checked.
+Progress: 95921250 states checked.
+Progress: 102077671 states checked.
+Progress: 108230291 states checked.
+Progress: 114524507 states checked.
+Progress: 120759260 states checked.
+Progress: 126302958 states checked.
+Progress: 131697676 states checked.
+Progress: 137005551 states checked.
+Progress: 142289414 states checked.
+Progress: 148056676 states checked.
+Progress: 154114834 states checked.
+Progress: 160129193 states checked.
+Progress: 166180337 states checked.
+END 2026-11-09 21:49:04 exit=0 metadir=0

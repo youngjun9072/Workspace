@@ -1,0 +1,24 @@
+# name cfg mode [seconds seed depth]   (driver adds #RUN / #DONE prefixes)
+# requeued runs that were stopped before 24h on 11-07
+#RUN 1241008 moc_t4k3 moc_t4k3 exhaustive
+#DONE OK sim_t30k10-101 sim_t30k10 simulate 14400 101 1200
+#RUN 1274154 moc1_t5k3 moc1_t5k3 exhaustive
+sim_t25k8-102 sim_t25k8 simulate 14400 102 1000
+sim_t30k10_collide-103 sim_t30k10_collide simulate 14400 103 1200
+sim_t20k8_cap2-104 sim_t20k8_cap2 simulate 14400 104 800
+sim_t25k8_inter-105 sim_t25k8_inter simulate 14400 105 1500
+sim_t25k8_bug-106 sim_t25k8_bug simulate 7200 106 1000
+moc_t4k2 moc_t4k2 exhaustive
+s2_lite s2_lite exhaustive
+e1_t4k3w3 e1_t4k3w3 exhaustive
+# scale-up ladder toward Txns 5-6 / Keys 4-5 / Workers 4
+e1_t6k5w4 e1_t6k5w4 exhaustive
+e1_t5k5w4 e1_t5k5w4 exhaustive
+e1_t5k4w4 e1_t5k4w4 exhaustive
+e1_t5k4w3 e1_t5k4w3 exhaustive
+e1_t4k4w4 e1_t4k4w4 exhaustive
+mo_t3k2 mo_t3k2 exhaustive
+s1_inter s1_inter exhaustive
+sim_t30k10-107 sim_t30k10 simulate 14400 107 1200
+sim_t30k10-108 sim_t30k10 simulate 14400 108 1200
+sim_t25k8-109 sim_t25k8 simulate 14400 109 1000

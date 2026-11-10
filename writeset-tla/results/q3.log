@@ -1,0 +1,7 @@
+== san_req02: Error: Invariant RequiredStored is violated. | 8245 states generated, 5942 distinct states found, 2174 states left on queue.
+== base2: Model checking completed. No error has been found. | 1429498 states generated, 356416 distinct states found, 0 states left on queue.
+== err_frag: Model checking completed. No error has been found. | 289484 states generated, 80710 distinct states found, 0 states left on queue.
+== errc_frag: Model checking completed. No error has been found. | 273134 states generated, 71398 distinct states found, 0 states left on queue.
+== base: Model checking completed. No error has been found. | 104414 states generated, 27678 distinct states found, 0 states left on queue.
+== err_commit: Model checking completed. No error has been found. | 324220 states generated, 81634 distinct states found, 0 states left on queue.
+== err_flush: Model checking completed. No error has been found. | 341950 states generated, 92050 distinct states found, 0 states left on queue.

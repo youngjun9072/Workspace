@@ -1,0 +1,19 @@
+# scenario 1 (fragments / long split / restart position), review fix "both" unless named
+#DONE OK s1_crash2_inter exh
+#DONE OK s1_w1_inter exh
+#RUN 1360152 s1_s2 exh
+#DONE OK s1_k2cd2 exh
+#DONE VIOLATION_PrefixStored sim1_t4_none sim 600 7 300
+#DONE OK_SIM sim1_t4 sim 3600 11 300
+#DONE MANUAL_STOP_FOR_SHORT_RUNS s1_s2_inter_c2 exh
+# scenario 2 / 3
+# reordered 16:05: short scenario 2/3 runs first
+#DONE OK s3_base exh
+#DONE OK s3_doneNoPending exh
+#DONE OK s2_small exh
+#DONE OK s3_fail exh
+#DONE OK s3_inter exh
+#DONE OK_SIM sim2_t4 sim 3600 17 400
+#DONE OK_SIM sim1_t6 sim 3600 13 500
+#DONE OK s2_mid exh
+#DONE OK s2_base exh
